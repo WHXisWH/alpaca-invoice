@@ -1,0 +1,35 @@
+{
+  "name": "zk-invoice",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@demox-labs/aleo-wallet-adapter-leo": "^0.0.25",
+    "@demox-labs/aleo-wallet-adapter-react": "^0.0.22",
+    "@demox-labs/aleo-wallet-adapter-reactui": "^0.0.36",
+    "@provablehq/sdk": "^0.7.0",
+    "date-fns": "^3.2.0",
+    "idb": "^8.0.0",
+    "next": "14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "buffer": "^6.0.3",
+    "tailwindcss": "^3.4.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "postcss": "^8.4.31",
+    "typescript": "^5.3.0",
+    "vitest": "^1.6.0"
+  }
+}

@@ -1,0 +1,94 @@
+export type AleoAddress = `aleo1${string}`;
+export type AleoField = `${string}field`;
+export type AleoTransactionId = `at1${string}`;
+export type Microcredits = bigint;
+
+export enum InvoiceStatus {
+  PENDING = 0,
+  PAID = 1,
+  CANCELLED = 2,
+  EXPIRED = 3
+}
+
+export interface LineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface InvoiceDetails {
+  invoiceNumber: string;
+  lineItems: LineItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+  currency: string;
+  notes?: string;
+}
+
+export interface Invoice {
+  id: AleoField;
+  seller: AleoAddress;
+  buyer: AleoAddress;
+  amount: Microcredits;
+  invoiceHash: AleoField;
+  dueDate: Date;
+  createdAt: Date;
+  status: InvoiceStatus;
+  details?: InvoiceDetails;
+}
+
+export interface EncryptedPayload {
+  iv: string;
+  ciphertext: string;
+}
+
+export interface CreateInvoiceParams {
+  buyer: AleoAddress;
+  amount: Microcredits;
+  dueDate: Date;
+  details: InvoiceDetails;
+}
+
+export interface CreateInvoiceResult {
+  transactionId: AleoTransactionId;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  encryptedDetails: EncryptedPayload;
+}
+
+export interface PayInvoiceParams {
+  invoiceId: AleoField;
+  paymentRecord: string;
+}
+
+export interface PaymentResult {
+  transactionId: AleoTransactionId;
+  paymentId: AleoField;
+  changeRecord?: string;
+}
+
+export interface PaymentReceipt {
+  paymentId: AleoField;
+  invoiceId: AleoField;
+  payer: AleoAddress;
+  payee: AleoAddress;
+  amount: Microcredits;
+  paidAt: Date;
+}
+
+export interface AuditKeyConfig {
+  invoiceIds: AleoField[];
+  permissions: string[];
+  expiresAt: number;
+  auditorAddress: AleoAddress;
+}
+
+export interface AuditKey {
+  key: string;
+  config: AuditKeyConfig;
+  signature: string;
+  issuedAt: number;
+}
