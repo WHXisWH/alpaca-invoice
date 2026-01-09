@@ -3,6 +3,7 @@
 import { WalletProvider } from '@demox-labs/aleo-wallet-adapter-react';
 import { WalletModalProvider } from '@demox-labs/aleo-wallet-adapter-reactui';
 import { LeoWalletAdapter } from '@demox-labs/aleo-wallet-adapter-leo';
+import { DecryptPermission, WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import './wallet.css';
@@ -22,7 +23,13 @@ export default function Providers({ children }: Props) {
   );
 
   return (
-    <WalletProvider wallets={wallets} autoConnect>
+    <WalletProvider
+      wallets={wallets}
+      decryptPermission={DecryptPermission.OnChainHistory}
+      network={WalletAdapterNetwork.TestnetBeta}
+      programs={['credits.aleo', 'zk_invoice.aleo']}
+      autoConnect
+    >
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );

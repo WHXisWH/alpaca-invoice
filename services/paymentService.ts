@@ -26,6 +26,7 @@ function saveReceipt(receipt: PaymentReceipt) {
   const stored = JSON.parse(localStorage.getItem(RECEIPTS_KEY) || '[]');
   stored.push({
     ...receipt,
+    amount: receipt.amount.toString(),
     paidAt: receipt.paidAt.toISOString()
   });
   localStorage.setItem(RECEIPTS_KEY, JSON.stringify(stored));
@@ -56,16 +57,38 @@ export const paymentService = {
       throw new Error('Wallet not connected');
     }
 
+    console.log('Step 1/2: Fetching credits records...');
+
+    // Get credits record plaintexts from wallet (not metadata)
+    const creditsPlaintextsResponse = await wallet.requestRecordPlaintexts(CREDITS_PROGRAM);
+    const creditsPlaintexts = creditsPlaintextsResponse.records || [];
+    console.log('Credits plaintexts:', creditsPlaintexts);
+
+    // Filter unspent records
+    const unspentPlaintexts = creditsPlaintexts.filter((r: any) => !r.spent);
+
+    if (unspentPlaintexts.length === 0) {
+      throw new Error('No credits available');
+    }
+
+    // Use first unspent record - should be plaintext string or object
+    const creditsRecord = unspentPlaintexts[0];
+    console.log('Using record:', creditsRecord);
+    console.log('Record type:', typeof creditsRecord);
+    console.log('Record JSON:', JSON.stringify(creditsRecord, null, 2));
     console.log('Step 1/2: Transferring credits...');
 
     // Step 1: Transfer credits
     const transferResponse = await wallet.requestTransaction({
-      program: CREDITS_PROGRAM,
-      functionName: 'transfer_private',
-      inputs: [params.recipientAddress, `${params.amount.toString()}u64`],
+      address: wallet.publicKey,
+      chainId: 'testnetbeta',
+      transitions: [{
+        program: CREDITS_PROGRAM,
+        functionName: 'transfer_private',
+        inputs: [creditsRecord, params.recipientAddress, `${params.amount.toString()}u64`]
+      }],
       fee: 1000000,
-      wait: true,
-      network: 'testnetbeta'
+      feePrivate: false
     });
 
     if (!transferResponse || !transferResponse.transactionId) {
@@ -77,30 +100,41 @@ export const paymentService = {
     // Generate payment nonce
     const paymentNonce = randomField() as AleoField;
 
-    console.log('Step 2/2: Marking invoice as paid...');
+    console.log('Step 2/2: Fetching invoice records...');
 
-    // Build InvoiceRecord string
+    // Get invoice record plaintexts from wallet
+    const invoicePlaintextsResponse = await wallet.requestRecordPlaintexts(PROGRAM_ID);
+    const invoicePlaintexts = invoicePlaintextsResponse.records || [];
     const invoice = params.invoice;
-    const recordStr = `{
-      owner: ${invoice.buyer},
-      invoice_id: ${invoice.id},
-      seller: ${invoice.seller},
-      buyer: ${invoice.buyer},
-      amount: ${invoice.amount.toString()}u64,
-      invoice_hash: ${invoice.invoiceHash},
-      due_date: ${Math.floor(invoice.dueDate.getTime() / 1000)}u32,
-      created_at: ${Math.floor(invoice.createdAt.getTime() / 1000)}u32,
-      status: ${invoice.status}u8
-    }`;
+
+    console.log('Invoice plaintexts:', invoicePlaintexts);
+    console.log('Looking for invoice_id:', invoice.id);
+    console.log('First record structure:', invoicePlaintexts[0]);
+
+    // Find the matching invoice record by invoice_id
+    const matchingRecord = invoicePlaintexts.find(
+      (r: any) => !r.spent && r.data?.invoice_id === invoice.id
+    );
+
+    if (!matchingRecord) {
+      throw new Error('Invoice record not found in wallet');
+    }
+
+    const invoiceRecord = matchingRecord;
+
+    console.log('Step 2/2: Marking invoice as paid...');
 
     // Step 2: Mark as paid
     const markPaidResponse = await wallet.requestTransaction({
-      program: PROGRAM_ID,
-      functionName: 'mark_as_paid',
-      inputs: [recordStr, paymentNonce],
+      address: wallet.publicKey,
+      chainId: 'testnetbeta',
+      transitions: [{
+        program: PROGRAM_ID,
+        functionName: 'mark_as_paid',
+        inputs: [invoiceRecord, paymentNonce]
+      }],
       fee: 1000000,
-      wait: true,
-      network: 'testnetbeta'
+      feePrivate: false
     });
 
     if (!markPaidResponse || !markPaidResponse.transactionId) {

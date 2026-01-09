@@ -74,13 +74,16 @@ export async function generateInvoiceHash(details: InvoiceDetails): Promise<stri
   const data = new TextEncoder().encode(canonical);
   const hashBuffer = await cryptoImpl.subtle.digest('SHA-256', data);
   const hex = Buffer.from(hashBuffer).toString('hex');
-  return `${hex}field`;
+  const decimal = BigInt('0x' + hex).toString();
+  return `${decimal}field`;
 }
 
 export function randomField(): string {
   const cryptoImpl = getWebCrypto();
   const bytes = cryptoImpl.getRandomValues(new Uint8Array(16));
-  return `${Buffer.from(bytes).toString('hex')}field`;
+  const hex = Buffer.from(bytes).toString('hex');
+  const decimal = BigInt('0x' + hex).toString();
+  return `${decimal}field`;
 }
 
 export function randomTransactionId(): `at1${string}` {

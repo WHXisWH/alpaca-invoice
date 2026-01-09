@@ -28,6 +28,7 @@ function saveInvoice(invoice: Invoice) {
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
   stored.push({
     ...invoice,
+    amount: invoice.amount.toString(),
     dueDate: invoice.dueDate.toISOString(),
     createdAt: invoice.createdAt.toISOString()
   });
@@ -71,28 +72,98 @@ export const invoiceService = {
     const amountStr = `${params.amount.toString()}u64`;
 
     console.log('Creating invoice on-chain...');
+    console.log('Transaction params:', {
+      seller,
+      buyer: params.buyer,
+      amount: amountStr,
+      dueDate: `${dueTimestamp}u32`,
+      invoiceHash,
+      nonce
+    });
 
     // Call real contract
     const response = await wallet.requestTransaction({
-      program: PROGRAM_ID,
-      functionName: 'create_invoice',
-      inputs: [
-        params.buyer,
-        amountStr,
-        `${dueTimestamp}u32`,
-        invoiceHash,
-        nonce
-      ],
+      address: seller,
+      chainId: 'testnetbeta',
+      transitions: [{
+        program: PROGRAM_ID,
+        functionName: 'create_invoice',
+        inputs: [
+          params.buyer,
+          amountStr,
+          `${dueTimestamp}u32`,
+          invoiceHash,
+          nonce
+        ]
+      }],
       fee: 1000000,
-      wait: true,
-      network: 'testnetbeta'
+      feePrivate: false
     });
 
-    if (!response || !response.transactionId) {
-      throw new Error('Transaction failed');
+    console.log('Transaction response:', response);
+
+    if (!response) {
+      throw new Error('Transaction failed - no response');
     }
 
-    console.log('Invoice created! TX:', response.transactionId);
+    if (!response.transactionId) {
+      throw new Error('Transaction failed - no transaction ID');
+    }
+
+    console.log('Transaction submitted! Local UUID:', response.transactionId);
+
+    // The returned ID is a UUID, not the on-chain TX ID
+    // Try to get transaction status
+    console.log('Checking transaction status...');
+
+    let realTransactionId = response.transactionId;
+
+    try {
+      // First try transactionStatus
+      const status = await wallet.transactionStatus(response.transactionId);
+      console.log('Transaction status:', status);
+    } catch (err) {
+      console.log('Status check failed:', err);
+    }
+
+    // Try to get recent transaction history for this program
+    console.log('Fetching recent transaction history...');
+
+    try {
+      const historyResponse = await wallet.requestTransactionHistory(PROGRAM_ID);
+      console.log('Transaction history response:', historyResponse);
+
+      const history = historyResponse.transactions || historyResponse || [];
+      console.log('Recent transactions:', history);
+
+      if (history.length > 0) {
+        // Get the most recent transaction (should be the one we just submitted)
+        const latestTx = history[0];
+        console.log('Latest transaction:', latestTx);
+        console.log('Transaction keys:', Object.keys(latestTx));
+        console.log('Full transaction JSON:', JSON.stringify(latestTx, null, 2));
+
+        // Try different possible field names
+        const possibleId =
+          latestTx.transaction_id ||
+          latestTx.transactionId ||
+          latestTx.txId ||
+          latestTx.id;
+
+        if (possibleId && typeof possibleId === 'string' && possibleId.startsWith('at1')) {
+          realTransactionId = possibleId;
+          console.log('Found transaction ID from history:', realTransactionId);
+        }
+      }
+    } catch (err) {
+      console.log('Transaction history fetch failed:', err);
+    }
+
+    if (!realTransactionId.startsWith('at1')) {
+      console.warn(
+        'Could not get on-chain TX ID. Using UUID. Check wallet transaction history manually.'
+      );
+    }
 
     // Generate invoice ID (use nonce as base)
     const invoiceId = `${nonce.slice(0, 32)}field` as AleoField;
@@ -113,7 +184,7 @@ export const invoiceService = {
     saveInvoice(invoice);
 
     return {
-      transactionId: response.transactionId as AleoTransactionId,
+      transactionId: realTransactionId as AleoTransactionId,
       invoiceId: invoiceId,
       invoiceHash: invoiceHash,
       encryptedDetails: {
@@ -153,29 +224,36 @@ export const invoiceService = {
       throw new Error('Can only cancel pending invoices');
     }
 
-    // Build InvoiceRecord string for contract call
-    const recordStr = `{
-      owner: ${invoice.seller},
-      invoice_id: ${invoice.id},
-      seller: ${invoice.seller},
-      buyer: ${invoice.buyer},
-      amount: ${invoice.amount.toString()}u64,
-      invoice_hash: ${invoice.invoiceHash},
-      due_date: ${Math.floor(invoice.dueDate.getTime() / 1000)}u32,
-      created_at: ${Math.floor(invoice.createdAt.getTime() / 1000)}u32,
-      status: ${invoice.status}u8
-    }`;
+    console.log('Fetching invoice records from wallet...');
+
+    // Get invoice record plaintexts from wallet
+    const invoicePlaintextsResponse = await wallet.requestRecordPlaintexts(PROGRAM_ID);
+    const invoicePlaintexts = invoicePlaintextsResponse.records || [];
+
+    // Find the matching invoice record by invoice_id
+    const matchingRecord = invoicePlaintexts.find(
+      (r: any) => !r.spent && r.data?.invoice_id === invoiceId
+    );
+
+    if (!matchingRecord) {
+      throw new Error('Invoice record not found in wallet');
+    }
+
+    const record = matchingRecord;
 
     console.log('Cancelling invoice on-chain...');
 
     // Call cancel_invoice
     const response = await wallet.requestTransaction({
-      program: PROGRAM_ID,
-      functionName: 'cancel_invoice',
-      inputs: [recordStr],
+      address: wallet.publicKey,
+      chainId: 'testnetbeta',
+      transitions: [{
+        program: PROGRAM_ID,
+        functionName: 'cancel_invoice',
+        inputs: [record]
+      }],
       fee: 1000000,
-      wait: true,
-      network: 'testnetbeta'
+      feePrivate: false
     });
 
     if (!response || !response.transactionId) {
