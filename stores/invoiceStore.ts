@@ -73,11 +73,27 @@ export const useInvoiceStore = create<InvoiceStore>((set, get) => ({
   payInvoice: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      const { address } = useWalletStore.getState();
-      const result = await paymentService.pay({ invoiceId: id, paymentRecord: '' }, address || undefined);
+      // Get invoice from service (localStorage)
+      const invoice = await invoiceService.getById(id);
+      if (!invoice) {
+        throw new Error('Invoice not found');
+      }
+
+      // Call payment service
+      const result = await paymentService.pay({
+        invoice: invoice,
+        recipientAddress: invoice.seller,
+        amount: invoice.amount
+      });
+
+      // Update invoice status
+      await invoiceService.markAsPaid(id);
+
+      // Fetch updated data
+      await get().fetchInvoices();
       const receipts = await paymentService.listReceipts();
       set({ paymentReceipts: receipts, isLoading: false });
-      await get().fetchInvoices();
+
       return result;
     } catch (err) {
       set({ isLoading: false, error: (err as Error).message });

@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  encryptInvoiceDetails,
-  generateInvoiceHash,
-  randomField,
-  randomTransactionId
-} from '@/lib/crypto';
+import { generateInvoiceHash, randomField } from '@/lib/crypto';
 import {
   type AleoAddress,
   type AleoField,
@@ -13,90 +8,185 @@ import {
   type CreateInvoiceParams,
   type CreateInvoiceResult,
   type Invoice,
-  InvoiceStatus,
-  type InvoiceDetails
+  InvoiceStatus
 } from '@/lib/types';
-import { saveEncryptedInvoice, saveTransaction } from '@/lib/storage';
 
-const invoiceCache: Invoice[] = [];
+const PROGRAM_ID = 'zk_invoice.aleo';
+const STORAGE_KEY = 'zk_invoice_records';
 
-function getSellerAddress(): AleoAddress {
-  const envAddress =
-    (process.env.NEXT_PUBLIC_ALEO_ADDRESS) as
-      | AleoAddress
-      | undefined;
-  return envAddress || ('aleo1sellerdemoaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxx' as AleoAddress);
+// Get wallet instance
+function getWallet() {
+  if (typeof window !== 'undefined' && (window as any).leoWallet) {
+    return (window as any).leoWallet;
+  }
+  throw new Error('Leo Wallet not found. Please install Leo Wallet extension.');
+}
+
+// localStorage helpers
+function saveInvoice(invoice: Invoice) {
+  if (typeof window === 'undefined') return;
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  stored.push({
+    ...invoice,
+    dueDate: invoice.dueDate.toISOString(),
+    createdAt: invoice.createdAt.toISOString()
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+function getAllInvoices(): Invoice[] {
+  if (typeof window === 'undefined') return [];
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  return stored.map((inv: any) => ({
+    ...inv,
+    amount: BigInt(inv.amount),
+    dueDate: new Date(inv.dueDate),
+    createdAt: new Date(inv.createdAt)
+  }));
+}
+
+function updateInvoiceStatus(invoiceId: AleoField, status: InvoiceStatus) {
+  if (typeof window === 'undefined') return;
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  const updated = stored.map((inv: any) =>
+    inv.id === invoiceId ? { ...inv, status } : inv
+  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 }
 
 export const invoiceService = {
   async create(params: CreateInvoiceParams): Promise<CreateInvoiceResult> {
-    const seller = getSellerAddress();
-    const invoiceId = randomField() as AleoField;
-    const invoiceHash = (await generateInvoiceHash(params.details)) as AleoField;
-    const encryptionKey = crypto.getRandomValues(new Uint8Array(32));
-    const encryptedDetails = await encryptInvoiceDetails(
-      params.details as InvoiceDetails,
-      encryptionKey
-    );
+    const wallet = getWallet();
 
+    if (!wallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    const seller = wallet.publicKey as AleoAddress;
+
+    // Generate invoice hash and nonce
+    const invoiceHash = (await generateInvoiceHash(params.details)) as AleoField;
+    const nonce = randomField() as AleoField;
+    const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
+    const amountStr = `${params.amount.toString()}u64`;
+
+    console.log('Creating invoice on-chain...');
+
+    // Call real contract
+    const response = await wallet.requestTransaction({
+      program: PROGRAM_ID,
+      functionName: 'create_invoice',
+      inputs: [
+        params.buyer,
+        amountStr,
+        `${dueTimestamp}u32`,
+        invoiceHash,
+        nonce
+      ],
+      fee: 1000000,
+      wait: true
+    });
+
+    if (!response || !response.transactionId) {
+      throw new Error('Transaction failed');
+    }
+
+    console.log('Invoice created! TX:', response.transactionId);
+
+    // Generate invoice ID (use nonce as base)
+    const invoiceId = `${nonce.slice(0, 32)}field` as AleoField;
+
+    // Save to localStorage
     const invoice: Invoice = {
       id: invoiceId,
-      seller,
+      seller: seller,
       buyer: params.buyer,
       amount: params.amount,
-      invoiceHash,
+      invoiceHash: invoiceHash,
       dueDate: params.dueDate,
       createdAt: new Date(),
       status: InvoiceStatus.PENDING,
       details: params.details
     };
 
-    invoiceCache.push(invoice);
-    await saveEncryptedInvoice(invoiceId, encryptedDetails);
-    await saveTransaction({
-      txId: randomTransactionId(),
-      type: 'create',
-      invoiceId,
-      status: 'confirmed'
-    });
+    saveInvoice(invoice);
 
     return {
-      transactionId: randomTransactionId(),
-      invoiceId,
-      invoiceHash,
-      encryptedDetails
+      transactionId: response.transactionId as AleoTransactionId,
+      invoiceId: invoiceId,
+      invoiceHash: invoiceHash,
+      encryptedDetails: {
+        iv: '',
+        ciphertext: JSON.stringify(params.details)
+      }
     };
   },
 
   async getById(id: AleoField): Promise<Invoice | null> {
-    return invoiceCache.find((i) => i.id === id) ?? null;
+    const invoices = getAllInvoices();
+    return invoices.find((inv) => inv.id === id) || null;
   },
 
   async listByRole(role: 'seller' | 'buyer', address?: AleoAddress): Promise<Invoice[]> {
-    if (!address) return invoiceCache;
-    return invoiceCache.filter((i) =>
-      role === 'seller' ? i.seller === address : i.buyer === address
+    if (!address) return [];
+    const invoices = getAllInvoices();
+    return invoices.filter((inv) =>
+      role === 'seller' ? inv.seller === address : inv.buyer === address
     );
   },
 
-  async cancel(id: AleoField): Promise<AleoTransactionId> {
-    const tx = randomTransactionId();
-    const invoice = invoiceCache.find((i) => i.id === id);
-    if (invoice) {
-      invoice.status = InvoiceStatus.CANCELLED;
+  async cancel(invoiceId: AleoField): Promise<void> {
+    const wallet = getWallet();
+
+    if (!wallet.publicKey) {
+      throw new Error('Wallet not connected');
     }
-    await saveTransaction({
-      txId: tx,
-      type: 'cancel',
-      invoiceId: id,
-      status: 'confirmed'
+
+    // Find invoice
+    const invoice = await this.getById(invoiceId);
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+
+    if (invoice.status !== InvoiceStatus.PENDING) {
+      throw new Error('Can only cancel pending invoices');
+    }
+
+    // Build InvoiceRecord string for contract call
+    const recordStr = `{
+      owner: ${invoice.seller},
+      invoice_id: ${invoice.id},
+      seller: ${invoice.seller},
+      buyer: ${invoice.buyer},
+      amount: ${invoice.amount.toString()}u64,
+      invoice_hash: ${invoice.invoiceHash},
+      due_date: ${Math.floor(invoice.dueDate.getTime() / 1000)}u32,
+      created_at: ${Math.floor(invoice.createdAt.getTime() / 1000)}u32,
+      status: ${invoice.status}u8
+    }`;
+
+    console.log('Cancelling invoice on-chain...');
+
+    // Call cancel_invoice
+    const response = await wallet.requestTransaction({
+      program: PROGRAM_ID,
+      functionName: 'cancel_invoice',
+      inputs: [recordStr],
+      fee: 1000000,
+      wait: true
     });
-    return tx;
+
+    if (!response || !response.transactionId) {
+      throw new Error('Cancel transaction failed');
+    }
+
+    console.log('Invoice cancelled! TX:', response.transactionId);
+
+    // Update localStorage
+    updateInvoiceStatus(invoiceId, InvoiceStatus.CANCELLED);
   },
 
-  async verify(id: AleoField, hash: AleoField): Promise<boolean> {
-    const invoice = invoiceCache.find((i) => i.id === id);
-    if (!invoice) return false;
-    return invoice.invoiceHash === hash;
+  async markAsPaid(invoiceId: AleoField): Promise<void> {
+    updateInvoiceStatus(invoiceId, InvoiceStatus.PAID);
   }
 };
