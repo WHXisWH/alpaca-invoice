@@ -64,7 +64,8 @@ export const paymentService = {
       functionName: 'transfer_private',
       inputs: [params.recipientAddress, `${params.amount.toString()}u64`],
       fee: 1000000,
-      wait: true
+      wait: true,
+      network: 'testnetbeta'
     });
 
     if (!transferResponse || !transferResponse.transactionId) {
@@ -98,7 +99,8 @@ export const paymentService = {
       functionName: 'mark_as_paid',
       inputs: [recordStr, paymentNonce],
       fee: 1000000,
-      wait: true
+      wait: true,
+      network: 'testnetbeta'
     });
 
     if (!markPaidResponse || !markPaidResponse.transactionId) {

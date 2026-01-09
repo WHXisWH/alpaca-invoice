@@ -84,7 +84,8 @@ export const invoiceService = {
         nonce
       ],
       fee: 1000000,
-      wait: true
+      wait: true,
+      network: 'testnetbeta'
     });
 
     if (!response || !response.transactionId) {
@@ -173,7 +174,8 @@ export const invoiceService = {
       functionName: 'cancel_invoice',
       inputs: [recordStr],
       fee: 1000000,
-      wait: true
+      wait: true,
+      network: 'testnetbeta'
     });
 
     if (!response || !response.transactionId) {
