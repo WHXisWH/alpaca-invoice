@@ -142,6 +142,91 @@ graph TB
 | **IStorageService** | IndexedDB 的 CRUD，用于持久化加密后的 Archive 数据 | [IStorageService.ts](../services/StorageService/IStorageService.ts) |
 | **IAleoProtocolService** | 节点 RPC 交互（广播交易、查询 Mapping、扫描高度） | [IAleoProtocolService.ts](../services/AleoProtocolService/IAleoProtocolService.ts) |
 
+### 3.4 错误处理系统 (Error Handling System)
+
+#### 3.4.1 架构图
+
+```mermaid
+graph TB
+    subgraph ErrorFlow["错误处理流程"]
+        Service[Service Layer<br/>抛出 ServiceError]
+        Controller[Controller Layer<br/>捕获并转换]
+        ErrorStore[ErrorStore<br/>状态管理]
+        ErrorHandler[ErrorHandler<br/>Toast 展示]
+    end
+    
+    Service -->|WalletServiceError<br/>ProtocolServiceError| Controller
+    Controller -->|toAppError| ErrorStore
+    ErrorStore -->|currentError| ErrorHandler
+    ErrorHandler -->|sonner toast| UI[用户界面]
+    
+    style Service fill:#f3e5f5
+    style Controller fill:#fff3e0
+    style ErrorStore fill:#e8f5e9
+    style ErrorHandler fill:#e3f2fd
+```
+
+#### 3.4.2 核心文件
+
+| 文件 | 职责 | 路径 |
+|------|------|------|
+| **ServiceError** | Service 层通用错误基类（泛型） | [service-errors.ts](../lib/service-errors.ts) |
+| **AppError** | UI 层用户友好错误类型 | [errors.ts](../lib/errors.ts) |
+| **ErrorType** | 错误类型枚举（面向用户） | [errors.ts](../lib/errors.ts) |
+| **toAppError** | 错误转换器（ServiceError → AppError） | [errors.ts](../lib/errors.ts) |
+| **useErrorStore** | 错误状态管理 | [useErrorStore.ts](../stores/Error/useErrorStore.ts) |
+| **useErrorHandler** | 错误处理 Controller | [useErrorHandler.ts](../controller/Error/useErrorHandler.ts) |
+| **ErrorHandler** | 错误展示组件（Toast 触发） | [error-handler.tsx](../components/error-handler.tsx) |
+
+#### 3.4.3 错误类型层级
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Service Layer (技术错误)                                │
+│  ├─ WalletServiceError<WalletError>                     │
+│  │   ├─ NOT_INSTALLED                                   │
+│  │   ├─ USER_REJECTED                                   │
+│  │   ├─ INSUFFICIENT_FEE                                │
+│  │   ├─ NETWORK_MISMATCH                                │
+│  │   ├─ UNAUTHORIZED                                    │
+│  │   └─ DECRYPTION_FAILED                               │
+│  └─ ProtocolServiceError<ProtocolError>                 │
+│      ├─ NODE_CONNECTION_FAILED                          │
+│      ├─ INVALID_RECORD                                  │
+│      ├─ TRANSACTION_REJECTED                            │
+│      ├─ SYNC_TIMEOUT                                    │
+│      └─ MAPPING_NOT_FOUND                               │
+└─────────────────────────────────────────────────────────┘
+                         ↓ toAppError()
+┌─────────────────────────────────────────────────────────┐
+│  UI Layer (用户友好错误)                                 │
+│  AppError<ErrorType>                                    │
+│  ├─ WALLET_NOT_CONNECTED     → "钱包未连接"              │
+│  ├─ WALLET_CONNECTION_FAILED → "钱包连接失败"            │
+│  ├─ TRANSACTION_REJECTED     → "交易已拒绝"              │
+│  ├─ INSUFFICIENT_BALANCE     → "余额不足"                │
+│  ├─ NETWORK_ERROR            → "网络错误"                │
+│  └─ ...                                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### 3.4.4 使用示例
+
+```typescript
+// Controller 层使用错误处理
+const { handleError } = useErrorHandler();
+
+const handleConnect = async () => {
+  try {
+    await walletService.connect();
+    // 成功逻辑...
+  } catch (error) {
+    // 自动转换为用户友好提示并显示 Toast
+    handleError(error);
+  }
+};
+```
+
 ---
 
 ## 4. 关键业务的时序逻辑 (Sequence Diagrams)
@@ -163,8 +248,10 @@ sequenceDiagram
     par 并行初始化
         C->>WS: requestViewKey()
         WS-->>C: 返回 ViewKey
-        C->>WS: getBalances()
-        WS-->>C: 返回 {public, private} Microcredits
+        C->>WS: getPrivateBalance()
+        WS-->>C: 返回 private Microcredits
+        C->>PS: getPublicBalance(address)
+        PS-->>C: 返回 public Microcredits
         C->>PS: getLatestBlockHeight()
         PS-->>C: 返回 BlockHeight
     end
@@ -223,7 +310,7 @@ sequenceDiagram
     C->>S: startTx('PREPARING')
     
     par 资源准备
-        C->>WS: getBalances() -> 校验余额是否足够
+        C->>WS: getPrivateBalance() -> 校验余额是否足够
         C->>WS: getFeeRecords(requiredAmount) -> 获取手续费 Record
         C->>S: 获取对应的 Invoice Record 密文
     end
@@ -247,7 +334,8 @@ sequenceDiagram
     par 状态刷新
         C->>PS: getInvoiceMappingStatus(invoiceId) -> 确认变更为 PAID
         C->>S: updateInvoiceStatus(id, PAID)
-        C->>WS: getBalances() -> 更新钱包余额
+        C->>WS: getPrivateBalance() -> 更新私有余额
+        C->>PS: getPublicBalance(address) -> 更新公开余额
     end
     
     C->>S: completeTx()
@@ -365,10 +453,18 @@ sequenceDiagram
 - Controller 作为唯一的协调者，不包含具体的业务计算逻辑
 - Service 层封装所有底层实现细节
 
+### 5.4 错误处理原则
+
+- **Service 层**抛出技术性错误（`WalletServiceError`、`ProtocolServiceError`）
+- **Controller 层**使用 `useErrorHandler` 捕获并转换错误
+- **View 层**通过 `ErrorHandler` 组件自动展示 Toast
+- 错误类型分层：技术错误（Service）→ 用户友好错误（UI）
+- 使用泛型基类 `ServiceError<T>` 消除重复代码
+
 ---
 
 ## 6. 版本信息
 
-- **文档版本**: v1.0
-- **最后更新**: 2025-01
+- **文档版本**: v1.1
+- **最后更新**: 2026-01
 - **维护团队**: Aleo Privacy Invoice System Team
