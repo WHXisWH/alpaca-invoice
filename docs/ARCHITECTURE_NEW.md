@@ -311,31 +311,67 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant V as View (React Component)
+    participant V as View (Create Invoice Form)
     participant C as Controller (useTransactionController)
     participant S as Store (Transaction/Invoice Store)
-    participant SRV as Services (Crypto/ZK/Protocol)
+    participant CS as CryptoService (ICryptoService)
+    participant WS as WalletService (IWalletService)
+    participant ZK as ZKProofService (IZKProofService)
+    participant PS as AleoProtocolService (IAleoProtocolService)
+    participant SS as StorageService (IStorageService)
+    
+    Note over V,SS: --- 阶段 1: 数据准备与预处理 ---
+    
     V->>C: 提交发票表单 (InvoiceDetails)
     C->>S: startTx('HASHING')
-    C->>SRV: CryptoService.computeInvoiceHash(details)
-    SRV-->>C: 返回 AleoField (hash)
     
-    C->>S: updateProgress(10, 'PROVING')
-    C->>SRV: ZKProofService.proveCreateInvoice(params, hash)
+    C->>CS: computeBHP256Hash(invoiceData)
+    Note right of CS: 符合合约 BHP256::hash_to_field 要求 
+    CS-->>C: 返回 invoice_hash (Field)
     
-    Note over SRV,S: 并行逻辑：证明生成中
-    loop 进度反馈
-        SRV-->>S: updateProgress(percent, log)
-        S-->>V: UI 进度条自动更新
+    C->>S: updateProgress(10, 'PREPARING_RECORDS')
+    
+    C->>WS: getFeeRecord(estimatedFee)
+    Note right of WS: 获取用于支付手续费的 credits.aleo Record
+    WS-->>C: 返回 feeRecord
+    
+    Note over C,ZK: --- 阶段 2: 零知识证明生成 ---
+    
+    C->>S: updateProgress(20, 'PROVING')
+    
+    C->>ZK: proveCreateInvoice(buyer, amount, due_date, hash, nonce, feeRecord)
+    Note right of ZK: 调用合约 transition create_invoice
+    
+    loop 证明生成进度监听
+        ZK-->>S: updateProgress(percent, log)
+        S-->>V: UI 进度条同步更新
     end
-    SRV-->>C: 返回 ExecutionProof
-    C->>S: updateProgress(90, 'BROADCASTING')
-    C->>SRV: AleoProtocolService.broadcastTransaction(proof)
-    SRV-->>C: 返回 AleoTransactionId
     
+    ZK-->>C: 返回 ExecutionProof (执行证明)
+    
+    Note over C,PS: --- 阶段 3: 链上广播与存证 ---
+    
+    C->>S: updateProgress(80, 'BROADCASTING')
+    
+    C->>PS: broadcastTransaction(ExecutionProof)
+    Note right of PS: 通过 RPC 将证明发送至 Aleo 节点
+    PS-->>C: 返回 AleoTransactionId (txId)
+    
+    Note over C,SS: --- 阶段 4: 本地隐私归档与状态同步 ---
+    
+    C->>S: updateProgress(90, 'ARCHIVING')
+    
+    C->>CS: encryptForLocal(invoiceDetails)
+    Note right of CS: 使用本地密钥对明细进行对称加密
+    CS-->>C: 返回 encryptedPayload
+    
+    C->>SS: saveInvoice(invoice_hash, encryptedPayload)
+    Note right of SS: 存入 IndexedDB 供以后解密查看
+    SS-->>C: 存储确认
     C->>S: InvoiceStore.addInvoice(newInvoice)
     C->>S: completeTx()
-    C->>V: 触发"创建成功"通知 (Toast)
+    
+    C->>V: 触发 "创建成功" 通知 (Toast)
 ```
 
 ### 4.3 支付发票 (Pay Invoice)
