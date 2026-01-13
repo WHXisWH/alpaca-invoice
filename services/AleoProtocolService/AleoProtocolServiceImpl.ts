@@ -8,7 +8,6 @@ import {
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
 import { getChainIdFromNetwork } from '@/lib/network';
-import { normalizeRepeatedSlashes } from 'next/dist/shared/lib/utils';
 
 /**
  * AleoProtocolService 实现类
