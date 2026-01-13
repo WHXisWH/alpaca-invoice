@@ -238,29 +238,72 @@ sequenceDiagram
     autonumber
     participant V as View (Connect Button)
     participant C as Controller (useWalletController)
+    participant A as Adapter (createWalletAdapter)
+    participant WC as WalletContext (useWallet Hook)
     participant S as Store (UserStore)
-    participant WS as WalletService (Leo Wallet)
+    participant WS as WalletService
     participant PS as AleoProtocolService (Node RPC)
+    
     V->>C: 点击 "Connect Wallet"
+    activate C
+    C->>C: setIsConnecting(true)
     C->>WS: connect()
-    WS-->>C: 返回 AleoAddress (aleo1...)
+    activate WS
     
-    par 并行初始化
-        C->>WS: requestViewKey()
-        WS-->>C: 返回 ViewKey
-        C->>WS: getPrivateBalance()
+    Note over WS,A: WalletService 通过适配器桥接
+    WS->>A: connect()
+    activate A
+    A->>A: 检查钱包是否可用
+    A->>A: 如果未选择钱包，选择第一个可用钱包
+    A->>WC: connect(DecryptPermission, network, programs)
+    activate WC
+    Note over WC: Leo Wallet 弹出连接确认窗口
+    WC-->>A: Promise resolved (连接成功)
+    deactivate WC
+    A-->>WS: 连接成功
+    deactivate A
+    WS-->>C: connect() 完成
+    deactivate WS
+    C->>C: setIsConnecting(false)
+    
+    Note over C: React useEffect 监听 wallet 状态变化
+    WC->>C: wallet.publicKey 和 wallet.connected 更新
+    C->>C: useEffect 检测到状态变化
+    C->>S: setAccount(publicKey, connected)
+    activate S
+    S-->>C: Store 已更新
+    deactivate S
+    
+    Note over C: 另一个 useEffect 检测到 publicKey 和 connected
+    C->>C: syncBalances() 触发
+    
+    par 并行获取余额
+        C->>WS: getPrivateBalance(publicKey)
+        activate WS
+        Note over WS: 通过 requestRecords('credits.aleo')<br/>计算未花费 Records 总和
         WS-->>C: 返回 private Microcredits
-        C->>PS: getPublicBalance(address)
+        deactivate WS
+        C->>PS: getPublicBalance(publicKey)
+        activate PS
+        Note over PS: 查询链上 Mapping<br/>credits.aleo/account/{address}
         PS-->>C: 返回 public Microcredits
-        C->>PS: getLatestBlockHeight()
-        PS-->>C: 返回 BlockHeight
+        deactivate PS
     end
-    C->>S: setAccount(address, network)
-    C->>S: updateBalances(pub, priv)
-    C->>S: setSyncHeight(BlockHeight)
     
-    Note over C,V: 状态变更触发 UI 变化
-    V->>V: 自动跳转至 Dashboard
+    C->>S: updateBalances(publicBalance, privateBalance)
+    activate S
+    S-->>C: 余额已更新
+    deactivate S
+    
+    Note over C,V: Store 状态变更触发 UI 重新渲染
+    S->>V: 状态更新
+    V->>V: 显示已连接状态<br/>显示地址和余额
+    deactivate C
+    
+    Note over C: 定期同步余额（每 30 秒）
+    loop 每 30 秒
+        C->>C: syncBalances()
+    end
 ```
 
 ### 4.2 开票 (Issue Invoice)
