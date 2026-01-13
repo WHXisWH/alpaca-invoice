@@ -1,57 +1,72 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AleoProtocolService } from '../AleoProtocolServiceImpl';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import type { AleoAddress } from '@/lib/types';
 import { ProtocolServiceError, ProtocolError } from '../IAleoProtocolService';
 
+// 使用 vi.hoisted 确保 mock 函数在模块导入之前创建
+const { 
+  mockGetProgramMappingValue,
+  mockGetLatestHeight, 
+  mockSubmitTransaction, 
+  mockGetTransaction 
+} = vi.hoisted(() => ({
+  mockGetProgramMappingValue: vi.fn(),
+  mockGetLatestHeight: vi.fn(),
+  mockSubmitTransaction: vi.fn(),
+  mockGetTransaction: vi.fn(),
+}));
+
+// Mock AleoNetworkClient 必须在导入 AleoProtocolService 之前
+vi.mock('@provablehq/sdk', () => ({
+  AleoNetworkClient: vi.fn().mockImplementation(() => ({
+    getProgramMappingValue: mockGetProgramMappingValue,
+    getLatestHeight: mockGetLatestHeight,
+    submitTransaction: mockSubmitTransaction,
+    getTransaction: mockGetTransaction,
+  }))
+}));
+
+// 在 mock 之后导入
+import { AleoProtocolService } from '../AleoProtocolServiceImpl';
+
 describe('AleoProtocolService', () => {
   let service: AleoProtocolService;
   const mockAddress = 'aleo1test123456789' as AleoAddress;
-  const originalFetch = global.fetch;
 
   beforeEach(() => {
+    // 重置所有 mock 函数的调用历史和实现
+    mockGetProgramMappingValue.mockReset();
+    mockGetLatestHeight.mockReset();
+    mockSubmitTransaction.mockReset();
+    mockGetTransaction.mockReset();
+    
     service = new AleoProtocolService(WalletAdapterNetwork.TestnetBeta);
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getPublicBalance', () => {
     it('应该成功获取公开余额', async () => {
       // Arrange
-      const mockBalance = '5000000u64';
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => mockBalance
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue('5000000u64');
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
 
       // Assert
       expect(balance).toBe(5000000n);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/program/credits.aleo/mapping/account/${mockAddress}`),
-        {
-          method: 'get',
-          headers: {
-            'Accept': 'application/json'
-          }
-        }
+      expect(mockGetProgramMappingValue).toHaveBeenCalledWith(
+        'credits.aleo',
+        'account',
+        mockAddress
       );
     });
 
     it('应该处理没有 u64 后缀的余额', async () => {
       // Arrange
-      const mockBalance = '3000000';
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => mockBalance
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue('3000000');
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -62,12 +77,7 @@ describe('AleoProtocolService', () => {
 
     it('应该处理带引号的响应（如 "60000000u64"）', async () => {
       // Arrange
-      const mockBalance = '"60000000u64"';
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => mockBalance
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue('"60000000u64"');
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -78,12 +88,7 @@ describe('AleoProtocolService', () => {
 
     it('应该处理带单引号的响应', async () => {
       // Arrange
-      const mockBalance = "'5000000u64'";
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => mockBalance
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue("'5000000u64'");
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -92,13 +97,9 @@ describe('AleoProtocolService', () => {
       expect(balance).toBe(5000000n);
     });
 
-    it('当地址没有公开余额时应该返回 0（404 响应）', async () => {
+    it('当地址没有公开余额时应该返回 0（null 响应）', async () => {
       // Arrange
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found'
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue(null);
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -109,11 +110,7 @@ describe('AleoProtocolService', () => {
 
     it('当余额为空字符串时应该返回 0', async () => {
       // Arrange
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => ''
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue('');
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -125,11 +122,7 @@ describe('AleoProtocolService', () => {
     it('当网络错误时应该返回 0 并打印警告', async () => {
       // Arrange
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error'
-      } as Response);
+      mockGetProgramMappingValue.mockRejectedValue(new Error('Network error'));
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -141,12 +134,7 @@ describe('AleoProtocolService', () => {
 
     it('应该处理大额余额', async () => {
       // Arrange
-      const mockBalance = '999999999999999u64';
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        text: async () => mockBalance
-      } as Response);
+      mockGetProgramMappingValue.mockResolvedValue('999999999999999u64');
 
       // Act
       const balance = await service.getPublicBalance(mockAddress);
@@ -159,28 +147,29 @@ describe('AleoProtocolService', () => {
   describe('getLatestBlockHeight', () => {
     it('应该成功获取最新区块高度', async () => {
       // Arrange
-      const mockHeight = 12345;
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => mockHeight
-      } as Response);
+      mockGetLatestHeight.mockResolvedValue(12345);
 
       // Act
       const height = await service.getLatestBlockHeight();
 
       // Assert
       expect(height).toBe(12345);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/latest/height')
-      );
+      expect(mockGetLatestHeight).toHaveBeenCalled();
     });
 
     it('网络连接失败时应该抛出错误', async () => {
       // Arrange
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        statusText: 'Service Unavailable'
-      } as Response);
+      mockGetLatestHeight.mockRejectedValue(new Error('Network error'));
+
+      // Act & Assert
+      const error = await service.getLatestBlockHeight().catch(e => e) as ProtocolServiceError;
+      expect(error).toBeInstanceOf(ProtocolServiceError);
+      expect(error.code).toBe(ProtocolError.NODE_CONNECTION_FAILED);
+    });
+
+    it('当返回无效高度时应该抛出错误', async () => {
+      // Arrange
+      mockGetLatestHeight.mockResolvedValue(null);
 
       // Act & Assert
       const error = await service.getLatestBlockHeight().catch(e => e) as ProtocolServiceError;

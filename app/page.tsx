@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import WalletConnectButtonV2 from '@/components/wallet-connect-button-v2';
 

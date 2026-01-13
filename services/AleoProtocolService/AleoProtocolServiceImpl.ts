@@ -7,54 +7,56 @@ import {
 } from '@/lib/types';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
-import { getChainIdFromNetwork } from '@/lib/network';
+import { AleoNetworkClient } from '@provablehq/sdk';
 
 /**
  * AleoProtocolService 实现类
  * 
  * 职责：与 Aleo 区块链节点交互，查询链上数据和广播交易
+ * 
+ * 使用 @provablehq/sdk 的 AleoNetworkClient 自动处理 URL 拼接和版本兼容问题
  */
 export class AleoProtocolService implements IAleoProtocolService {
-  private rpcUrl: string;
-  private chainId: string;
+  private networkClient: AleoNetworkClient;
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
-    this.chainId = getChainIdFromNetwork(network);
-    this.rpcUrl = this.getRpcUrlForNetwork(network);
+    const baseUrl = this.getBaseUrlForNetwork(network);
+    this.networkClient = new AleoNetworkClient(baseUrl);
   }
 
   /**
-   * 根据网络类型获取 RPC URL
+   * 根据网络类型获取基础 RPC URL（用于 AleoNetworkClient）
    */
-  private getRpcUrlForNetwork(network: WalletAdapterNetwork): string {
+  private getBaseUrlForNetwork(network: WalletAdapterNetwork): string {
     switch (network) {
       case WalletAdapterNetwork.MainnetBeta:
-        return 'https://api.explorer.provable.com/v2/mainnet';
+        return 'https://api.explorer.provable.com/v1';
       case WalletAdapterNetwork.Testnet:
       case WalletAdapterNetwork.TestnetBeta:
-        return 'https://api.explorer.provable.com/v2/testnet';
+        return 'https://api.explorer.provable.com/v1';
       default:
-        return 'https://api.explorer.provable.com/v2/testnet';
+        return 'https://api.explorer.provable.com/v1';
     }
   }
 
   /**
    * 获取当前链的最新区块高度
+   * 
+   * 使用 AleoNetworkClient.getLatestHeight() 直接获取最新区块高度
    */
   async getLatestBlockHeight(): Promise<number> {
     try {
-      const response = await fetch(`${this.rpcUrl}/${this.chainId}/latest/height`);
+      const height = await this.networkClient.getLatestHeight();
       
-      if (!response.ok) {
+      if (!height || height < 0) {
         throw new ProtocolServiceError(
           ProtocolError.NODE_CONNECTION_FAILED,
-          'Failed to fetch latest block height',
-          { status: response.status, statusText: response.statusText }
+          'Failed to fetch latest block height: invalid response',
+          { height }
         );
       }
 
-      const height = await response.json();
-      return Number(height);
+      return height;
     } catch (error: any) {
       if (error instanceof ProtocolServiceError) {
         throw error;
@@ -63,7 +65,7 @@ export class AleoProtocolService implements IAleoProtocolService {
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
         'Failed to connect to Aleo node',
-        { rpcUrl: this.rpcUrl, originalError: error }
+        { originalError: error }
       );
     }
   }
@@ -71,60 +73,38 @@ export class AleoProtocolService implements IAleoProtocolService {
   /**
    * 获取公开余额（从链上 Mapping 查询）
    * 查询 credits.aleo 程序的 account mapping
+   * 
+   * 使用 AleoNetworkClient.getProgramMappingValue，如果返回 null 则表示余额为 0
    */
   async getPublicBalance(address: AleoAddress): Promise<Microcredits> {
     try {
-      // 查询 credits.aleo 程序的 account mapping
-      const response = await fetch(
-        `${this.rpcUrl}/program/credits.aleo/mapping/account/${address}`,
-        {
-          method: 'get',
-          headers: {
-            'Accept': 'application/json'
-          }
-        }
+      const balance = await this.networkClient.getProgramMappingValue(
+        'credits.aleo',
+        'account',
+        address
       );
 
-      // 如果地址没有公开余额，API 会返回 404
-      if (response.status === 404) {
+      // 如果返回 null，即余额为 0
+      if (balance === null || balance === undefined) {
         return 0n;
       }
 
-      if (!response.ok) {
-        // 对于非 404 错误，返回 0 并打印警告（而不是抛出异常）
-        console.warn('Failed to get public balance, returning 0:', {
-          status: response.status,
-          statusText: response.statusText,
-          address
-        });
-        return 0n;
-      }
-
-      const data = await response.text();
-            
+      // 处理返回的余额值（可能是字符串或数字）
+      const balanceStr = String(balance).trim();
+      
       // 移除可能的单位后缀（如 "u64"）并解析为 bigint
-      // 先去除引号和空白字符，然后移除 u64 后缀
-      const balanceStr = data
-        .trim()
+      const cleanBalanceStr = balanceStr
         .replace(/^["']|["']$/g, '') // 移除首尾引号
         .replace(/u64$/i, '') // 移除 u64 后缀（不区分大小写）
         .trim();
-      return BigInt(balanceStr || 0);
+      
+      return BigInt(cleanBalanceStr || 0);
     } catch (error: any) {
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
       
-      // 网络错误
-      if (error.message?.includes('fetch')) {
-        throw new ProtocolServiceError(
-          ProtocolError.NODE_CONNECTION_FAILED,
-          'Failed to connect to Aleo node',
-          { rpcUrl: this.rpcUrl, originalError: error }
-        );
-      }
-      
-      // 其他错误返回 0（可能是地址没有公开余额）
+      // 网络错误或其他错误，返回 0（可能是地址没有公开余额）
       console.warn('Failed to get public balance, returning 0:', error);
       return 0n;
     }
@@ -132,38 +112,153 @@ export class AleoProtocolService implements IAleoProtocolService {
 
   /**
    * 获取指定地址在特定程序下的所有加密Record
+   * 
+   * 注意：此方法需要私钥才能解密 Records。
+   * AleoNetworkClient.findUnspentRecords 需要 PrivateKey 参数。
+   * 
+   * 建议在上层 Service（如 WalletService）中处理 Record 查询，
+   * 因为只有 Wallet 层才持有用户私钥。
+   * 
+   * 如需实现，参考代码：
+   * const records = await this.networkClient.findUnspentRecords(
+   *   startHeight,
+   *   undefined,
+   *   privateKey,
+   *   undefined,
+   *   undefined
+   * );
    */
   async fetchRawRecords(
     programId: string,
     address: AleoAddress,
     startHeight: number
   ): Promise<string[]> {
-    // TODO: 实现 Records 查询
-    throw new Error('Not implemented yet');
+    throw new ProtocolServiceError(
+      ProtocolError.INVALID_RECORD,
+      'Record fetching requires private key and should be handled by WalletService',
+      { programId, address, startHeight }
+    );
   }
 
   /**
    * 查询链上发票状态Mapping
+   * 
+   * 注意：当前 zk_invoice.aleo 合约采用 Record-based 架构（UTXO 模型），
+   * 不使用公开 Mapping 存储状态。所有状态通过加密 Record 传递。
+   * 
+   * 如果未来合约升级为使用 Mapping，可以使用以下实现：
+   * const status = await this.networkClient.getProgramMappingValue(
+   *   'zk_invoice.aleo', 
+   *   'invoice_status', 
+   *   invoiceId
+   * );
    */
   async getInvoiceMappingStatus(invoiceId: AleoField): Promise<InvoiceStatus> {
-    // TODO: 实现 Mapping 查询
-    throw new Error('Not implemented yet');
+    try {
+      // 尝试查询 Mapping（如果合约使用 Mapping）
+      const status = await this.networkClient.getProgramMappingValue(
+        'zk_invoice.aleo',
+        'invoice_status',
+        invoiceId
+      );
+
+      if (status === null || status === undefined) {
+        throw new ProtocolServiceError(
+          ProtocolError.MAPPING_NOT_FOUND,
+          'Invoice status not found in mapping',
+          { invoiceId }
+        );
+      }
+
+      // 解析状态值（格式可能是 "0u8", "1u8" 等）
+      const statusStr = String(status).replace(/u8$/i, '').trim();
+      const statusNum = parseInt(statusStr, 10);
+
+      if (statusNum < 0 || statusNum > 3) {
+        throw new ProtocolServiceError(
+          ProtocolError.INVALID_RECORD,
+          'Invalid invoice status value',
+          { invoiceId, status }
+        );
+      }
+
+      return statusNum as InvoiceStatus;
+    } catch (error: any) {
+      if (error instanceof ProtocolServiceError) {
+        throw error;
+      }
+
+      throw new ProtocolServiceError(
+        ProtocolError.MAPPING_NOT_FOUND,
+        'Failed to query invoice status mapping',
+        { invoiceId, originalError: error }
+      );
+    }
   }
 
   /**
    * 广播已生成的零知识证明交易到 Aleo 网络
+   * 
+   * 使用 AleoNetworkClient.submitTransaction 提交交易
    */
   async broadcastTransaction(transactionPayload: any): Promise<AleoTransactionId> {
-    // TODO: 实现交易广播
-    throw new Error('Not implemented yet');
+    try {
+      const txId = await this.networkClient.submitTransaction(transactionPayload);
+
+      if (!txId || !txId.startsWith('at1')) {
+        throw new ProtocolServiceError(
+          ProtocolError.TRANSACTION_REJECTED,
+          'Invalid transaction ID returned',
+          { txId }
+        );
+      }
+
+      return txId as AleoTransactionId;
+    } catch (error: any) {
+      if (error instanceof ProtocolServiceError) {
+        throw error;
+      }
+
+      throw new ProtocolServiceError(
+        ProtocolError.TRANSACTION_REJECTED,
+        'Failed to broadcast transaction',
+        { originalError: error }
+      );
+    }
   }
 
   /**
    * 等待交易确认
+   * 
+   * 通过轮询 getTransaction 来检查交易状态
    */
-  async waitForTransaction(txId: AleoTransactionId, timeoutMS?: number): Promise<any> {
-    // TODO: 实现交易等待
-    throw new Error('Not implemented yet');
+  async waitForTransaction(txId: AleoTransactionId, timeoutMS: number = 60000): Promise<any> {
+    const startTime = Date.now();
+    const pollInterval = 2000; // 2 秒轮询一次
+
+    while (Date.now() - startTime < timeoutMS) {
+      try {
+        const transaction = await this.networkClient.getTransaction(txId);
+        
+        if (transaction) {
+          // 交易已确认
+          return transaction;
+        }
+      } catch (error) {
+        // 交易可能还未被节点接收，继续轮询
+        console.debug('Transaction not found yet, continuing to poll:', txId);
+      }
+
+      // 等待下一次轮询
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    // 超时
+    throw new ProtocolServiceError(
+      ProtocolError.SYNC_TIMEOUT,
+      'Transaction confirmation timeout',
+      { txId, timeoutMS }
+    );
   }
 }
 

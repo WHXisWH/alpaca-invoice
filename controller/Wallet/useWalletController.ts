@@ -6,7 +6,7 @@ import { DecryptPermission } from '@demox-labs/aleo-wallet-adapter-base';
 import { IWalletController } from './IWalletController';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { IWalletService } from '@/services/WalletService/IWalletService';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import type { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { getNetworkFromEnv } from '@/lib/network';
@@ -196,6 +196,7 @@ export function useWalletController(): IWalletController {
   const wallet = useWallet();
   const [isConnecting, setIsConnecting] = useState(false);
   const [networkChanged, setNetworkChanged] = useState(false);
+  const [aleoProtocolService, setAleoProtocolService] = useState<AleoProtocolService | null>(null);
   
   // 从 Store 获取状态
   const { 
@@ -218,11 +219,21 @@ export function useWalletController(): IWalletController {
     return new WalletService(adapter);
   }, [wallet]);
 
-  // 创建 AleoProtocolService 实例（使用环境变量网络）
-  const aleoProtocolService = useMemo(() => {
+  // 🔧 异步加载 AleoProtocolService（避免在 Server Component 中加载 WASM）
+  useEffect(() => {
     const network = getNetworkFromEnv();
-    return new AleoProtocolService(network);
-  }, []); // 依赖为空数组，因为网络配置是静态的
+    
+    // 动态导入 AleoProtocolService，只在客户端执行
+    import('@/services/AleoProtocolService/AleoProtocolServiceImpl')
+      .then((module) => {
+        const service = new module.AleoProtocolService(network);
+        setAleoProtocolService(service);
+        console.log('✅ AleoProtocolService initialized on client side');
+      })
+      .catch((error) => {
+        console.error('❌ Failed to initialize AleoProtocolService:', error);
+      });
+  }, []); // 只在组件挂载时执行一次
 
   /**
    * 将 Microcredits (bigint) 转换为可读字符串
@@ -236,7 +247,7 @@ export function useWalletController(): IWalletController {
    * 同步余额（并行获取公开和私有余额）
    */
   const syncBalances = useCallback(async () => {
-    if (!walletService || !publicKey) return;
+    if (!walletService || !publicKey || !aleoProtocolService) return;
 
     try {
       // 并行获取两种余额
