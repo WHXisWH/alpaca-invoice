@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import Providers from '@/components/providers';
 import WalletWatcher from '@/components/wallet-watcher';
+import { ErrorHandler } from '@/components/error-handler';
+import { Toaster } from 'sonner';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -20,6 +22,17 @@ export default function RootLayout({
       <body className="bg-amber-50/30">
         <Providers>
           <WalletWatcher />
+          <ErrorHandler />
+          <Toaster 
+            position="top-right" 
+            richColors 
+            toastOptions={{
+              style: {
+                background: 'white',
+                border: '1px solid #fcd34d',
+              },
+            }}
+          />
 
           {/* Header */}
           <header className="border-b border-amber-200 bg-white/90 backdrop-blur-sm sticky top-0 z-50">

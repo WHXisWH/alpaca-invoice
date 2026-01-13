@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import WalletConnectButton from '@/components/wallet-connect-button';
+import WalletConnectButtonV2 from '@/components/wallet-connect-button-v2';
 
 export default function HomePage() {
   return (
@@ -14,7 +14,7 @@ export default function HomePage() {
             Privacy-preserving invoice and payment system. Built on Aleo zero-knowledge proofs, protecting business confidentiality with audit support.
           </p>
           <div className="mt-6">
-            <WalletConnectButton />
+            <WalletConnectButtonV2 />
           </div>
         </div>
       </section>
