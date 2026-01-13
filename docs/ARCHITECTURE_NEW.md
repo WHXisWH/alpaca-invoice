@@ -134,13 +134,22 @@ graph TB
 
 ### 3.3 Service 层 (底层能力)
 
-| 服务接口 | 职责描述 | 接口定义 |
-|---------|---------|---------|
-| **IWalletService** | 连接钱包、获取 ViewKey、获取余额、签名 | [IWalletService.ts](../services/WalletService/IWalletService.ts) |
-| **IZKProofService** | 生成 `create_invoice`、`pay_invoice`、`cancel_invoice` 的证明 | [IZKProofService.ts](../services/ZKProofService/IZKProofService.ts) |
-| **ICryptoService** | 计算 BHP256 哈希、本地明文加解密、Record 解密 | [ICryptoService.ts](../services/CryptoService/ICryptoService.ts) |
-| **IStorageService** | IndexedDB 的 CRUD，用于持久化加密后的 Archive 数据 | [IStorageService.ts](../services/StorageService/IStorageService.ts) |
-| **IAleoProtocolService** | 节点 RPC 交互（广播交易、查询 Mapping、扫描高度） | [IAleoProtocolService.ts](../services/AleoProtocolService/IAleoProtocolService.ts) |
+| 服务接口 | 职责描述 | 接口定义 | 实现状态 |
+|---------|---------|---------|---------|
+| **IWalletService** | 连接钱包、获取 ViewKey、获取余额、签名 | [IWalletService.ts](../services/WalletService/IWalletService.ts) | ✅ 完全实现 |
+| **ICryptoService** | 计算发票哈希、本地加解密、Record 解析、完整性验证 | [ICryptoService.ts](../services/CryptoService/ICryptoService.ts) | ✅ 完全实现 |
+| **IStorageService** | IndexedDB 的 CRUD，用于持久化数据 | [IStorageService.ts](../services/StorageService/IStorageService.ts) | ✅ 完全实现 |
+| **IAleoProtocolService** | 节点 RPC 交互（广播交易、查询 Mapping、扫描高度） | [IAleoProtocolService.ts](../services/AleoProtocolService/IAleoProtocolService.ts) | ⚠️ 部分实现 |
+| **IZKProofService** | 生成 ZKP 证明（未使用，钱包内部处理） | [IZKProofService.ts](../services/ZKProofService/IZKProofService.ts) | ⭕ 未使用 |
+
+> ***ICryptoService 说明**:  
+> - ✅ 已使用：`computeInvoiceHash` - 发票哈希计算（SHA-256 + 模运算）  
+> - ✅ 已使用：`encryptInvoiceDetails` / `decryptInvoiceDetails` - 本地加密存储（PBKDF2 + AES-GCM）  
+> - ✅ 已使用：`parseAleoRecord` - Record 数据解析（处理钱包已解密的数据）  
+> - ✅ 已使用：`verifyInvoiceIntegrity` - 完整性验证（对比本地哈希与链上哈希）  
+>
+> **加密存储流程**：  
+> v1.0 版本已完全实现加密存储功能。发票创建时，明细通过 `encryptInvoiceDetails` 加密后存入 IndexedDB，查看时通过 `decryptInvoiceDetails` 解密，并通过 `verifyInvoiceIntegrity` 验证数据完整性，确保数据未被篡改。
 
 ### 3.4 错误处理系统 (Error Handling System)
 
@@ -316,7 +325,6 @@ sequenceDiagram
     participant S as Store (Transaction/Invoice Store)
     participant CS as CryptoService (ICryptoService)
     participant WS as WalletService (IWalletService)
-    participant ZK as ZKProofService (IZKProofService)
     participant PS as AleoProtocolService (IAleoProtocolService)
     participant SS as StorageService (IStorageService)
     
@@ -326,7 +334,7 @@ sequenceDiagram
     C->>S: startTx('HASHING')
     
     C->>CS: computeInvoiceHash(invoiceData)
-    Note right of CS: 符合合约 BHP256::hash_to_field 要求 
+    Note right of CS: SHA-256 + 模运算<br/>符合合约 BHP256::hash_to_field 要求 
     CS-->>C: 返回 invoice_hash (Field)
     
     C->>S: updateProgress(10, 'PREPARING_RECORDS')
@@ -335,19 +343,19 @@ sequenceDiagram
     Note right of WS: 获取用于支付手续费的 credits.aleo Record
     WS-->>C: 返回 feeRecord
     
-    Note over C,ZK: --- 阶段 2: 零知识证明生成 ---
+    Note over C,WS: --- 阶段 2: 零知识证明生成 ---
     
     C->>S: updateProgress(20, 'PROVING')
     
-    C->>ZK: proveCreateInvoice(buyer, amount, due_date, hash, nonce, feeRecord)
-    Note right of ZK: 调用合约 transition create_invoice
+    C->>WS: requestTransaction(create_invoice)
+    Note right of WS: 钱包内部生成 ZKP<br/>调用合约 transition create_invoice
     
     loop 证明生成进度监听
-        ZK-->>S: updateProgress(percent, log)
+        WS-->>S: updateProgress(percent, log)
         S-->>V: UI 进度条同步更新
     end
     
-    ZK-->>C: 返回 ExecutionProof (执行证明)
+    WS-->>C: 返回 ExecutionProof (执行证明)
     
     Note over C,PS: --- 阶段 3: 链上广播与存证 ---
     
@@ -357,16 +365,16 @@ sequenceDiagram
     Note right of PS: 通过 RPC 将证明发送至 Aleo 节点
     PS-->>C: 返回 AleoTransactionId (txId)
     
-    Note over C,SS: --- 阶段 4: 本地隐私归档与状态同步 ---
+    Note over C,SS: --- 阶段 4: 本地加密归档与状态同步 ---
     
     C->>S: updateProgress(90, 'ARCHIVING')
     
-    C->>CS: encryptForLocal(invoiceDetails)
-    Note right of CS: 使用本地密钥对明细进行对称加密
-    CS-->>C: 返回 encryptedPayload
+    C->>CS: encryptInvoiceDetails(invoiceDetails, masterKey)
+    Note right of CS: PBKDF2 派生密钥<br/>AES-GCM 对称加密
+    CS-->>C: 返回 EncryptedPayload (iv + ciphertext)
     
-    C->>SS: saveInvoice(invoice_hash, encryptedPayload)
-    Note right of SS: 存入 IndexedDB 供以后解密查看
+    C->>SS: saveEncryptedInvoice(invoice_hash, encryptedPayload)
+    Note right of SS: 存入 IndexedDB<br/>以 invoice_hash 为键
     SS-->>C: 存储确认
     C->>S: InvoiceStore.addInvoice(newInvoice)
     C->>S: completeTx()
@@ -380,82 +388,148 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant V as View (Invoice Card)
-    participant C as Controller (useTransactionController)
-    participant S as Store (Transaction/Invoice/User)
-    participant WS as WalletService
-    participant ZK as ZKProofService
-    participant PS as AleoProtocolService
-    V->>C: 点击 "Pay Now" (Invoice ID)
-    C->>S: startTx('PREPARING')
+    participant PS as PaymentService
+    participant WS as WalletService (Leo Wallet)
+    participant S as Store (InvoiceStore)
+    participant BC as Blockchain
     
-    par 资源准备
-        C->>WS: getPrivateBalance() -> 校验余额是否足够
-        C->>WS: getFeeRecords(requiredAmount) -> 获取手续费 Record
-        C->>S: 获取对应的 Invoice Record 密文
-    end
-    C->>S: updateProgress(20, 'PROVING')
-    C->>ZK: provePayInvoice(invoiceId, paymentRecord, feeRecord)
+    V->>PS: 点击 "Pay Now" (invoice)
+    Note over PS: 前置检查：钱包已连接
     
-    loop ZK 进度反馈
-        ZK-->>S: updateProgress(percent, log)
-        S-->>V: 进度条丝滑更新
-    end
-    ZK-->>C: 返回 PaymentProof
-    C->>S: updateProgress(90, 'BROADCASTING')
+    Note over PS,BC: --- 阶段 1: 转账 Credits ---
+    PS->>WS: requestRecordPlaintexts('credits.aleo')
+    Note right of WS: 钱包自动使用 ViewKey 解密 Record
+    WS-->>PS: 返回已解密的 Credits Records
     
-    C->>PS: broadcastTransaction(PaymentProof)
-    PS-->>C: 返回 AleoTransactionId
+    PS->>PS: 选择第一个未花费的 Record
+    PS->>WS: requestTransaction(transfer_private)
+    Note right of WS: program: credits.aleo<br/>function: transfer_private<br/>inputs: [creditsRecord, seller, amount]
+    WS-->>BC: 广播转账交易
+    BC-->>PS: 返回 transferTxId
     
-    C->>S: updateProgress(95, 'CONFIRMING')
-    C->>PS: waitForTransaction(txId)
-    PS-->>C: 交易已确认入块 (Confirmed)
+    Note over PS,BC: --- 阶段 2: 标记发票为已支付 ---
+    PS->>PS: 生成 payment_nonce (随机 Field)
+    PS->>WS: requestRecordPlaintexts('zk_invoice.aleo')
+    WS-->>PS: 返回已解密的 Invoice Records
     
-    par 状态刷新
-        C->>PS: getInvoiceMappingStatus(invoiceId) -> 确认变更为 PAID
-        C->>S: updateInvoiceStatus(id, PAID)
-        C->>WS: getPrivateBalance() -> 更新私有余额
-        C->>PS: getPublicBalance(address) -> 更新公开余额
-    end
+    PS->>PS: 根据 invoice_id 查找匹配的 InvoiceRecord
+    PS->>WS: requestTransaction(mark_as_paid)
+    Note right of WS: program: zk_invoice.aleo<br/>function: mark_as_paid<br/>inputs: [invoiceRecord, paymentNonce]
+    WS-->>BC: 广播标记交易
+    BC-->>PS: 返回 markPaidTxId
     
-    C->>S: completeTx()
-    C->>V: 弹出"支付成功"并刷新列表
+    Note over PS,S: --- 阶段 3: 本地状态更新 ---
+    PS->>PS: 生成 PaymentReceipt<br/>(paymentId, invoiceId, payer, payee, amount)
+    PS->>S: 保存收据到 localStorage
+    PS->>S: 更新发票状态为 PAID
+    
+    PS->>V: 返回支付结果 (transactionId, paymentId)
+    V->>V: 显示"支付成功"并刷新列表
 ```
 
-### 4.4 自动化归档 (Automated Archiving)
+### 4.4 数据存储策略 (Data Storage Strategy)
+
+> **实现状态**: v1.0 版本采用 IndexedDB + 加密存储的完整方案，确保数据安全性和完整性。
+
+#### 当前实现 (v1.0) - 加密归档流程
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Controller (useTransactionController)
-    participant S as Store (Archive/Invoice Store)
+    participant V as View
+    participant C as Controller
     participant CS as CryptoService
-    participant SS as StorageService
-    participant WS as WalletService
-    Note over C,WS: 前置条件：AleoProtocolService 返回交易确认 (Confirmed)
-    C->>C: 触发 handleAutoArchive(invoiceId)
+    participant SS as StorageService (IndexedDB)
+    participant S as Store (ArchiveStore)
     
-    C->>WS: requestViewKey() (若当前会话未缓存)
-    WS-->>C: 返回 ViewKey
+    Note over V,S: v1.0 实现：交易确认后自动加密归档
     
-    C->>CS: decryptAleoRecord(cipherText, viewKey)
-    Note right of CS: 使用 ViewKey 解密链上最新的支付凭证 Record
-    CS-->>C: 返回明细 (InvoiceDetails)
+    V->>C: 发票创建/支付完成
+    C->>C: 触发自动归档流程
     
-    rect rgb(240, 248, 255)
-    Note over C,SS: 本地持久化保护
-    C->>CS: encryptInvoiceDetails(details, localKey)
-    CS-->>C: 返回加密后的 Payload
+    C->>CS: encryptInvoiceDetails(details, masterKey)
+    Note right of CS: PBKDF2 派生密钥 (100,000 次迭代)<br/>AES-GCM 对称加密
+    CS-->>C: 返回 EncryptedPayload (iv + ciphertext)
+    
     C->>SS: saveEncryptedInvoice(invoiceHash, payload)
-    SS-->>C: 写入 IndexedDB 成功
-    end
-    C->>S: ArchiveStore.cacheDetails(hash, details)
-    C->>S: InvoiceStore.updateInvoiceStatus(id, PAID)
+    Note right of SS: 存入 IndexedDB<br/>以 invoice_hash 为键
+    SS-->>C: 写入成功
     
-    Note over C,S: 状态更新触发 UI 局部刷新
-    C-->>C: 归档流程结束
+    C->>S: ArchiveStore.cacheDecryptedDetails(hash, details)
+    Note right of S: 内存缓存明文<br/>用于当前会话访问
+    
+    Note over C,S: 优势：<br/>1. 数据持久化加密保护<br/>2. 支持离线访问<br/>3. 可审计的访问记录<br/>4. 大容量存储 (~50MB+)
 ```
 
-### 4.5 审计导出 (Audit Export)
+#### 数据安全特性
+
+| 特性 | v1.0 实现 |
+|------|----------|
+| 存储位置 | ✅ IndexedDB |
+| 数据加密 | ✅ AES-GCM 加密 |
+| 密钥管理 | ✅ PBKDF2 派生 + 用户密钥 |
+| 离线访问 | ✅ 支持 |
+| 数据容量 | ✅ ~50MB+ |
+| 完整性验证 | ✅ verifyInvoiceIntegrity |
+| 审计追踪 | ✅ 访问记录 |
+
+### 4.5 发票验证流程 (Invoice Verification)
+
+> **核心功能**: 验证本地存储的发票明细与链上存证的完整性，防止数据篡改。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant V as View (Invoice Detail)
+    participant C as Controller
+    participant WS as WalletService
+    participant CS as CryptoService
+    participant SS as StorageService (IndexedDB)
+    participant BC as Blockchain
+    
+    Note over V,BC: --- 阶段 1: 获取链上 Record ---
+    
+    V->>C: 查看发票详情 (invoice_id)
+    C->>WS: requestRecords('zk_invoice.aleo')
+    Note right of WS: 钱包使用 ViewKey 自动解密
+    WS-->>C: 返回已解密的 InvoiceRecord[]
+    
+    C->>CS: parseAleoRecord<AleoInvoiceRecord>(jsonString)
+    Note right of CS: 解析 JSON，提取 invoice_hash
+    CS-->>C: 返回 parsedRecord (包含 invoice_hash)
+    
+    Note over C,SS: --- 阶段 2: 获取本地加密明细 ---
+    
+    C->>SS: getEncryptedInvoice(invoice_hash)
+    Note right of SS: 从 IndexedDB 读取加密载荷
+    SS-->>C: 返回 EncryptedPayload (iv + ciphertext)
+    
+    Note over C,CS: --- 阶段 3: 解密并验证完整性 ---
+    
+    C->>CS: decryptInvoiceDetails(encryptedPayload, masterKey)
+    Note right of CS: PBKDF2 派生密钥<br/>AES-GCM 解密
+    CS-->>C: 返回 InvoiceDetails (明文)
+    
+    C->>CS: verifyInvoiceIntegrity(localDetails, chainInvoiceHash)
+    Note right of CS: 重新计算本地哈希<br/>与链上 invoice_hash 对比
+    CS-->>C: 返回 isValid (boolean)
+    
+    alt 验证通过
+        C->>V: 显示发票详情
+        Note over V: 数据完整，未被篡改
+    else 验证失败
+        C->>V: 显示错误提示
+        Note over V: 数据可能被篡改<br/>拒绝显示
+    end
+```
+
+**验证流程说明**:
+1. **链上存证**: 发票创建时，`invoice_hash` 存储在链上 `InvoiceRecord` 中，不可篡改
+2. **本地加密存储**: 发票明细通过 `encryptInvoiceDetails` 加密后存入 IndexedDB
+3. **完整性验证**: 查看发票时，重新计算本地明细的哈希，与链上哈希对比
+4. **防篡改保护**: 如果本地数据被篡改，哈希不匹配，系统拒绝显示
+
+### 4.6 审计导出 (Audit Export)
 
 ```mermaid
 sequenceDiagram
@@ -479,7 +553,7 @@ sequenceDiagram
     V->>V: 用户将文件发送给审计师 (Auditor)
 ```
 
-### 4.6 取消开票 (Cancel Invoice)
+### 4.7 取消开票 (Cancel Invoice)
 
 ```mermaid
 sequenceDiagram
@@ -516,15 +590,26 @@ sequenceDiagram
 
 ### 5.1 解耦原则
 
-- **View 层**禁止直接调用 `ZKProofService`，必须通过 Controller 驱动 `TransactionStore`
-- **View 层**不直接读取 Store，所有状态通过 Controller 传递
-- **Service 层**不直接操作 Model，所有状态更新由 Controller 协调
+- **View 层**不直接调用底层 Service，业务逻辑通过 Service 层封装
+- **View 层**通过 Service 层与钱包交互，不直接访问 `window.leoWallet`
+- **Service 层**专注于业务逻辑封装，不包含 UI 相关代码
+- **Store 层**负责状态管理，不直接调用钱包或区块链 API
 
-### 5.2 持久化原则
+### 5.2 持久化原则（当前实现）
 
-- 所有解密后的数据必须通过 `StorageService` 进入 `useArchiveStore`
-- 敏感数据在本地存储前必须经过加密处理
-- IndexedDB 作为持久化缓存，提升用户体验
+> **v1.0 策略**: 采用 IndexedDB + 加密存储的完整方案
+
+- **存储方案**：使用 `IndexedDB` 存储加密后的发票明细
+- **加密方案**：所有敏感数据通过 `CryptoService` 加密后存储
+  - 使用 PBKDF2 (100,000 次迭代) 派生用户密钥
+  - AES-GCM 对称加密保护数据隐私
+- **完整性验证**：通过 `verifyInvoiceIntegrity` 确保数据未被篡改
+- **设计优势**：
+  - ✅ 数据持久化加密保护
+  - ✅ 支持离线访问
+  - ✅ 大容量存储（~50MB+）
+  - ✅ 可审计的访问记录
+  - ✅ 防篡改机制
 
 ### 5.3 单一职责原则
 
@@ -542,8 +627,113 @@ sequenceDiagram
 
 ---
 
-## 6. 版本信息
+## 6. 实现状态与版本规划
 
-- **文档版本**: v1.1
-- **最后更新**: 2026-01
+### 6.1 当前实现状态 (v1.0)
+
+#### ✅ 已完成功能
+
+| 功能模块 | 实现状态 | 技术方案 |
+|---------|---------|---------|
+| **钱包连接** | ✅ 完全实现 | Leo Wallet 适配器 |
+| **发票创建** | ✅ 完全实现 | 直接调用钱包 `requestTransaction` |
+| **发票支付** | ✅ 完全实现 | 两步流程：转账 + 标记已支付 |
+| **发票取消** | ✅ 完全实现 | 调用合约 `cancel_invoice` |
+| **余额查询** | ✅ 完全实现 | 私有余额 + 公开余额 |
+| **哈希计算** | ✅ 完全实现 | SHA-256 + 模运算（Field 范围） |
+| **数据存储** | ✅ 完全实现 | IndexedDB + 加密存储 |
+| **数据加密** | ✅ 完全实现 | PBKDF2 + AES-GCM |
+| **完整性验证** | ✅ 完全实现 | verifyInvoiceIntegrity |
+| **审计密钥** | ✅ 基础实现 | SHA-256 哈希生成 |
+| **错误处理** | ✅ 完全实现 | ServiceError + AppError 分层 |
+
+#### ⚠️ 部分实现功能
+
+| 功能模块 | 当前状态 | 缺失部分 | 计划版本 |
+|---------|---------|---------|---------|
+| **审计导出** | ⚠️ 基础功能 | 钱包签名、文件导出 | v2.0 |
+| **Record 解密** | ⚠️ 简化实现 | 依赖钱包自动解密 | - |
+| **交易监控** | ⚠️ 基础实现 | 实时进度反馈 | v2.0 |
+
+#### ❌ 未实现功能
+
+| 功能模块 | 原因 | 计划版本 |
+|---------|-----|---------|
+| **ZKProofService** | 钱包内部已处理证明生成 | 不需要 |
+
+### 6.2 技术架构决策
+
+#### 决策 1: 不使用独立的 ZKProofService
+
+**原因**:
+- Leo Wallet 的 `requestTransaction` 已内置 ZKP 生成
+- 无需重复封装，减少代码复杂度
+- 钱包可以更好地管理证明生成过程
+
+**影响**:
+- ✅ 简化了架构
+- ✅ 提高了开发效率
+- ⚠️ 依赖钱包实现（但这是必然的）
+
+#### 决策 2: v1.0 使用 IndexedDB + 加密存储
+
+**原因**:
+- 生产环境需要数据安全保护
+- 支持大容量存储需求
+- 提供完整性验证机制
+- 符合隐私保护最佳实践
+
+**影响**:
+- ✅ 数据安全性高
+- ✅ 支持离线访问
+- ✅ 防篡改保护
+- ✅ 可审计追踪
+- ⚠️ 需要密钥管理（通过 PBKDF2 派生）
+
+#### 决策 3: 完整的验证流程
+
+**原因**:
+- 确保本地数据与链上存证一致
+- 防止数据被恶意篡改
+- 提供用户信任保障
+
+**实现**:
+- ✅ `computeInvoiceHash` 计算哈希
+- ✅ `verifyInvoiceIntegrity` 验证完整性
+- ✅ 链上存证 + 本地加密存储双重保护
+
+### 6.3 版本规划
+
+#### v1.0 (当前版本)
+- ✅ 核心业务流程完整
+- ✅ IndexedDB + 加密存储
+- ✅ 完整性验证机制
+- ✅ 钱包集成完整
+- ✅ 生产环境就绪
+
+#### v2.0 (规划中)
+- 🎯 完善审计导出（钱包签名、JSON/PDF 导出）
+- 🎯 实时交易进度反馈
+- 🎯 增强的密钥管理（用户特定盐值）
+- 🎯 批量操作优化
+
+#### v3.0 (远期规划)
+- 🔮 多钱包支持
+- 🔮 批量操作
+- 🔮 高级审计功能
+- 🔮 数据同步和备份
+
+---
+
+## 7. 版本信息
+
+- **文档版本**: v1.3
+- **代码版本**: v1.0
+- **最后更新**: 2026-01-13
+- **更新内容**: 
+  - 更新数据存储策略：v1.0 使用 IndexedDB + 加密存储
+  - 添加发票验证流程（完整性验证）
+  - 更新开票流程时序图（包含加密归档）
+  - 修正实现状态表（数据加密和存储已完全实现）
+  - 更新技术架构决策（反映实际实现）
 - **维护团队**: Aleo Privacy Invoice System Team
