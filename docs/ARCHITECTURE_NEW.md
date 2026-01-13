@@ -325,7 +325,7 @@ sequenceDiagram
     V->>C: 提交发票表单 (InvoiceDetails)
     C->>S: startTx('HASHING')
     
-    C->>CS: computeBHP256Hash(invoiceData)
+    C->>CS: computeInvoiceHash(invoiceData)
     Note right of CS: 符合合约 BHP256::hash_to_field 要求 
     CS-->>C: 返回 invoice_hash (Field)
     
