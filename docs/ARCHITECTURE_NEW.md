@@ -322,64 +322,74 @@ sequenceDiagram
     autonumber
     participant V as View (Create Invoice Form)
     participant C as Controller (useTransactionController)
-    participant S as Store (Transaction/Invoice Store)
+    participant S as Store (User/Transaction/Invoice Store)
     participant CS as CryptoService (ICryptoService)
     participant WS as WalletService (IWalletService)
     participant PS as AleoProtocolService (IAleoProtocolService)
     participant SS as StorageService (IStorageService)
     
-    Note over V,SS: --- 阶段 1: 数据准备与预处理 ---
+    Note over V,SS: --- 阶段 1: 权限检查与数据准备 ---
     
     V->>C: 提交发票表单 (InvoiceDetails)
+    activate C
+    
+    Note over C,WS: 按需触发身份授权
+    alt MasterKey 不存在 (UserStore 为空)
+        C->>S: updateProgress(0, 'AUTHORIZING')
+        C->>WS: signMessage("Sign to access your private invoices")
+        WS-->>C: 返回 Signature
+        C->>CS: deriveMasterKey(Signature)
+        CS-->>C: 返回 masterKey
+        C->>S: setMasterKey(masterKey)
+    end
+
     C->>S: startTx('HASHING')
     
     C->>CS: computeInvoiceHash(invoiceData)
-    Note right of CS: SHA-256 + 模运算<br/>符合合约 BHP256::hash_to_field 要求 
+    Note right of CS: 使用 SHA-256 并应用模运算 (ALEO_FIELD_MODULUS)<br/>符合合约对 field 类型的量级要求 
     CS-->>C: 返回 invoice_hash (Field)
     
-    C->>S: updateProgress(10, 'PREPARING_RECORDS')
+    C->>S: updateProgress(10, 'PREPARING')
     
-    C->>WS: getFeeRecord(estimatedFee)
-    Note right of WS: 获取用于支付手续费的 credits.aleo Record
-    WS-->>C: 返回 feeRecord
+    opt 可选：显示预估费用（用户体验）
+        C->>PS: estimateExecutionFee('create_invoice', params)
+        PS-->>C: 返回 estimatedFee (Microcredits)
+        C->>V: 显示预估费用给用户
+        Note right of C: 仅用于信息展示，不影响交易执行
+    end
     
-    Note over C,WS: --- 阶段 2: 零知识证明生成 ---
+    Note over C,WS: --- 阶段 2: 零知识证明生成与链上广播 ---
     
     C->>S: updateProgress(20, 'PROVING')
     
-    C->>WS: requestTransaction(create_invoice)
-    Note right of WS: 钱包内部生成 ZKP<br/>调用合约 transition create_invoice
+    C->>WS: requestTransaction(create_invoice, params)
+    Note right of WS: 钱包内部自动完成：<br/>1. 生成零知识证明 (ZKP)<br/>2. 构建交易<br/>3. 广播到链上<br/>feePrivate: false（钱包自动处理手续费）<br/>钱包会自动选择合适的 Record 或使用公开余额支付 [cite: 7, 11]
     
-    loop 证明生成进度监听
+    loop 进度反馈（钱包内部）
         WS-->>S: updateProgress(percent, log)
         S-->>V: UI 进度条同步更新
     end
     
-    WS-->>C: 返回 ExecutionProof (执行证明)
+    WS-->>C: 返回 transactionId
+    Note right of WS: 交易已自动广播到链上<br/>可以直接查询交易状态
     
-    Note over C,PS: --- 阶段 3: 链上广播与存证 ---
-    
-    C->>S: updateProgress(80, 'BROADCASTING')
-    
-    C->>PS: broadcastTransaction(ExecutionProof)
-    Note right of PS: 通过 RPC 将证明发送至 Aleo 节点
-    PS-->>C: 返回 AleoTransactionId (txId)
-    
-    Note over C,SS: --- 阶段 4: 本地加密归档与状态同步 ---
+    Note over C,SS: --- 阶段 3: 本地加密归档与状态同步 ---
     
     C->>S: updateProgress(90, 'ARCHIVING')
     
     C->>CS: encryptInvoiceDetails(invoiceDetails, masterKey)
-    Note right of CS: PBKDF2 派生密钥<br/>AES-GCM 对称加密
+    Note right of CS: 使用随机 IV + AES-GCM 进行对称加密
     CS-->>C: 返回 EncryptedPayload (iv + ciphertext)
     
     C->>SS: saveEncryptedInvoice(invoice_hash, encryptedPayload)
-    Note right of SS: 存入 IndexedDB<br/>以 invoice_hash 为键
+    Note right of SS: 存入 IndexedDB 供后续查看
     SS-->>C: 存储确认
+    
     C->>S: InvoiceStore.addInvoice(newInvoice)
     C->>S: completeTx()
     
     C->>V: 触发 "创建成功" 通知 (Toast)
+    deactivate C
 ```
 
 ### 4.3 支付发票 (Pay Invoice)
@@ -403,7 +413,7 @@ sequenceDiagram
     
     PS->>PS: 选择第一个未花费的 Record
     PS->>WS: requestTransaction(transfer_private)
-    Note right of WS: program: credits.aleo<br/>function: transfer_private<br/>inputs: [creditsRecord, seller, amount]
+    Note right of WS: program: credits.aleo<br/>function: transfer_private<br/>inputs: [creditsRecord, seller, amount]<br/>feePrivate: false（钱包自动处理手续费）
     WS-->>BC: 广播转账交易
     BC-->>PS: 返回 transferTxId
     
@@ -414,7 +424,7 @@ sequenceDiagram
     
     PS->>PS: 根据 invoice_id 查找匹配的 InvoiceRecord
     PS->>WS: requestTransaction(mark_as_paid)
-    Note right of WS: program: zk_invoice.aleo<br/>function: mark_as_paid<br/>inputs: [invoiceRecord, paymentNonce]
+    Note right of WS: program: zk_invoice.aleo<br/>function: mark_as_paid<br/>inputs: [invoiceRecord, paymentNonce]<br/>feePrivate: false（钱包自动处理手续费）
     WS-->>BC: 广播标记交易
     BC-->>PS: 返回 markPaidTxId
     
