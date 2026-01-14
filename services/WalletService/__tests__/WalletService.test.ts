@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from '../WalletServiceImpl';
 import { AleoAddress } from '@/lib/types';
 import type { WalletContextState } from '@demox-labs/aleo-wallet-adapter-react';
-import { mock } from 'node:test';
 
 /**
  * WalletService 单元测试
