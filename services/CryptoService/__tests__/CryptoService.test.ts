@@ -975,5 +975,86 @@ describe('CryptoService', () => {
       }
     });
   });
+
+  describe('deriveMasterKey', () => {
+    it('应该成功从签名派生主密钥', async () => {
+      // Arrange
+      const signature = 'test_signature_123456789';
+
+      // Act
+      const masterKey = await service.deriveMasterKey(signature);
+
+      // Assert
+      expect(masterKey).toBeDefined();
+      expect(typeof masterKey).toBe('string');
+      expect(masterKey.length).toBe(64); // SHA-256 哈希的十六进制字符串长度为 64
+    });
+
+    it('相同签名应该产生相同的主密钥（确定性）', async () => {
+      // Arrange
+      const signature = 'test_signature_123456789';
+
+      // Act
+      const masterKey1 = await service.deriveMasterKey(signature);
+      const masterKey2 = await service.deriveMasterKey(signature);
+
+      // Assert
+      expect(masterKey1).toBe(masterKey2);
+    });
+
+    it('不同签名应该产生不同的主密钥', async () => {
+      // Arrange
+      const signature1 = 'test_signature_123456789';
+      const signature2 = 'test_signature_987654321';
+
+      // Act
+      const masterKey1 = await service.deriveMasterKey(signature1);
+      const masterKey2 = await service.deriveMasterKey(signature2);
+
+      // Assert
+      expect(masterKey1).not.toBe(masterKey2);
+    });
+
+    it('签名为空时应该抛出错误', async () => {
+      // Act & Assert
+      await expect(service.deriveMasterKey('')).rejects.toThrow('Signature cannot be empty');
+      await expect(service.deriveMasterKey('   ')).rejects.toThrow('Signature cannot be empty');
+    });
+
+    it('应该正确处理各种签名格式', async () => {
+      // Arrange
+      const signatures = [
+        'simple_signature',
+        'signature_with_special_chars_!@#$%^&*()',
+        'signature_with_numbers_1234567890',
+        'signature_with_unicode_测试签名',
+        'a'.repeat(100), // 长签名
+      ];
+
+      // Act & Assert
+      for (const signature of signatures) {
+        const masterKey = await service.deriveMasterKey(signature);
+        expect(masterKey).toBeDefined();
+        expect(typeof masterKey).toBe('string');
+        expect(masterKey.length).toBe(64); // SHA-256 哈希的十六进制字符串长度为 64
+      }
+    });
+
+    it('主密钥应该是有效的十六进制字符串', async () => {
+      // Arrange
+      const signature = 'test_signature';
+
+      // Act
+      const masterKey = await service.deriveMasterKey(signature);
+
+      // Assert
+      expect(masterKey).toMatch(/^[0-9a-f]{64}$/); // 64 个十六进制字符
+    });
+
+    it('应该抛出 CryptoServiceError 类型的错误', async () => {
+      // Act & Assert
+      await expect(service.deriveMasterKey('')).rejects.toThrow(CryptoServiceError);
+    });
+  });
 });
 

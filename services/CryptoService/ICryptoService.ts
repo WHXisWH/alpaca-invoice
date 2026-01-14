@@ -92,4 +92,28 @@ export interface ICryptoService {
    * @throws {CryptoServiceError} DECRYPTION_FAILED 如果密钥错误或数据损坏
    */
   decryptInvoiceDetails(payload: EncryptedPayload, masterKey: string): Promise<InvoiceDetails>;
+
+  /**
+   * 从签名派生主密钥（用于本地加密发票明细）
+   * 
+   * 使用场景：
+   * - 用户首次创建发票时，需要授权访问私有发票数据
+   * - 通过签名消息获取签名，然后从此签名派生主密钥
+   * - 主密钥用于加密/解密存储在 IndexedDB 中的发票明细
+   * 
+   * 实现说明：
+   * 1. 使用 SHA-256 对签名进行哈希
+   * 2. 将哈希结果转换为十六进制字符串
+   * 3. 返回该字符串作为 masterKey（后续会使用 PBKDF2 进一步派生加密密钥）
+   * 
+   * 安全性：
+   * - 签名是用户钱包私钥对特定消息的签名，具有唯一性和不可伪造性
+   * - 使用 SHA-256 确保密钥的随机性和安全性
+   * - 相同的签名总是产生相同的主密钥（确定性派生）
+   * 
+   * @param signature 钱包签名的消息（来自 signMessage）
+   * @returns 主密钥字符串（用于后续加密/解密）
+   * @throws {CryptoServiceError} 可能抛出 ENCRYPTION_FAILED
+   */
+  deriveMasterKey(signature: string): Promise<string>;
 }
