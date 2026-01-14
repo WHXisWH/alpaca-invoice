@@ -7,7 +7,7 @@ import {
 } from '@/lib/types';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
-import { AleoNetworkClient } from '@provablehq/sdk';
+import { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
 
 /**
  * AleoProtocolService 实现类
@@ -18,10 +18,27 @@ import { AleoNetworkClient } from '@provablehq/sdk';
  */
 export class AleoProtocolService implements IAleoProtocolService {
   private networkClient: AleoNetworkClient;
+  private programManager: ProgramManager | null = null;
+  private network: WalletAdapterNetwork;
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
     const baseUrl = this.getBaseUrlForNetwork(network);
     this.networkClient = new AleoNetworkClient(baseUrl);
+    this.network = network;
+  }
+
+  /**
+   * 获取或创建 ProgramManager 实例（延迟初始化）
+   * ProgramManager 可能需要 WASM 初始化，所以采用延迟加载策略
+   */
+  private getProgramManager(): ProgramManager {
+    if (!this.programManager) {
+      const baseUrl = this.getBaseUrlForNetwork(this.network);
+      // ProgramManager 构造函数: (host?, keyProvider?, recordProvider?, networkClientOptions?)
+      // 对于费用估算，我们不需要 keyProvider 和 recordProvider
+      this.programManager = new ProgramManager(baseUrl);
+    }
+    return this.programManager;
   }
 
   /**
@@ -259,6 +276,59 @@ export class AleoProtocolService implements IAleoProtocolService {
       'Transaction confirmation timeout',
       { txId, timeoutMS }
     );
+  }
+
+  /**
+   * 估算执行费用（Microcredits）
+   * 
+   * 通过构建 Authorization 并使用 SDK 的 estimateFeeForAuthorization 进行预估
+   * 增加 20% 冗余以确保交易能够成功执行
+   * 
+   * 如果 SDK 预估失败，返回降级方案：250,000 microcredits（0.25 credits）
+   */
+  async estimateExecutionFee(
+    programName: string,
+    functionName: string,
+    inputs: string[]
+  ): Promise<Microcredits> {
+    try {
+      const programManager = this.getProgramManager();
+
+      // 第一步：构建 Authorization 对象
+      // 这个对象包含了交易的完整描述，但还没有生成昂贵的 ZK 证明
+      const authorization = await programManager.buildAuthorization({
+        programName,
+        functionName,
+        inputs,
+        // 如果程序还没部署或者在本地，可以传入 programSource
+        // 但通常不需要，因为 SDK 会从网络获取
+      });
+
+      // 第二步：使用 estimateFeeForAuthorization 进行预估
+      const baseFeeMicrocredits = await programManager.estimateFeeForAuthorization({
+        authorization,
+        programName: 'credits.aleo', // 费用支付程序
+      });
+
+      // 第三步：转换并增加 20% 冗余
+      const fee = BigInt(baseFeeMicrocredits);
+      const feeWithBuffer = (fee * 120n) / 100n; // 增加 20% 冗余
+
+      return feeWithBuffer;
+    } catch (error: any) {
+      console.error('SDK 预估失败:', error);
+      
+      // 如果是 ProtocolServiceError，直接抛出
+      if (error instanceof ProtocolServiceError) {
+        throw error;
+      }
+
+      // 降级方案：返回经验硬编码值
+      // 250,000 microcredits = 0.25 credits
+      // 这是一个保守的估算值，适用于大多数简单的合约调用
+      console.warn('使用降级费用估算值: 250,000 microcredits');
+      return 250_000n;
+    }
   }
 }
 

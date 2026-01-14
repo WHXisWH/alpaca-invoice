@@ -8,13 +8,41 @@ const {
   mockGetProgramMappingValue,
   mockGetLatestHeight, 
   mockSubmitTransaction, 
-  mockGetTransaction 
-} = vi.hoisted(() => ({
-  mockGetProgramMappingValue: vi.fn(),
-  mockGetLatestHeight: vi.fn(),
-  mockSubmitTransaction: vi.fn(),
-  mockGetTransaction: vi.fn(),
-}));
+  mockGetTransaction,
+  mockBuildAuthorization,
+  mockEstimateFeeForAuthorization,
+  mockAuthorization,
+  MockProgramManager
+} = vi.hoisted(() => {
+  const mockGetProgramMappingValue = vi.fn();
+  const mockGetLatestHeight = vi.fn();
+  const mockSubmitTransaction = vi.fn();
+  const mockGetTransaction = vi.fn();
+  const mockBuildAuthorization = vi.fn();
+  const mockEstimateFeeForAuthorization = vi.fn();
+  
+  // Mock Authorization 对象
+  const mockAuthorization = {
+    toExecutionId: vi.fn(() => ({ toString: () => 'mock-execution-id' })),
+  };
+  
+  // Mock ProgramManager 类
+  const MockProgramManager = vi.fn().mockImplementation(() => ({
+    buildAuthorization: mockBuildAuthorization,
+    estimateFeeForAuthorization: mockEstimateFeeForAuthorization,
+  }));
+  
+  return {
+    mockGetProgramMappingValue,
+    mockGetLatestHeight,
+    mockSubmitTransaction,
+    mockGetTransaction,
+    mockBuildAuthorization,
+    mockEstimateFeeForAuthorization,
+    mockAuthorization,
+    MockProgramManager,
+  };
+});
 
 // Mock AleoNetworkClient 必须在导入 AleoProtocolService 之前
 vi.mock('@provablehq/sdk', () => ({
@@ -23,7 +51,8 @@ vi.mock('@provablehq/sdk', () => ({
     getLatestHeight: mockGetLatestHeight,
     submitTransaction: mockSubmitTransaction,
     getTransaction: mockGetTransaction,
-  }))
+  })),
+  ProgramManager: MockProgramManager,
 }));
 
 // 在 mock 之后导入
@@ -39,6 +68,9 @@ describe('AleoProtocolService', () => {
     mockGetLatestHeight.mockReset();
     mockSubmitTransaction.mockReset();
     mockGetTransaction.mockReset();
+    mockBuildAuthorization.mockReset();
+    mockEstimateFeeForAuthorization.mockReset();
+    MockProgramManager.mockClear();
     
     service = new AleoProtocolService(WalletAdapterNetwork.TestnetBeta);
   });
@@ -197,6 +229,177 @@ describe('AleoProtocolService', () => {
     it('默认应该使用 TestnetBeta', () => {
       const defaultService = new AleoProtocolService();
       expect(defaultService).toBeDefined();
+    });
+  });
+
+  describe('estimateExecutionFee', () => {
+    const mockProgramName = 'zk_invoice.aleo';
+    const mockFunctionName = 'create_invoice';
+    const mockInputs = ['aleo1test', '1000000u64', '1234567890u32'];
+
+    it('应该成功估算执行费用并增加 20% 冗余', async () => {
+      // Arrange
+      const baseFee = 200000n; // 200,000 microcredits
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockResolvedValue(baseFee);
+
+      // Act
+      const fee = await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      // 200,000 * 1.2 = 240,000
+      expect(fee).toBe(240000n);
+      expect(mockBuildAuthorization).toHaveBeenCalledWith({
+        programName: mockProgramName,
+        functionName: mockFunctionName,
+        inputs: mockInputs,
+      });
+      expect(mockEstimateFeeForAuthorization).toHaveBeenCalledWith({
+        authorization: mockAuthorization,
+        programName: 'credits.aleo',
+      });
+    });
+
+    it('应该处理大额费用估算', async () => {
+      // Arrange
+      const baseFee = 1000000n; // 1,000,000 microcredits
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockResolvedValue(baseFee);
+
+      // Act
+      const fee = await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      // 1,000,000 * 1.2 = 1,200,000
+      expect(fee).toBe(1200000n);
+    });
+
+    it('应该处理零费用（边界情况）', async () => {
+      // Arrange
+      const baseFee = 0n;
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockResolvedValue(baseFee);
+
+      // Act
+      const fee = await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      expect(fee).toBe(0n);
+    });
+
+    it('当 buildAuthorization 失败时应该返回降级值', async () => {
+      // Arrange
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBuildAuthorization.mockRejectedValue(new Error('Build authorization failed'));
+
+      // Act
+      const fee = await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      expect(fee).toBe(250_000n); // 降级值
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledWith('使用降级费用估算值: 250,000 microcredits');
+
+      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('当 estimateFeeForAuthorization 失败时应该返回降级值', async () => {
+      // Arrange
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockRejectedValue(new Error('Estimate fee failed'));
+
+      // Act
+      const fee = await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      expect(fee).toBe(250_000n); // 降级值
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledWith('使用降级费用估算值: 250,000 microcredits');
+
+      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('当抛出 ProtocolServiceError 时应该重新抛出', async () => {
+      // Arrange
+      const { ProtocolServiceError, ProtocolError } = await import('../IAleoProtocolService');
+      const expectedError = new ProtocolServiceError(
+        ProtocolError.NODE_CONNECTION_FAILED,
+        'Connection failed'
+      );
+      mockBuildAuthorization.mockRejectedValue(expectedError);
+
+      // Act & Assert
+      await expect(
+        service.estimateExecutionFee(mockProgramName, mockFunctionName, mockInputs)
+      ).rejects.toThrow(ProtocolServiceError);
+    });
+
+    it('应该正确传递不同的输入参数', async () => {
+      // Arrange
+      const customInputs = ['aleo1buyer', '5000000u64', '9876543210u32', 'hash123field'];
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockResolvedValue(300000n);
+
+      // Act
+      await service.estimateExecutionFee(
+        mockProgramName,
+        mockFunctionName,
+        customInputs
+      );
+
+      // Assert
+      expect(mockBuildAuthorization).toHaveBeenCalledWith({
+        programName: mockProgramName,
+        functionName: mockFunctionName,
+        inputs: customInputs,
+      });
+    });
+
+    it('应该为不同的程序名称正确调用', async () => {
+      // Arrange
+      const customProgramName = 'credits.aleo';
+      const customFunctionName = 'transfer_public';
+      mockBuildAuthorization.mockResolvedValue(mockAuthorization);
+      mockEstimateFeeForAuthorization.mockResolvedValue(150000n);
+
+      // Act
+      await service.estimateExecutionFee(
+        customProgramName,
+        customFunctionName,
+        mockInputs
+      );
+
+      // Assert
+      expect(mockBuildAuthorization).toHaveBeenCalledWith({
+        programName: customProgramName,
+        functionName: customFunctionName,
+        inputs: mockInputs,
+      });
     });
   });
 });

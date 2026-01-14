@@ -50,6 +50,17 @@ npm test -- --coverage
    - ✅ 为 TestnetBeta 使用正确的 RPC URL
    - ✅ 默认使用 TestnetBeta
 
+5. **estimateExecutionFee() - 估算执行费用**
+   - ✅ 成功估算执行费用并增加 20% 冗余
+   - ✅ 处理大额费用估算
+   - ✅ 处理零费用（边界情况）
+   - ✅ 当 buildAuthorization 失败时返回降级值（250,000 microcredits）
+   - ✅ 当 estimateFeeForAuthorization 失败时返回降级值
+   - ✅ 当抛出 ProtocolServiceError 时重新抛出
+   - ✅ 正确传递不同的输入参数
+   - ✅ 为不同的程序名称正确调用
+   - **说明**: 通过构建 Authorization 并使用 SDK 的 estimateFeeForAuthorization 进行预估，增加 20% 冗余以确保交易能够成功执行。如果 SDK 预估失败，返回降级方案：250,000 microcredits（0.25 credits）
+
 ### ⏳ 待实现功能测试
 
 以下功能在接口中已定义，但实现中标记为 TODO，暂未编写测试：
@@ -70,10 +81,11 @@ npm test -- --coverage
 
 ### Mock 策略
 
-- 使用 `vi.fn()` 模拟 `global.fetch`
-- 在 `beforeEach` 中创建新的服务实例
-- 在 `afterEach` 中恢复原始的 fetch 和清理所有 mock
-- 针对不同场景配置不同的 mock 响应（成功、404、500 等）
+- 使用 `vi.fn()` 和 `vi.hoisted()` 模拟外部依赖
+- Mock `@provablehq/sdk` 的 `AleoNetworkClient` 和 `ProgramManager`
+- 在 `beforeEach` 中创建新的服务实例并重置所有 mock
+- 在 `afterEach` 中清理所有 mock
+- 针对不同场景配置不同的 mock 响应（成功、失败、错误等）
 
 ### 错误测试
 
@@ -132,6 +144,26 @@ npm test -- --coverage
 - **非 404 错误响应**: 对于 `getPublicBalance()`，返回 `0n` 并打印警告
 - **网络错误**: 对于 `getLatestBlockHeight()`，抛出 `ProtocolServiceError` 并包含错误码 `NODE_CONNECTION_FAILED`
 
+## 费用估算说明
+
+### estimateExecutionFee 实现细节
+
+1. **两步估算流程**：
+   - 第一步：调用 `ProgramManager.buildAuthorization()` 构建 Authorization 对象
+   - 第二步：调用 `ProgramManager.estimateFeeForAuthorization()` 进行费用预估
+
+2. **冗余策略**：
+   - 在基础费用上增加 20% 冗余，确保交易能够成功执行
+   - 计算公式：`最终费用 = 基础费用 * 1.2`
+
+3. **降级方案**：
+   - 当 SDK 预估失败时（网络错误、程序未部署等），返回硬编码值：250,000 microcredits（0.25 credits）
+   - 这是一个保守的估算值，适用于大多数简单的合约调用
+
+4. **错误处理**：
+   - 如果抛出 `ProtocolServiceError`，直接重新抛出（不降级）
+   - 其他错误（如网络错误、SDK 错误）会触发降级方案
+
 ## 未来改进
 
 - [ ] 实现并测试 `fetchRawRecords()` 方法
@@ -144,4 +176,5 @@ npm test -- --coverage
 - [ ] 测试并发场景
 - [ ] 添加超时处理测试
 - [ ] 添加重试机制测试
+- [ ] 优化费用估算的降级策略（根据程序类型动态调整）
 

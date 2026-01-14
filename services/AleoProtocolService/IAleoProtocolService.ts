@@ -77,4 +77,19 @@ export interface IAleoProtocolService {
    * @throws {ProtocolServiceError} 可能抛出 SYNC_TIMEOUT, NODE_CONNECTION_FAILED
    */
   waitForTransaction(txId: AleoTransactionId, timeoutMS?: number): Promise<any>;
+
+  /**
+   * 估算执行费用（Microcredits）
+   * 通过构建 Authorization 并使用 SDK 的 estimateFeeForAuthorization 进行预估
+   * @param programName 程序名称（如: "zk_invoice.aleo"）
+   * @param functionName 函数名称（如: "create_invoice"）
+   * @param inputs 函数输入参数数组
+   * @returns 估算的执行费用（Microcredits），已增加 20% 冗余
+   * @throws {ProtocolServiceError} 可能抛出 NODE_CONNECTION_FAILED
+   */
+  estimateExecutionFee(
+    programName: string,
+    functionName: string,
+    inputs: string[]
+  ): Promise<Microcredits>;
 }

@@ -18,8 +18,8 @@ dependencies:
     specifier: ^0.0.36
     version: 0.0.36(react-dom@18.3.1)(react@18.3.1)
   '@provablehq/sdk':
-    specifier: ^0.7.0
-    version: 0.7.5
+    specifier: ^0.9.14
+    version: 0.9.14
   buffer:
     specifier: ^6.0.3
     version: 6.0.3
@@ -476,18 +476,20 @@ packages:
       fastq: 1.20.1
     dev: false
 
-  /@provablehq/sdk@0.7.5:
-    resolution: {integrity: sha512-Syg6u9ZaieK8fppcIEy5YBHB4erczi+5Kg2ecyR1d8tld9xvuRjk8jvchDhUFsC2yxsx7CECAo68NRbGX1GgIw==}
+  /@provablehq/sdk@0.9.14:
+    resolution: {integrity: sha512-8xVL7tMTnu4bc1D8axXOy1tvjVIBjYXkjXCBw2yr26UjvNVX4snXMVPcVeJ+srtUOcwk+6WUcz1VT7HTx1tAGQ==}
     dependencies:
-      '@provablehq/wasm': 0.7.3
+      '@provablehq/wasm': 0.9.14
+      '@scure/base': 2.0.0
       comlink: 4.4.2
       core-js: 3.47.0
-      mime: 3.0.0
+      mime: 4.1.0
       sync-request: 6.1.0
+      xmlhttprequest-ssl: 3.1.0
     dev: false
 
-  /@provablehq/wasm@0.7.3:
-    resolution: {integrity: sha512-bf8RR+HQiSSSDhE7BVkLrD+Oj0jMtYeKyo0lukqj3NZA0x9Wp5JiLkV1rwdPIfPpZrjEP17AHy+IGR9IAM4i3w==}
+  /@provablehq/wasm@0.9.14:
+    resolution: {integrity: sha512-Pkfo65bNJkW/UYoF+2+ZMF94N5YVOuh0jM1ZHMdk5kI78kQWoeYlZcGp/kadLsMgz9BcwSB/ZwvLYgDGozjGVA==}
     dev: false
 
   /@rollup/rollup-android-arm-eabi@4.55.1:
@@ -702,6 +704,10 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
+
+  /@scure/base@2.0.0:
+    resolution: {integrity: sha512-3E1kpuZginKkek01ovG8krQ0Z44E3DHPjc5S2rjJw9lZn3KSQOs8S7wqikF/AH7iRanHypj85uGyxk0XAyC37w==}
+    dev: false
 
   /@sinclair/typebox@0.27.8:
     resolution: {integrity: sha512-+Fj43pSMwJs4KRrH/938Uf+uAELIgVBmQzg/q1YG10djyfA3TnrU8N8XzqCh/okZdszqBQTZf96idMfE5lnwTA==}
@@ -1511,9 +1517,9 @@ packages:
       mime-db: 1.52.0
     dev: false
 
-  /mime@3.0.0:
-    resolution: {integrity: sha512-jSCU7/VB1loIWBZe14aEYHU/+1UMEHoaO7qxCOVJOw9GgH72VAWppxNcjU+x9a2k3GSIBXNKxXQFqRvvZ7vr3A==}
-    engines: {node: '>=10.0.0'}
+  /mime@4.1.0:
+    resolution: {integrity: sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw==}
+    engines: {node: '>=16'}
     hasBin: true
     dev: false
 
@@ -2387,6 +2393,11 @@ packages:
       siginfo: 2.0.0
       stackback: 0.0.2
     dev: true
+
+  /xmlhttprequest-ssl@3.1.0:
+    resolution: {integrity: sha512-UsofFE/khRRAcM9c3FGDEUSwupaQQC3Kme1brtz+B3N+RZHXGbD6AG6QzgWcunHzszqtOSMiZoPNrmHEBB2DjA==}
+    engines: {node: '>=12.0.0'}
+    dev: false
 
   /yocto-queue@1.2.2:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
