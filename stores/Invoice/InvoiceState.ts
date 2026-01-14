@@ -1,13 +1,18 @@
-import { Invoice, AleoField, InvoiceStatus } from "@/lib/types";
+import { Invoice, AleoField } from '@/lib/types';
 
+/**
+ * Invoice Store State
+ * 管理发票列表和状态
+ */
 export interface InvoiceState {
-  invoices: Invoice[];              // 原始 Invoice 对象数组
-  lastSyncHeight: number;           // 上次增量扫描的高度，交给 Service 提效
-  isInitialLoading: boolean;        // 初次加载状态
-  
+  // 数据
+  invoices: Invoice[];           // 所有发票列表
+  selectedInvoiceId: AleoField | null;  // 当前选中的发票ID
+
   // Actions
-  setInvoices: (invoices: Invoice[]) => void;
   addInvoice: (invoice: Invoice) => void;
-  updateInvoiceStatus: (id: AleoField, status: InvoiceStatus) => void;
-  setSyncHeight: (height: number) => void;
+  updateInvoice: (id: AleoField, updates: Partial<Invoice>) => void;
+  removeInvoice: (id: AleoField) => void;
+  selectInvoice: (id: AleoField | null) => void;
+  clearInvoices: () => void;
 }

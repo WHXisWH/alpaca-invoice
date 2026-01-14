@@ -21,7 +21,7 @@ import type { AleoAddress } from '@/lib/types';
  * - 处理 connect() 方法的参数差异
  * - 提供统一的 IWalletService 接口
  */
-function createWalletAdapter(walletContext: WalletContextState): IWalletService {
+export function createWalletAdapter(walletContext: WalletContextState): IWalletService {
   const network = getNetworkFromEnv();
   const programs = ['credits.aleo', 'zk_invoice.aleo'];
 

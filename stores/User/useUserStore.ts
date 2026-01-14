@@ -10,12 +10,17 @@ export const useUserStore = create<UserState>((set) => ({
   publicKey: null,
   connected: false,
   viewKey: null,
+  masterKey: null,
   publicBalance: 0n,
   privateBalance: 0n,
 
   // Actions
   setAccount: (publicKey, connected) => {
     set({ publicKey, connected });
+  },
+
+  setMasterKey: (masterKey) => {
+    set({ masterKey });
   },
 
   updateBalances: (pub, priv) => {
@@ -30,6 +35,7 @@ export const useUserStore = create<UserState>((set) => ({
       publicKey: null,
       connected: false,
       viewKey: null,
+      masterKey: null,
       publicBalance: 0n,
       privateBalance: 0n,
     });

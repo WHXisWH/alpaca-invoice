@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import type { AleoAddress, InvoiceDetails } from '@/lib/types';
-import { useInvoiceStore } from '@/stores/invoiceStore';
-import { useWalletStore } from '@/stores/walletStore';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
+import { useUserStore } from '@/stores/User/useUserStore';
+import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { toast } from 'sonner';
 
 function buildDetails(
   invoiceNumber: string,
@@ -33,37 +35,42 @@ function buildDetails(
 }
 
 export default function InvoiceForm() {
-  const { createInvoice, isLoading, error } = useInvoiceStore();
-  const { address } = useWalletStore();
+  const { executeCreateInvoice, isProcessing, currentProgress, currentLog } = useTransactionController();
+  const { publicKey } = useUserStore();
+  const { handleError } = useErrorHandler();
   const [buyer, setBuyer] = useState('');
   const [amount, setAmount] = useState('1');
   const [description, setDescription] = useState('Service fee');
   const [dueDate, setDueDate] = useState(
     new Date().toISOString().split('T')[0]
   );
-  const [message, setMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage('');
+    
     const microcredits = BigInt(Math.floor(parseFloat(amount) * 1_000_000));
     const details = buildDetails(
       `INV-${Date.now()}`,
       description,
       parseFloat(amount)
     );
+    
     try {
-      const result = await createInvoice({
+      const transactionId = await executeCreateInvoice({
         buyer: buyer as AleoAddress,
         amount: microcredits,
         dueDate: new Date(dueDate),
         details
       });
-      setMessage(
-        `Invoice created: invoiceId=${result.invoiceId}, tx=${result.transactionId}`
-      );
+      console.log('transactionId', transactionId)
+      
+      // 成功时显示通知
+      toast.success('发票创建成功！', {
+        description: `交易ID: ${transactionId.slice(0, 20)}...`
+      });
     } catch (err) {
-      setMessage((err as Error).message);
+      // 统一错误处理
+      handleError(err);
     }
   };
 
@@ -77,7 +84,7 @@ export default function InvoiceForm() {
           Seller address (current wallet)
         </label>
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          {address || 'Not connected'}
+          {publicKey || 'Not connected'}
         </div>
       </div>
       <div className="space-y-1">
@@ -121,15 +128,33 @@ export default function InvoiceForm() {
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
         />
       </div>
+      
+      {/* 进度显示 */}
+      {isProcessing && (
+        <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-900">处理中...</span>
+            <span className="text-sm text-blue-700">{currentProgress}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
+            <div
+              className="h-full bg-blue-600 transition-all duration-300"
+              style={{ width: `${currentProgress}%` }}
+            />
+          </div>
+          {currentLog && (
+            <p className="text-xs text-blue-800">{currentLog}</p>
+          )}
+        </div>
+      )}
+      
       <button
         type="submit"
-        disabled={isLoading}
+        disabled={isProcessing}
         className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
       >
-        {isLoading ? 'Submitting...' : 'Create invoice'}
+        {isProcessing ? '处理中...' : 'Create invoice'}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {message && <p className="text-sm text-emerald-600">{message}</p>}
     </form>
   );
 }
