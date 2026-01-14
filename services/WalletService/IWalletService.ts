@@ -20,6 +20,27 @@ export const WalletServiceError = createServiceError<WalletError>('WalletService
 export type WalletServiceError = InstanceType<typeof WalletServiceError>;
 
 /**
+ * requestTransaction 方法的参数接口（简化版）
+ * 用于 WalletService.requestTransaction 方法
+ */
+export interface RequestTransactionParams {
+  /** 要调用的函数名 */
+  functionName: string;
+  /** 函数输入参数数组 */
+  inputs: string[];
+  /** 钱包公钥地址 */
+  publicKey: string;
+  /** 程序ID（默认为 "zk_invoice.aleo"） */
+  programId?: string;
+  /** 可选的手续费 Record（如果不提供，钱包会自动选择） */
+  feeRecord?: string;
+  /** 手续费金额（默认为 250000 microcredits） */
+  fee?: number;
+  /** 链ID（可选，默认从环境变量获取） */
+  chainId?: string;
+}
+
+/**
  * WalletService 接口
  * 职责：封装钱包操作，处理连接、签名和解密授权
  * 
@@ -57,4 +78,21 @@ export interface IWalletService {
    * 请求 Record 明文
    */
   requestRecordPlaintexts?(program: string): Promise<{ records: any[] }>;
+
+  /**
+   * 请求创建交易（钱包适配器的原始方法）
+   * @param params 交易参数
+   * @returns 交易结果（返回 transactionId 字符串）
+   */
+  requestTransaction?(params: {
+    address: string;
+    chainId: string;
+    transitions: Array<{
+      program: string;
+      functionName: string;
+      inputs: string[];
+    }>;
+    fee: number;
+    feePrivate: boolean;
+  }): Promise<string>;
 }

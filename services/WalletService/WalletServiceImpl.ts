@@ -1,5 +1,10 @@
-import { AleoAddress, Microcredits } from '@/lib/types';
-import { IWalletService, WalletServiceError, WalletError } from './IWalletService';
+import { Microcredits } from '@/lib/types';
+import { 
+  IWalletService, 
+  WalletServiceError, 
+  WalletError,
+  RequestTransactionParams 
+} from './IWalletService';
 
 /**
  * WalletService 实现类
@@ -381,6 +386,139 @@ export class WalletService {
         WalletError.UNAUTHORIZED,
         'Failed to sign message',
         { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * 请求创建交易
+   * @param params 交易参数对象
+   * @returns 交易结果（包含 transactionId 等）
+   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, USER_REJECTED, NOT_INSTALLED
+   * 
+   * 说明：
+   * - 这是一个简化的接口，封装了钱包适配器的 requestTransaction 方法
+   * - 如果提供了 feeRecord，会使用该 Record 支付手续费（feePrivate: true）
+   * - 如果没有提供 feeRecord，钱包会自动选择 Record 支付手续费（feePrivate: false）
+   */
+  async requestTransaction(params: RequestTransactionParams): Promise<any> {
+    const {
+      functionName,
+      inputs,
+      publicKey,
+      programId = 'zk_invoice.aleo',
+      feeRecord,
+      fee = 250_000,
+      chainId
+    } = params;
+
+    if (!publicKey) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet not connected. Please connect first.'
+      );
+    }
+
+    if (!this.wallet) {
+      throw new WalletServiceError(
+        WalletError.NOT_INSTALLED,
+        'Wallet not found. Please install Leo Wallet.',
+        { hint: 'Visit https://leo.app to download' }
+      );
+    }
+
+    if (!this.wallet.requestTransaction) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet does not support requestTransaction'
+      );
+    }
+
+    // 如果没有提供 chainId，从环境变量获取
+    let finalChainId = chainId;
+    if (!finalChainId) {
+      const { getChainIdFromNetwork, getNetworkFromEnv } = await import('@/lib/network');
+      finalChainId = getChainIdFromNetwork(getNetworkFromEnv());
+    }
+
+    try {
+      // 构建交易请求参数
+      // 注意：如果提供了 feeRecord，设置 feePrivate: true 让钱包使用私有手续费
+      // feeRecord 本身不需要作为参数传递，钱包会自动选择合适的 Record
+      const transactionRequest = {
+        address: publicKey,
+        chainId: finalChainId,
+        transitions: [{
+          program: programId,
+          functionName: functionName,
+          inputs: inputs
+        }],
+        fee: fee,
+        feePrivate: feeRecord !== undefined // 如果提供了 feeRecord，使用私有手续费
+      };
+
+      // 调用钱包适配器的 requestTransaction 方法
+      // 注意：钱包适配器会根据 feePrivate 标志自动选择合适的 Record 支付手续费
+      const result = await this.wallet.requestTransaction(transactionRequest);
+
+      if (!result) {
+        throw new WalletServiceError(
+          WalletError.UNAUTHORIZED,
+          'Transaction request returned empty result'
+        );
+      }
+
+      return result;
+    } catch (error: any) {
+      // 已经是 WalletServiceError，直接抛出
+      if (error instanceof WalletServiceError) {
+        throw error;
+      }
+
+      // 用户拒绝
+      const errorMessage = error?.message?.toLowerCase() || '';
+      const errorString = String(error).toLowerCase();
+      const errorCode = error?.code || error?.error?.code;
+
+      if (
+        errorMessage.includes('reject') ||
+        errorMessage.includes('denied') ||
+        errorMessage.includes('cancel') ||
+        errorMessage.includes('user cancelled') ||
+        errorString.includes('reject') ||
+        errorString.includes('denied') ||
+        errorString.includes('cancel') ||
+        errorCode === 4001 ||
+        errorCode === 'ACTION_REJECTED' ||
+        errorCode === 'USER_REJECTED'
+      ) {
+        throw new WalletServiceError(
+          WalletError.USER_REJECTED,
+          'User rejected the transaction request',
+          { originalError: error.message || error }
+        );
+      }
+
+      // 网络不匹配（不区分大小写）
+      if (
+        errorMessage.includes('network') ||
+        errorString.includes('network')
+      ) {
+        throw new WalletServiceError(
+          WalletError.NETWORK_MISMATCH,
+          'Wallet network does not match required network',
+          { originalError: error.message }
+        );
+      }
+
+      // 未知错误
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Failed to request transaction',
+        { 
+          originalError: error,
+          hint: error?.message || 'Please check your wallet and try again'
+        }
       );
     }
   }

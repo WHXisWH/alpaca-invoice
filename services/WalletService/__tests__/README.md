@@ -63,6 +63,20 @@ npm test -- --coverage
    - ✅ 返回空签名时抛出错误
    - ✅ 用户拒绝时的错误处理
 
+7. **requestTransaction() - 请求创建交易**
+   - ✅ 成功请求交易
+   - ✅ 使用自定义 programId
+   - ✅ 使用自定义手续费金额
+   - ✅ 使用自定义 chainId
+   - ✅ 未连接时抛出错误
+   - ✅ 钱包不存在时抛出错误
+   - ✅ 钱包不支持时抛出错误
+   - ✅ 返回空结果时抛出错误
+   - ✅ 用户拒绝时的错误处理
+   - ✅ 网络不匹配时的错误处理
+   - ✅ 其他错误的错误处理
+   - ✅ 处理包含多个输入的复杂交易
+
 ### ✅ 集成测试
 
 - ✅ 完整的连接 -> 签名消息 -> 断开流程
@@ -95,6 +109,59 @@ npm test -- --coverage
 - **行覆盖率**: > 95%
 - **分支覆盖率**: > 90%
 - **函数覆盖率**: 100%
+
+## requestTransaction 方法说明
+
+### 方法签名
+
+```typescript
+async requestTransaction(params: RequestTransactionParams): Promise<any>
+```
+
+### 参数说明
+
+`RequestTransactionParams` 对象包含以下字段：
+
+- `functionName`: 要调用的函数名（如 "create_invoice", "pay_invoice"）
+- `inputs`: 函数输入参数数组
+- `publicKey`: 钱包公钥地址（用于验证连接状态）
+- `programId`: 程序ID（可选，默认为 "zk_invoice.aleo"）
+- `feeRecord`: 可选的手续费 Record（如果不提供，钱包会自动选择）
+- `fee`: 手续费金额，单位为 microcredits（可选，默认为 250000）
+- `chainId`: 链ID（可选，默认从环境变量获取）
+
+### 返回值
+
+返回交易结果对象，通常包含 `transactionId` 字段。
+
+### 错误处理
+
+- `UNAUTHORIZED`: 钱包未连接或方法不支持
+- `NOT_INSTALLED`: 钱包未安装
+- `USER_REJECTED`: 用户拒绝了交易请求
+- `NETWORK_MISMATCH`: 钱包网络与应用要求不匹配
+
+### 使用示例
+
+```typescript
+const walletService = new WalletService(walletAdapter);
+
+// 基本用法
+const result = await walletService.requestTransaction({
+  functionName: 'create_invoice',
+  inputs: ['aleo1buyer123', '1000000u64', '1735689600u32', 'hash123', 'nonce456'],
+  publicKey: publicKey
+});
+
+// 使用自定义 programId 和手续费
+const result = await walletService.requestTransaction({
+  functionName: 'transfer_private',
+  inputs: ['record123', 'aleo1recipient', '1000000u64'],
+  publicKey: publicKey,
+  programId: 'credits.aleo',
+  fee: 1_000_000
+});
+```
 
 ## 未来改进
 

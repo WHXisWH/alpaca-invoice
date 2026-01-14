@@ -176,6 +176,22 @@ function createWalletAdapter(walletContext: WalletContextState): IWalletService 
         const records = await walletContext.requestRecordPlaintexts!(program);
         return { records };
       } : undefined,
+    
+    // 转发 requestTransaction（直接转发，无需适配）
+    requestTransaction: walletContext.requestTransaction ? 
+      async (params: {
+        address: string;
+        chainId: string;
+        transitions: Array<{
+          program: string;
+          functionName: string;
+          inputs: string[];
+        }>;
+        fee: number;
+        feePrivate: boolean;
+      }) => {
+        return await walletContext.requestTransaction!(params);
+      } : undefined,
   };
 }
 

@@ -644,6 +644,263 @@ describe('WalletService', () => {
     });
   });
 
+  describe('requestTransaction', () => {
+    beforeEach(() => {
+      // 设置默认的 requestTransaction mock
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue({
+        transactionId: 'mock_transaction_id_123456'
+      });
+    });
+
+    it('应该成功请求交易', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      const functionName = 'create_invoice';
+      const inputs = ['aleo1buyer123', '1000000u64', '1735689600u32', 'hash123', 'nonce456'];
+      const mockResult = { transactionId: 'at1test123456' };
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(mockResult);
+
+      // Act
+      const result = await walletService.requestTransaction({
+        functionName,
+        inputs,
+        publicKey: mockAddress
+      });
+
+      // Assert
+      expect(result).toEqual(mockResult);
+      expect(mockWallet.requestTransaction).toHaveBeenCalledTimes(1);
+      const callArgs = (mockWallet.requestTransaction as any).mock.calls[0][0];
+      expect(callArgs.address).toBe(mockAddress);
+      expect(callArgs.transitions[0].functionName).toBe(functionName);
+      expect(callArgs.transitions[0].inputs).toEqual(inputs);
+      expect(callArgs.transitions[0].program).toBe('zk_invoice.aleo');
+      expect(callArgs.fee).toBe(250_000);
+      expect(callArgs.feePrivate).toBe(false);
+    });
+
+    it('应该使用自定义 programId', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      const customProgramId = 'credits.aleo';
+      const mockResult = { transactionId: 'at1test123456' };
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(mockResult);
+
+      // Act
+      await walletService.requestTransaction({
+        functionName: 'transfer_private',
+        inputs: ['record123', 'aleo1recipient', '1000000u64'],
+        publicKey: mockAddress,
+        programId: customProgramId
+      });
+
+      // Assert
+      const callArgs = (mockWallet.requestTransaction as any).mock.calls[0][0];
+      expect(callArgs.transitions[0].program).toBe(customProgramId);
+    });
+
+    it('应该使用自定义手续费金额', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      const customFee = 1_000_000;
+      const mockResult = { transactionId: 'at1test123456' };
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(mockResult);
+
+      // Act
+      await walletService.requestTransaction({
+        functionName: 'create_invoice',
+        inputs: ['input1'],
+        publicKey: mockAddress,
+        programId: 'zk_invoice.aleo',
+        fee: customFee
+      });
+
+      // Assert
+      const callArgs = (mockWallet.requestTransaction as any).mock.calls[0][0];
+      expect(callArgs.fee).toBe(customFee);
+    });
+
+    it('应该使用自定义 chainId', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      const customChainId = 'mainnet';
+      const mockResult = { transactionId: 'at1test123456' };
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(mockResult);
+
+      // Act
+      await walletService.requestTransaction({
+        functionName: 'create_invoice',
+        inputs: ['input1'],
+        publicKey: mockAddress,
+        programId: 'zk_invoice.aleo',
+        fee: 250_000,
+        chainId: customChainId
+      });
+
+      // Assert
+      const callArgs = (mockWallet.requestTransaction as any).mock.calls[0][0];
+      expect(callArgs.chainId).toBe(customChainId);
+    });
+
+    it('钱包未连接时应该抛出错误', async () => {
+      // Arrange
+      mockWallet.connected = false;
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: ''
+        })
+      ).rejects.toThrow('Wallet not connected');
+    });
+
+    it('钱包不存在时应该抛出错误', async () => {
+      // Arrange
+      const serviceWithoutWallet = new WalletService(null as any);
+
+      // Act & Assert
+      await expect(
+        serviceWithoutWallet.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('Wallet not found');
+    });
+
+    it('钱包不支持 requestTransaction 时应该抛出错误', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = undefined;
+      const serviceWithoutRequestTx = new WalletService(mockWallet as any);
+
+      // Act & Assert
+      await expect(
+        serviceWithoutRequestTx.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('Wallet does not support requestTransaction');
+    });
+
+    it('返回空结果时应该抛出错误', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(null);
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('Transaction request returned empty result');
+    });
+
+    it('用户拒绝交易时应该抛出友好的错误信息', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = vi.fn().mockRejectedValue(new Error('User rejected the request'));
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('User rejected the transaction request');
+    });
+
+    it('用户拒绝交易（包含 denied）时应该抛出友好的错误信息', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = vi.fn().mockRejectedValue(new Error('Request denied'));
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('User rejected the transaction request');
+    });
+
+    it('网络不匹配时应该抛出错误', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = vi.fn().mockRejectedValue(new Error('Network mismatch'));
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('Wallet network does not match required network');
+    });
+
+    it('其他错误时应该抛出详细的错误信息', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      mockWallet.requestTransaction = vi.fn().mockRejectedValue(new Error('Transaction failed'));
+
+      // Act & Assert
+      await expect(
+        walletService.requestTransaction({
+          functionName: 'create_invoice',
+          inputs: ['input1'],
+          publicKey: mockAddress
+        })
+      ).rejects.toThrow('Failed to request transaction');
+    });
+
+    it('应该正确处理包含多个输入的复杂交易', async () => {
+      // Arrange
+      mockWallet.connected = true;
+      mockWallet.publicKey = mockAddress;
+      const complexInputs = [
+        'aleo1seller123',
+        'aleo1buyer456',
+        '1000000u64',
+        '1735689600u32',
+        'hash123field',
+        'nonce456field'
+      ];
+      const mockResult = { transactionId: 'at1complex123' };
+      mockWallet.requestTransaction = vi.fn().mockResolvedValue(mockResult);
+
+      // Act
+      const result = await walletService.requestTransaction({
+        functionName: 'create_invoice',
+        inputs: complexInputs,
+        publicKey: mockAddress
+      });
+
+      // Assert
+      expect(result).toEqual(mockResult);
+      const callArgs = (mockWallet.requestTransaction as any).mock.calls[0][0];
+      expect(callArgs.transitions[0].inputs).toEqual(complexInputs);
+      expect(callArgs.transitions[0].inputs.length).toBe(6);
+    });
+  });
+
   describe('集成测试场景', () => {
     it('完整流程: 连接 -> 签名消息 -> 断开', async () => {
       // Arrange
