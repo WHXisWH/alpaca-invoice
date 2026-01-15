@@ -171,16 +171,90 @@ export function useTransactionController(): ITxController {
         startTx('CONFIRMING');
         updateProgress(85, 'ARCHIVING - 加密存储发票明细...');
 
-        // 加密发票明细
-        const encryptedPayload = await cryptoService.encryptInvoiceDetails(
-          params.details,
-          currentMasterKey
-        );
-        updateProgress(88, '✓ 发票明细已加密');
+        // 确保 currentMasterKey 存在
+        if (!currentMasterKey) {
+          console.error('❌ [TransactionController] Master key is missing:', {
+            masterKeyFromStore: masterKey,
+            currentMasterKey,
+            publicKey
+          });
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Master key is missing. Cannot encrypt invoice details.',
+            { hint: 'Please try creating the invoice again' }
+          );
+        }
 
-        // 保存到 IndexedDB
-        await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
-        updateProgress(92, '✓ 已保存到本地存储');
+        // 添加调试日志
+        console.log('🔍 [TransactionController] 准备加密存储:', {
+          currentMasterKey: currentMasterKey ? `${currentMasterKey.slice(0, 10)}...` : 'null',
+          masterKeyLength: currentMasterKey?.length,
+          invoiceHash,
+          hasDetails: !!params.details,
+          detailsKeys: params.details ? Object.keys(params.details) : []
+        });
+
+        try {
+          // 加密发票明细
+          const encryptedPayload = await cryptoService.encryptInvoiceDetails(
+            params.details,
+            currentMasterKey
+          );
+          updateProgress(88, '✓ 发票明细已加密');
+          console.log('✅ [TransactionController] 发票明细加密成功:', {
+            payloadSize: JSON.stringify(encryptedPayload).length,
+            hasCiphertext: !!encryptedPayload.ciphertext,
+            hasIv: !!encryptedPayload.iv
+          });
+
+          // 保存到 IndexedDB
+          await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
+          updateProgress(92, '✓ 已保存到本地存储');
+          console.log('✅ [TransactionController] 发票已保存到 IndexedDB:', invoiceHash);
+        } catch (error: any) {
+          // 记录详细的错误信息
+          console.error('❌ [TransactionController] 加密或存储失败:', {
+            error,
+            errorType: error?.constructor?.name,
+            errorMessage: error?.message,
+            errorStack: error?.stack,
+            masterKeyExists: !!currentMasterKey,
+            masterKeyLength: currentMasterKey?.length,
+            invoiceHash,
+            hasDetails: !!params.details
+          });
+          
+          // 如果是加密失败
+          if (error?.message?.includes('encrypt') || 
+              error?.message?.includes('Encryption') ||
+              error?.message?.includes('deriveEncryptionKey')) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Failed to encrypt invoice details',
+              { 
+                originalError: error,
+                hint: 'Master key may be invalid or missing. Please try again.'
+              }
+            );
+          }
+          
+          // 如果是存储失败
+          if (error?.message?.includes('save') || 
+              error?.message?.includes('IndexedDB') ||
+              error?.message?.includes('Failed to save')) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Failed to save encrypted invoice to local storage',
+              { 
+                originalError: error,
+                hint: 'Please check browser IndexedDB permissions or try again'
+              }
+            );
+          }
+          
+          // 其他错误直接抛出
+          throw error;
+        }
 
         // 更新 Invoice Store（如果新架构的 store 已实现）
         if (newInvoiceStore?.addInvoice) {
