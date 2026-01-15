@@ -330,5 +330,133 @@ export class AleoProtocolService implements IAleoProtocolService {
       return 250_000n;
     }
   }
+
+  /**
+   * 验证生成的 record 是否上链成功
+   * 
+   * 通过查询交易详情来验证交易是否已确认，并可选择性地验证交易中是否包含预期的 record
+   * 
+   * 验证逻辑：
+   * 1. 查询交易是否存在且已确认
+   * 2. 如果提供了 programId，验证交易是否属于该程序
+   * 3. 如果提供了 functionName，验证交易调用的函数名称
+   * 4. 如果提供了 expectedOutputsCount，验证交易产生的输出 record 数量
+   */
+  async verifyRecordOnChain(
+    transactionId: AleoTransactionId,
+    options?: {
+      programId?: string;
+      functionName?: string;
+      expectedOutputsCount?: number;
+    }
+  ): Promise<{
+    verified: boolean;
+    transaction: any;
+    message: string;
+  }> {
+    try {
+      // 第一步：查询交易详情
+      const transaction = await this.networkClient.getTransaction(transactionId);
+
+      if (!transaction) {
+        return {
+          verified: false,
+          transaction: null,
+          message: `Transaction ${transactionId} not found on chain`
+        };
+      }
+
+      // 第二步：验证交易是否已确认（交易存在即表示已确认）
+      // 如果交易被拒绝或失败，通常不会出现在链上，所以这里假设存在即成功
+
+      // 将交易对象转换为 any 类型以便安全访问动态属性
+      const tx = transaction as any;
+
+      // 第三步：如果提供了 programId，验证交易是否属于该程序
+      if (options?.programId) {
+        // 检查交易中的 transitions 是否包含指定的程序
+        const transitions = tx.transitions || tx.execution?.transitions || [];
+        const hasMatchingProgram = transitions.some((transition: any) => {
+          const program = transition.program || transition.id?.program || '';
+          return program === options.programId || program.includes(options.programId);
+        });
+
+        if (!hasMatchingProgram) {
+          return {
+            verified: false,
+            transaction,
+            message: `Transaction does not belong to program ${options.programId}`
+          };
+        }
+      }
+
+      // 第四步：如果提供了 functionName，验证交易调用的函数名称
+      if (options?.functionName) {
+        const transitions = tx.transitions || tx.execution?.transitions || [];
+        const hasMatchingFunction = transitions.some((transition: any) => {
+          const functionName = transition.function || transition.id?.function || '';
+          return functionName === options.functionName;
+        });
+
+        if (!hasMatchingFunction) {
+          return {
+            verified: false,
+            transaction,
+            message: `Transaction does not call function ${options.functionName}`
+          };
+        }
+      }
+
+      // 第五步：如果提供了 expectedOutputsCount，验证交易产生的输出 record 数量
+      if (options?.expectedOutputsCount !== undefined) {
+        // 尝试从交易中提取输出 record 数量
+        // 不同版本的交易格式可能不同，需要兼容处理
+        let actualOutputsCount = 0;
+
+        // 方法1: 从 execution.outputs 获取
+        if (tx.execution?.outputs) {
+          actualOutputsCount = tx.execution.outputs.length;
+        }
+        // 方法2: 从 transitions 的 outputs 获取
+        else if (tx.transitions || tx.execution?.transitions) {
+          const transitions = tx.transitions || tx.execution.transitions || [];
+          actualOutputsCount = transitions.reduce((count: number, transition: any) => {
+            const outputs = transition.outputs || [];
+            return count + outputs.length;
+          }, 0);
+        }
+        // 方法3: 从 transaction.outputs 获取
+        else if (tx.outputs) {
+          actualOutputsCount = tx.outputs.length;
+        }
+
+        if (actualOutputsCount !== options.expectedOutputsCount) {
+          return {
+            verified: false,
+            transaction,
+            message: `Expected ${options.expectedOutputsCount} output records, but found ${actualOutputsCount}`
+          };
+        }
+      }
+
+      // 所有验证通过
+      return {
+        verified: true,
+        transaction,
+        message: `Transaction ${transactionId} verified successfully on chain`
+      };
+    } catch (error: any) {
+      if (error instanceof ProtocolServiceError) {
+        throw error;
+      }
+
+      // 如果查询失败，可能是交易不存在或网络错误
+      throw new ProtocolServiceError(
+        ProtocolError.NODE_CONNECTION_FAILED,
+        'Failed to verify record on chain',
+        { transactionId, originalError: error }
+      );
+    }
+  }
 }
 

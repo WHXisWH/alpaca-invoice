@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
-import type { AleoAddress } from '@/lib/types';
+import type { AleoAddress, AleoTransactionId } from '@/lib/types';
 import { ProtocolServiceError, ProtocolError } from '../IAleoProtocolService';
 
 // 使用 vi.hoisted 确保 mock 函数在模块导入之前创建
@@ -400,6 +400,255 @@ describe('AleoProtocolService', () => {
         functionName: customFunctionName,
         inputs: mockInputs,
       });
+    });
+  });
+
+  describe('verifyRecordOnChain', () => {
+    const mockTransactionId = 'at1test123456789' as AleoTransactionId;
+    const mockTransaction = {
+      id: mockTransactionId,
+      execution: {
+        transitions: [
+          {
+            id: {
+              program: 'zk_invoice.aleo',
+              function: 'create_invoice'
+            },
+            outputs: [
+              { type: 'record', value: 'record1...' },
+              { type: 'record', value: 'record2...' }
+            ]
+          }
+        ],
+        outputs: [
+          { type: 'record', value: 'record1...' },
+          { type: 'record', value: 'record2...' }
+        ]
+      }
+    };
+
+    it('应该成功验证交易已上链（无额外选项）', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId);
+
+      // Assert
+      expect(result.verified).toBe(true);
+      expect(result.transaction).toEqual(mockTransaction);
+      expect(result.message).toContain('verified successfully');
+      expect(mockGetTransaction).toHaveBeenCalledWith(mockTransactionId);
+    });
+
+    it('应该成功验证交易属于指定程序', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        programId: 'zk_invoice.aleo'
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
+      expect(result.message).toContain('verified successfully');
+    });
+
+    it('应该失败当交易不属于指定程序', async () => {
+      // Arrange
+      const wrongProgramTransaction = {
+        ...mockTransaction,
+        execution: {
+          transitions: [
+            {
+              id: {
+                program: 'credits.aleo',
+                function: 'transfer_public'
+              }
+            }
+          ]
+        }
+      };
+      mockGetTransaction.mockResolvedValue(wrongProgramTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        programId: 'zk_invoice.aleo'
+      });
+
+      // Assert
+      expect(result.verified).toBe(false);
+      expect(result.message).toContain('does not belong to program');
+    });
+
+    it('应该成功验证交易调用了指定函数', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        functionName: 'create_invoice'
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
+      expect(result.message).toContain('verified successfully');
+    });
+
+    it('应该失败当交易未调用指定函数', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        functionName: 'mark_as_paid'
+      });
+
+      // Assert
+      expect(result.verified).toBe(false);
+      expect(result.message).toContain('does not call function');
+    });
+
+    it('应该成功验证输出 record 数量', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        expectedOutputsCount: 2
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
+      expect(result.message).toContain('verified successfully');
+    });
+
+    it('应该失败当输出 record 数量不匹配', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        expectedOutputsCount: 3
+      });
+
+      // Assert
+      expect(result.verified).toBe(false);
+      expect(result.message).toContain('Expected 3 output records, but found 2');
+    });
+
+    it('应该成功验证所有选项（程序、函数、输出数量）', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(mockTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        programId: 'zk_invoice.aleo',
+        functionName: 'create_invoice',
+        expectedOutputsCount: 2
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
+      expect(result.message).toContain('verified successfully');
+    });
+
+    it('应该处理交易不存在的情况', async () => {
+      // Arrange
+      mockGetTransaction.mockResolvedValue(null);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId);
+
+      // Assert
+      expect(result.verified).toBe(false);
+      expect(result.transaction).toBeNull();
+      expect(result.message).toContain('not found on chain');
+    });
+
+    it('应该处理交易格式为 transitions 数组的情况', async () => {
+      // Arrange
+      const transactionWithTransitions = {
+        id: mockTransactionId,
+        transitions: [
+          {
+            program: 'zk_invoice.aleo',
+            function: 'create_invoice',
+            outputs: [
+              { type: 'record', value: 'record1...' }
+            ]
+          }
+        ]
+      };
+      mockGetTransaction.mockResolvedValue(transactionWithTransitions);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        programId: 'zk_invoice.aleo',
+        functionName: 'create_invoice',
+        expectedOutputsCount: 1
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
+    });
+
+    it('应该处理网络错误', async () => {
+      // Arrange
+      const networkError = new Error('Network error');
+      mockGetTransaction.mockRejectedValue(networkError);
+
+      // Act & Assert
+      const error = await service.verifyRecordOnChain(mockTransactionId).catch(e => e) as ProtocolServiceError;
+      expect(error).toBeInstanceOf(ProtocolServiceError);
+      expect(error.code).toBe(ProtocolError.NODE_CONNECTION_FAILED);
+    });
+
+    it('应该处理空的 transitions 数组', async () => {
+      // Arrange
+      const emptyTransaction = {
+        id: mockTransactionId,
+        execution: {
+          transitions: []
+        }
+      };
+      mockGetTransaction.mockResolvedValue(emptyTransaction);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        programId: 'zk_invoice.aleo'
+      });
+
+      // Assert
+      expect(result.verified).toBe(false);
+      expect(result.message).toContain('does not belong to program');
+    });
+
+    it('应该处理没有 outputs 的交易', async () => {
+      // Arrange
+      const transactionWithoutOutputs = {
+        id: mockTransactionId,
+        execution: {
+          transitions: [
+            {
+              id: {
+                program: 'zk_invoice.aleo',
+                function: 'create_invoice'
+              }
+            }
+          ]
+        }
+      };
+      mockGetTransaction.mockResolvedValue(transactionWithoutOutputs);
+
+      // Act
+      const result = await service.verifyRecordOnChain(mockTransactionId, {
+        expectedOutputsCount: 0
+      });
+
+      // Assert
+      expect(result.verified).toBe(true);
     });
   });
 });

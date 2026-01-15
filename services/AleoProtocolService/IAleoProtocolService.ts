@@ -92,4 +92,28 @@ export interface IAleoProtocolService {
     functionName: string,
     inputs: string[]
   ): Promise<Microcredits>;
+
+  /**
+   * 验证生成的 record 是否上链成功
+   * 通过查询交易详情来验证交易是否已确认，并可选择性地验证交易中是否包含预期的 record
+   * @param transactionId 交易 ID
+   * @param options 可选的验证选项
+   * @param options.programId 程序 ID（如: "zk_invoice.aleo"），用于验证交易是否属于该程序
+   * @param options.functionName 函数名称（如: "create_invoice"），用于验证交易调用的函数
+   * @param options.expectedOutputsCount 预期的输出 record 数量，用于验证交易是否产生了预期的 record
+   * @returns 验证结果对象，包含是否成功、交易详情等信息
+   * @throws {ProtocolServiceError} 可能抛出 NODE_CONNECTION_FAILED, TRANSACTION_REJECTED
+   */
+  verifyRecordOnChain(
+    transactionId: AleoTransactionId,
+    options?: {
+      programId?: string;
+      functionName?: string;
+      expectedOutputsCount?: number;
+    }
+  ): Promise<{
+    verified: boolean;
+    transaction: any;
+    message: string;
+  }>;
 }

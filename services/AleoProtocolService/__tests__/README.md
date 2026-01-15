@@ -61,6 +61,22 @@ npm test -- --coverage
    - ✅ 为不同的程序名称正确调用
    - **说明**: 通过构建 Authorization 并使用 SDK 的 estimateFeeForAuthorization 进行预估，增加 20% 冗余以确保交易能够成功执行。如果 SDK 预估失败，返回降级方案：250,000 microcredits（0.25 credits）
 
+6. **verifyRecordOnChain() - 验证 record 是否上链成功**
+   - ✅ 成功验证交易已上链（无额外选项）
+   - ✅ 成功验证交易属于指定程序
+   - ✅ 失败当交易不属于指定程序
+   - ✅ 成功验证交易调用了指定函数
+   - ✅ 失败当交易未调用指定函数
+   - ✅ 成功验证输出 record 数量
+   - ✅ 失败当输出 record 数量不匹配
+   - ✅ 成功验证所有选项（程序、函数、输出数量）
+   - ✅ 处理交易不存在的情况
+   - ✅ 处理交易格式为 transitions 数组的情况
+   - ✅ 处理网络错误
+   - ✅ 处理空的 transitions 数组
+   - ✅ 处理没有 outputs 的交易
+   - **说明**: 通过查询交易详情来验证交易是否已确认，并可选择性地验证交易中是否包含预期的 record。支持验证程序 ID、函数名称和输出 record 数量。兼容多种交易格式（execution.transitions、transitions、outputs 等）
+
 ### ⏳ 待实现功能测试
 
 以下功能在接口中已定义，但实现中标记为 TODO，暂未编写测试：
@@ -164,6 +180,47 @@ npm test -- --coverage
    - 如果抛出 `ProtocolServiceError`，直接重新抛出（不降级）
    - 其他错误（如网络错误、SDK 错误）会触发降级方案
 
+## verifyRecordOnChain 实现细节
+
+### 验证逻辑
+
+1. **基础验证**：
+   - 查询交易是否存在且已确认（交易存在即表示已确认）
+   - 如果交易不存在，返回 `verified: false`
+
+2. **程序 ID 验证**（可选）：
+   - 检查交易中的 transitions 是否包含指定的程序
+   - 支持多种交易格式：`execution.transitions`、`transitions`
+   - 支持程序名称的完全匹配和部分匹配
+
+3. **函数名称验证**（可选）：
+   - 检查交易中的 transitions 是否调用了指定的函数
+   - 支持多种交易格式：`execution.transitions`、`transitions`
+
+4. **输出 Record 数量验证**（可选）：
+   - 从交易中提取输出 record 数量
+   - 支持多种格式：
+     - `execution.outputs`（优先）
+     - `transitions[].outputs`（汇总所有 transitions 的输出）
+     - `transaction.outputs`（降级方案）
+   - 验证实际输出数量是否与预期一致
+
+### 返回值
+
+```typescript
+{
+  verified: boolean;      // 验证是否通过
+  transaction: any;       // 交易详情对象
+  message: string;        // 验证结果消息
+}
+```
+
+### 错误处理
+
+- 如果查询交易失败（网络错误等），抛出 `ProtocolServiceError`，错误码为 `NODE_CONNECTION_FAILED`
+- 如果交易不存在，返回 `verified: false`，不抛出错误
+- 如果验证失败（程序不匹配、函数不匹配、输出数量不匹配），返回 `verified: false`，不抛出错误
+
 ## 未来改进
 
 - [ ] 实现并测试 `fetchRawRecords()` 方法
@@ -177,4 +234,5 @@ npm test -- --coverage
 - [ ] 添加超时处理测试
 - [ ] 添加重试机制测试
 - [ ] 优化费用估算的降级策略（根据程序类型动态调整）
+- [ ] 增强 `verifyRecordOnChain` 功能：支持验证 record 的具体内容（如 invoice_id）
 
