@@ -115,9 +115,9 @@ describe('WalletService', () => {
     it('应该成功获取私有余额', async () => {
       // Arrange
       const mockRecords = [
-        { spent: false, data: { microcredits: '1000000' } },
-        { spent: false, data: { microcredits: '2000000' } },
-        { spent: true, data: { microcredits: '500000' } }, // 已花费，不计入
+        { spent: false, data: { microcredits: '1000000u64.private' } },
+        { spent: false, data: { microcredits: '2000000u64.private' } },
+        { spent: true, data: { microcredits: '500000u64.private' } }, // 已花费，不计入
       ];
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -132,9 +132,9 @@ describe('WalletService', () => {
     it('应该过滤已花费的 Records', async () => {
       // Arrange
       const mockRecords = [
-        { spent: false, data: { microcredits: '1000000' } },
-        { spent: true, data: { microcredits: '5000000' } },
-        { spent: false, data: { microcredits: '2000000' } },
+        { spent: false, data: { microcredits: '1000000u64.private' } },
+        { spent: true, data: { microcredits: '5000000u64.private' } },
+        { spent: false, data: { microcredits: '2000000u64.private' } },
       ];
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -178,7 +178,7 @@ describe('WalletService', () => {
       // Arrange
       mockWallet.requestRecords = undefined;
       const mockRecords = [
-        { spent: false, data: { microcredits: '1500000' } },
+        { spent: false, data: { microcredits: '1500000u64.private' } },
       ];
       mockWallet.requestRecordPlaintexts = vi.fn().mockResolvedValue({ records: mockRecords });
       const serviceWithPlaintexts = new WalletService(mockWallet as any);
@@ -199,9 +199,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '3000000' } },
-          { spent: false, data: { microcredits: '2000000' } }, // 最小且满足
-          { spent: false, data: { microcredits: '5000000' } },
+          { spent: false, data: { microcredits: '3000000u64.private' } },
+          { spent: false, data: { microcredits: '2000000u64.private' } }, // 最小且满足
+          { spent: false, data: { microcredits: '5000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -213,7 +213,7 @@ describe('WalletService', () => {
         expect(mockWallet.requestRecords).toHaveBeenCalledWith('credits.aleo');
         
         const parsed = JSON.parse(records[0]);
-        expect(parsed.data.microcredits).toBe('2000000');
+        expect(parsed.data.microcredits).toBe('2000000u64.private');
       });
 
       it('应该返回刚好等于所需金额的Record', async () => {
@@ -221,9 +221,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '1000000' } }, // 刚好满足
-          { spent: false, data: { microcredits: '2000000' } },
-          { spent: false, data: { microcredits: '3000000' } },
+          { spent: false, data: { microcredits: '1000000u64.private' } }, // 刚好满足
+          { spent: false, data: { microcredits: '2000000u64.private' } },
+          { spent: false, data: { microcredits: '3000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -233,7 +233,7 @@ describe('WalletService', () => {
         // Assert
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
-        expect(parsed.data.microcredits).toBe('1000000');
+        expect(parsed.data.microcredits).toBe('1000000u64.private');
       });
 
       it('当有多个满足的Record时，应该选择最小的', async () => {
@@ -241,10 +241,10 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '5000000' } },
-          { spent: false, data: { microcredits: '2000000' } }, // 最小满足
-          { spent: false, data: { microcredits: '3000000' } },
-          { spent: false, data: { microcredits: '10000000' } },
+          { spent: false, data: { microcredits: '5000000u64.private' } },
+          { spent: false, data: { microcredits: '2000000u64.private' } }, // 最小满足
+          { spent: false, data: { microcredits: '3000000u64.private' } },
+          { spent: false, data: { microcredits: '10000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -254,7 +254,7 @@ describe('WalletService', () => {
         // Assert
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
-        expect(parsed.data.microcredits).toBe('2000000');
+        expect(parsed.data.microcredits).toBe('2000000u64.private');
       });
 
       it('应该忽略已花费的Records', async () => {
@@ -262,9 +262,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: true, data: { microcredits: '2000000' } },  // 已花费，忽略
-          { spent: false, data: { microcredits: '3000000' } }, // 应该选这个
-          { spent: false, data: { microcredits: '5000000' } },
+          { spent: true, data: { microcredits: '2000000u64.private' } },  // 已花费，忽略
+          { spent: false, data: { microcredits: '3000000u64.private' } }, // 应该选这个
+          { spent: false, data: { microcredits: '5000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -275,7 +275,7 @@ describe('WalletService', () => {
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
         expect(parsed.spent).toBe(false);
-        expect(parsed.data.microcredits).toBe('3000000');
+        expect(parsed.data.microcredits).toBe('3000000u64.private');
       });
     });
 
@@ -285,9 +285,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '500000' } },
-          { spent: false, data: { microcredits: '600000' } },
-          { spent: false, data: { microcredits: '400000' } },
+          { spent: false, data: { microcredits: '500000u64.private' } },
+          { spent: false, data: { microcredits: '600000u64.private' } },
+          { spent: false, data: { microcredits: '400000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -298,11 +298,18 @@ describe('WalletService', () => {
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
-          .reduce((sum, r) => sum + BigInt(r.data.microcredits), 0n);
+          .reduce((sum, r) => {
+            const match = r.data.microcredits.match(/^(\d+)/);
+            return sum + (match ? BigInt(match[1]) : 0n);
+          }, 0n);
         expect(totalAmount).toBe(1000000n); // 刚好等于，不需要找零
         
         // 验证包含正确的组合
-        const amounts = records.map(r => BigInt(JSON.parse(r).data.microcredits));
+        const amounts = records.map(r => {
+          const parsed = JSON.parse(r);
+          const match = parsed.data.microcredits.match(/^(\d+)/);
+          return match ? BigInt(match[1]) : 0n;
+        });
         expect(amounts).toContain(600000n);
         expect(amounts).toContain(400000n);
       });
@@ -312,9 +319,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '100000' } },
-          { spent: false, data: { microcredits: '200000' } },
-          { spent: false, data: { microcredits: '800000' } },
+          { spent: false, data: { microcredits: '100000u64.private' } },
+          { spent: false, data: { microcredits: '200000u64.private' } },
+          { spent: false, data: { microcredits: '800000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -325,10 +332,17 @@ describe('WalletService', () => {
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
-          .reduce((sum, r) => sum + BigInt(r.data.microcredits), 0n);
+          .reduce((sum, r) => {
+            const match = r.data.microcredits.match(/^(\d+)/);
+            return sum + (match ? BigInt(match[1]) : 0n);
+          }, 0n);
         expect(totalAmount).toBe(900000n); // 刚好等于
         
-        const amounts = records.map(r => BigInt(JSON.parse(r).data.microcredits));
+        const amounts = records.map(r => {
+          const parsed = JSON.parse(r);
+          const match = parsed.data.microcredits.match(/^(\d+)/);
+          return match ? BigInt(match[1]) : 0n;
+        });
         expect(amounts).toContain(800000n);
         expect(amounts).toContain(100000n);
       });
@@ -338,9 +352,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '300000' } },
-          { spent: false, data: { microcredits: '400000' } },
-          { spent: false, data: { microcredits: '500000' } },
+          { spent: false, data: { microcredits: '300000u64.private' } },
+          { spent: false, data: { microcredits: '400000u64.private' } },
+          { spent: false, data: { microcredits: '500000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -351,7 +365,10 @@ describe('WalletService', () => {
         expect(records.length).toBe(3);
         const totalAmount = records
           .map(r => JSON.parse(r))
-          .reduce((sum, r) => sum + BigInt(r.data.microcredits), 0n);
+          .reduce((sum, r) => {
+            const match = r.data.microcredits.match(/^(\d+)/);
+            return sum + (match ? BigInt(match[1]) : 0n);
+          }, 0n);
         expect(totalAmount).toBe(1200000n);
       });
 
@@ -360,9 +377,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: true, data: { microcredits: '5000000' } },  // 已花费，忽略
-          { spent: false, data: { microcredits: '600000' } },
-          { spent: false, data: { microcredits: '500000' } },
+          { spent: true, data: { microcredits: '5000000u64.private' } },  // 已花费，忽略
+          { spent: false, data: { microcredits: '600000u64.private' } },
+          { spent: false, data: { microcredits: '500000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -384,9 +401,9 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '0' } },
-          { spent: false, data: { microcredits: '600000' } },
-          { spent: false, data: { microcredits: '500000' } },
+          { spent: false, data: { microcredits: '0u64.private' } },
+          { spent: false, data: { microcredits: '600000u64.private' } },
+          { spent: false, data: { microcredits: '500000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -397,13 +414,17 @@ describe('WalletService', () => {
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
-          .reduce((sum, r) => sum + BigInt(r.data.microcredits), 0n);
+          .reduce((sum, r) => {
+            const match = r.data.microcredits.match(/^(\d+)/);
+            return sum + (match ? BigInt(match[1]) : 0n);
+          }, 0n);
         expect(totalAmount).toBe(1100000n);
         
         // 验证不包含金额为0的record
         records.forEach(record => {
           const parsed = JSON.parse(record);
-          expect(BigInt(parsed.data.microcredits)).toBeGreaterThan(0n);
+          const match = parsed.data.microcredits.match(/^(\d+)/);
+          expect(match ? BigInt(match[1]) : 0n).toBeGreaterThan(0n);
         });
       });
 
@@ -412,8 +433,8 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '0' } },
-          { spent: false, data: { microcredits: '0' } },
+          { spent: false, data: { microcredits: '0u64.private' } },
+          { spent: false, data: { microcredits: '0u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -427,7 +448,7 @@ describe('WalletService', () => {
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
           { spent: false, data: {} }, // 缺少 microcredits
-          { spent: false, data: { microcredits: '1000000' } },
+          { spent: false, data: { microcredits: '1000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -437,7 +458,7 @@ describe('WalletService', () => {
         // Assert - 应该选择 1000000 的那个
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
-        expect(parsed.data.microcredits).toBe('1000000');
+        expect(parsed.data.microcredits).toBe('1000000u64.private');
       });
 
       it('余额不足时应该抛出错误', async () => {
@@ -445,7 +466,7 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '1000000' } },
+          { spent: false, data: { microcredits: '1000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -468,8 +489,8 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: true, data: { microcredits: '1000000' } },
-          { spent: true, data: { microcredits: '2000000' } },
+          { spent: true, data: { microcredits: '1000000u64.private' } },
+          { spent: true, data: { microcredits: '2000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -512,7 +533,7 @@ describe('WalletService', () => {
         mockWallet.publicKey = mockAddress;
         mockWallet.requestRecords = undefined;
         const mockRecords = [
-          { spent: false, data: { microcredits: '2000000' } },
+          { spent: false, data: { microcredits: '2000000u64.private' } },
         ];
         mockWallet.requestRecordPlaintexts = vi.fn().mockResolvedValue({ records: mockRecords });
         const serviceWithPlaintexts = new WalletService(mockWallet as any);
@@ -542,7 +563,7 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '2000000' } },
+          { spent: false, data: { microcredits: '2000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -560,7 +581,7 @@ describe('WalletService', () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '2000000' } },
+          { spent: false, data: { microcredits: '2000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -930,11 +951,11 @@ describe('WalletService', () => {
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
       const mockRecords = [
-        { spent: false, data: { microcredits: '1000000' } },
-        { spent: true, data: { microcredits: '500000' } },  // 已花费，不计入
-        { spent: false, data: { microcredits: '2500000' } },
+        { spent: false, data: { microcredits: '1000000u64.private' } },
+        { spent: true, data: { microcredits: '500000u64.private' } },  // 已花费，不计入
+        { spent: false, data: { microcredits: '2500000u64.private' } },
         { spent: false, data: {} }, // 没有 microcredits，不计入
-        { spent: false, data: { microcredits: '1500000' } },
+        { spent: false, data: { microcredits: '1500000u64.private' } },
       ];
       // 使用 requestRecords（优先级更高）
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });

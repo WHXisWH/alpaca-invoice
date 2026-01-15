@@ -138,6 +138,34 @@ export class WalletService {
   }
 
   /**
+   * 解析 microcredits 值
+   * 支持格式：
+   * - "5000000" (纯数字字符串)
+   * - "5000000u64.private" (Aleo 私有类型格式)
+   * @param microcredits 原始 microcredits 值
+   * @returns 解析后的 BigInt 值
+   */
+  private parseMicrocredits(microcredits: string | undefined): bigint {
+    if (!microcredits) {
+      return 0n;
+    }
+
+    // 如果是 "5000000u64.private" 格式，提取数字部分
+    // 匹配模式：数字 + 可选的类型后缀（如 u64.private）
+    const match = microcredits.match(/^(\d+)/);
+    if (match) {
+      return BigInt(match[1]);
+    }
+
+    // 如果无法解析，尝试直接转换
+    try {
+      return BigInt(microcredits);
+    } catch {
+      return 0n;
+    }
+  }
+
+  /**
    * 获取私有余额（从钱包 Records 计算）
    * @param publicKey 钱包公钥地址
    * @returns 私有余额（Microcredits）
@@ -170,7 +198,7 @@ export class WalletService {
       let privateBalance = 0n;
       for (const record of records) {
         if (!record.spent && record.data?.microcredits) {
-          const amount = BigInt(record.data.microcredits);
+          const amount = this.parseMicrocredits(record.data.microcredits);
           privateBalance += amount;
         }
       }
@@ -222,7 +250,7 @@ export class WalletService {
         .filter((r: any) => !r.spent)
         .map((r: any) => ({
           record: r,
-          amount: BigInt(r.data?.microcredits || 0),
+          amount: this.parseMicrocredits(r.data?.microcredits),
           recordString: typeof r === 'string' ? r : JSON.stringify(r)
         }))
         .filter((r: any) => r.amount > 0n); // 过滤掉金额为0的records
