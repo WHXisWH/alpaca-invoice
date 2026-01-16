@@ -158,57 +158,48 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 查询链上发票状态Mapping
+   * 查询链上程序的 Mapping 值（通用方法）
    * 
-   * 注意：当前 zk_invoice.aleo 合约采用 Record-based 架构（UTXO 模型），
-   * 不使用公开 Mapping 存储状态。所有状态通过加密 Record 传递。
+   * 可以查询任意程序的任意 Mapping，例如：
+   * - credits.aleo 的 account mapping（余额查询）
+   * - zk_invoice.aleo 的 invoice_status mapping（发票状态查询）
+   * - 任意自定义程序的任意 mapping
    * 
-   * 如果未来合约升级为使用 Mapping，可以使用以下实现：
-   * const status = await this.networkClient.getProgramMappingValue(
-   *   'zk_invoice.aleo', 
-   *   'invoice_status', 
-   *   invoiceId
-   * );
+   * @param programId 程序标识符（如: "zk_invoice.aleo"）
+   * @param mappingName Mapping 名称（如: "invoice_status"）
+   * @param key Mapping 的键值（Field 类型）
+   * @returns Mapping 的值（字符串格式），如果不存在则返回 null
+   * @throws {ProtocolServiceError} 可能抛出 NODE_CONNECTION_FAILED
    */
-  async getInvoiceMappingStatus(invoiceId: AleoField): Promise<InvoiceStatus> {
+  async getProgramMappingValue(
+    programId: string,
+    mappingName: string,
+    key: AleoField
+  ): Promise<string | null> {
     try {
-      // 尝试查询 Mapping（如果合约使用 Mapping）
-      const status = await this.networkClient.getProgramMappingValue(
-        'zk_invoice.aleo',
-        'invoice_status',
-        invoiceId
+      const value = await this.networkClient.getProgramMappingValue(
+        programId,
+        mappingName,
+        key
       );
 
-      if (status === null || status === undefined) {
-        throw new ProtocolServiceError(
-          ProtocolError.MAPPING_NOT_FOUND,
-          'Invoice status not found in mapping',
-          { invoiceId }
-        );
+      // 如果返回 null 或 undefined，表示 Mapping 中不存在该键
+      if (value === null || value === undefined) {
+        return null;
       }
 
-      // 解析状态值（格式可能是 "0u8", "1u8" 等）
-      const statusStr = String(status).replace(/u8$/i, '').trim();
-      const statusNum = parseInt(statusStr, 10);
-
-      if (statusNum < 0 || statusNum > 3) {
-        throw new ProtocolServiceError(
-          ProtocolError.INVALID_RECORD,
-          'Invalid invoice status value',
-          { invoiceId, status }
-        );
-      }
-
-      return statusNum as InvoiceStatus;
+      // 返回字符串格式的值（可能包含类型后缀，如 "123u64", "0u8" 等）
+      return String(value);
     } catch (error: any) {
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
 
+      // 网络错误或其他错误
       throw new ProtocolServiceError(
-        ProtocolError.MAPPING_NOT_FOUND,
-        'Failed to query invoice status mapping',
-        { invoiceId, originalError: error }
+        ProtocolError.NODE_CONNECTION_FAILED,
+        'Failed to query program mapping value',
+        { programId, mappingName, key, originalError: error }
       );
     }
   }

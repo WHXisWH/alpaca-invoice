@@ -53,13 +53,19 @@ export interface IAleoProtocolService {
   ): Promise<string[]>;
 
   /**
-   * 查询链上发票状态Mapping
-   * 对应合约中的 `mapping invoice_status: field => u8`
-   * @param invoiceId 发票的唯一标识 Field
-   * @returns 合约定义的 InvoiceStatus 枚举值
+   * 查询链上程序的 Mapping 值（通用方法）
+   * 可以查询任意程序的任意 Mapping
+   * @param programId 程序标识符（如: "zk_invoice.aleo"）
+   * @param mappingName Mapping 名称（如: "invoice_status"）
+   * @param key Mapping 的键值（Field 类型）
+   * @returns Mapping 的值（字符串格式），如果不存在则返回 null
    * @throws {ProtocolServiceError} 可能抛出 MAPPING_NOT_FOUND, NODE_CONNECTION_FAILED
    */
-  getInvoiceMappingStatus(invoiceId: AleoField): Promise<InvoiceStatus>;
+  getProgramMappingValue(
+    programId: string,
+    mappingName: string,
+    key: AleoField
+  ): Promise<string | null>;
 
   /**
    * 广播已生成的零知识证明交易到 Aleo 网络
