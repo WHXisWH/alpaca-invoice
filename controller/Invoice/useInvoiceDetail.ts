@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
-import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
+import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInoviceStore';
+import { useInvoiceStore as useOldInvoiceStore } from '@/stores/invoiceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
@@ -8,9 +9,11 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoInvoiceRecord } from '@/services/CryptoService/ICryptoService';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
-import { AleoField, Invoice } from '@/lib/types';
+import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
+import { cleanAleoNumber } from '@/lib/utils';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
-import { IInvoiceDetail } from './IInvoiceDetail';
+import { IInvoiceDetail, UserRole, StatusConfig } from './IInvoiceDetail';
+import { toast } from 'sonner';
 
 const POLL_INTERVAL = 15000; // 15秒
 const PROGRAM_ID = 'zk_invoice.aleo';
@@ -35,16 +38,22 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     updateInvoice,
     setConfirmationStatus,
     confirmationStatus
-  } = useInvoiceStore();
+  } = useNewInvoiceStore();
+  const { 
+    payInvoice: storePayInvoice,
+    cancelInvoice: storeCancelInvoice,
+    isLoading
+  } = useOldInvoiceStore();
   const { handleError } = useErrorHandler();
   
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 创建服务实例
-  const walletService = new WalletService(createWalletAdapter(wallet));
-  const cryptoService = new CryptoService();
-  const storageService = new StorageService();
+  // 使用 useMemo 缓存服务实例，避免每次渲染都创建新实例导致无限循环
+  const walletService = useMemo(() => new WalletService(createWalletAdapter(wallet)), [wallet]);
+  const cryptoService = useMemo(() => new CryptoService(), []);
+  const storageService = useMemo(() => new StorageService(), []);
 
   /**
    * 获取发票对象
@@ -58,6 +67,128 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     if (!invoiceHash) return 'SENDING';
     return confirmationStatus.get(invoiceHash) || 'SENDING';
   }, [invoiceHash, confirmationStatus]);
+
+  /**
+   * 确定当前用户的角色（卖家或买家）
+   */
+  const userRole: UserRole = useMemo(() => {
+    if (!publicKey || !invoice) return 'unknown';
+    
+    // 清理地址字符串，移除可能的可见性修饰符
+    const cleanPublicKey = publicKey.replace(/\.(private|public)$/, '');
+    const cleanSeller = invoice.seller.replace(/\.(private|public)$/, '');
+    const cleanBuyer = invoice.buyer.replace(/\.(private|public)$/, '');
+    
+    if (cleanPublicKey === cleanSeller) {
+      return 'seller';
+    } else if (cleanPublicKey === cleanBuyer) {
+      return 'buyer';
+    }
+    
+    return 'unknown';
+  }, [publicKey, invoice]);
+
+  /**
+   * 获取状态配置
+   */
+  const getStatusConfig = useCallback((status: InvoiceStatus): StatusConfig => {
+    switch (status) {
+      case InvoiceStatus.PENDING:
+        return {
+          label: 'Pending',
+          icon: '⏳',
+          bg: 'bg-amber-100',
+          text: 'text-amber-700',
+          border: 'border-amber-300'
+        };
+      case InvoiceStatus.PAID:
+        return {
+          label: 'Paid',
+          icon: '✅',
+          bg: 'bg-green-100',
+          text: 'text-green-700',
+          border: 'border-green-300'
+        };
+      case InvoiceStatus.CANCELLED:
+        return {
+          label: 'Cancelled',
+          icon: '❌',
+          bg: 'bg-slate-100',
+          text: 'text-slate-700',
+          border: 'border-slate-300'
+        };
+      case InvoiceStatus.EXPIRED:
+        return {
+          label: 'Expired',
+          icon: '⚠️',
+          bg: 'bg-red-100',
+          text: 'text-red-700',
+          border: 'border-red-300'
+        };
+      default:
+        return {
+          label: 'Unknown',
+          icon: '❓',
+          bg: 'bg-slate-100',
+          text: 'text-slate-700',
+          border: 'border-slate-300'
+        };
+    }
+  }, []);
+
+  /**
+   * 当前状态配置
+   */
+  const statusConfig: StatusConfig = useMemo(() => {
+    return invoice ? getStatusConfig(invoice.status) : getStatusConfig(InvoiceStatus.PENDING);
+  }, [invoice, getStatusConfig]);
+
+  /**
+   * 处理支付
+   */
+  const handlePay = useCallback(async () => {
+    if (!invoice?.id) return;
+    
+    setIsProcessing(true);
+    try {
+      toast.loading('Processing payment...', { id: 'pay-invoice' });
+      const result = await storePayInvoice(invoice.id);
+      toast.success('Payment successful!', {
+        id: 'pay-invoice',
+        description: `Transaction ID: ${result.transactionId.slice(0, 16)}...`
+      });
+    } catch (error) {
+      toast.error('Payment failed', {
+        id: 'pay-invoice',
+        description: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+      handleError(error as Error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [invoice, storePayInvoice, handleError]);
+
+  /**
+   * 处理取消
+   */
+  const handleCancel = useCallback(async () => {
+    if (!invoice?.id) return;
+    
+    setIsProcessing(true);
+    try {
+      toast.loading('Cancelling invoice...', { id: 'cancel-invoice' });
+      await storeCancelInvoice(invoice.id);
+      toast.success('Invoice cancelled successfully', { id: 'cancel-invoice' });
+    } catch (error) {
+      toast.error('Failed to cancel invoice', {
+        id: 'cancel-invoice',
+        description: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+      handleError(error as Error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [invoice, storeCancelInvoice, handleError]);
 
   /**
    * 扫描链上Record，查找匹配的发票
@@ -160,33 +291,56 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
 
     try {
       console.log('🔄 [confirmInvoice] Confirming invoice:', invoiceHash);
+      console.log('🔍 [confirmInvoice] Raw record data:', record);
+      
+      // 清理链上哈希的可见性修饰符
+      const cleanChainHash = record.invoice_hash?.replace(/field\.(private|public)$/, 'field') as AleoField;
+      const cleanInvoiceId = record.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
+      
+      // 清理数字字段的 Aleo 类型后缀
+      const cleanAmount = cleanAleoNumber(record.amount);
+      const cleanDueDate = cleanAleoNumber(record.due_date);
+      const cleanCreatedAt = cleanAleoNumber(record.created_at);
+      const cleanStatus = cleanAleoNumber(record.status);
+      
+      console.log('🔍 [confirmInvoice] Cleaned values:', {
+        amount: { raw: record.amount, cleaned: cleanAmount },
+        dueDate: { raw: record.due_date, cleaned: cleanDueDate },
+        createdAt: { raw: record.created_at, cleaned: cleanCreatedAt },
+        status: { raw: record.status, cleaned: cleanStatus }
+      });
+      
       // 更新Store中的确认状态
       setConfirmationStatus(invoiceHash, 'CONFIRMED');
 
-      // 从链上Record更新Invoice对象的所有字段
+      // 从链上Record更新Invoice对象的所有字段（包括最新的invoiceId）
       const updatedInvoice: Partial<Invoice> = {
-        id: record.invoice_id as AleoField,
-        invoiceHash: record.invoice_hash as AleoField,
+        id: cleanInvoiceId,
+        invoiceHash: cleanChainHash,
         seller: record.seller as any,
         buyer: record.buyer as any,
-        amount: BigInt(record.amount) as any,
-        dueDate: new Date(record.due_date * 1000),
-        createdAt: new Date(record.created_at * 1000),
-        status: record.status as any
+        amount: BigInt(cleanAmount) as any,
+        dueDate: new Date(Number(cleanDueDate) * 1000),
+        createdAt: new Date(Number(cleanCreatedAt) * 1000),
+        status: Number(cleanStatus) as any
       };
+      
+      // 使用原来的invoice.id来更新，因为这是store中的key
       updateInvoice(invoice.id, updatedInvoice);
 
-      // 同步更新本地持久化存档（保持details不变）
+      // 同步更新本地持久化存档（使用invoiceHash作为key，保持details不变）
       if (invoice.details) {
         const encryptedPayload = await cryptoService.encryptInvoiceDetails(
           invoice.details,
           masterKey
         );
+        // IndexedDB使用invoiceHash作为主键
         await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
       }
 
       console.log('✅ Invoice confirmed and synced to IndexedDB', {
         invoiceHash,
+        invoiceId: cleanInvoiceId,
         status: record.status,
         seller: record.seller,
         buyer: record.buyer
@@ -266,6 +420,11 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     currentStatus,
     isSyncing,
     isConfirmed: currentStatus === 'CONFIRMED',
+    userRole,
+    statusConfig,
+    isProcessing,
+    handlePay,
+    handleCancel,
     startPolling,
     stopPolling
   };
