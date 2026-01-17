@@ -24,6 +24,25 @@ export interface AleoInvoiceRecord {
   _nonce?: string;         // Record nonce (可选)
 }
 
+/**
+ * 链上 PaymentRecord 的结构（支付后生成的收据记录）
+ */
+export interface AleoPaymentRecord {
+  owner: string;           // Record 所有者地址
+  payment_id: string;      // 支付唯一ID (Field 格式)
+  invoice_id: string;      // 关联的发票ID (Field 格式)
+  payer: string;           // 付款人地址
+  payee: string;           // 收款人地址
+  amount: string;          // 支付金额 (microcredits)
+  paid_at: number;         // 支付时间 (Unix timestamp)
+  _nonce?: string;         // Record nonce (可选)
+}
+
+/**
+ * 链上 Record 的联合类型（InvoiceRecord 或 PaymentRecord）
+ */
+export type AleoRecord = AleoInvoiceRecord | AleoPaymentRecord;
+
 export interface ICryptoService {
   /**
    * 核心业务哈希：将 InvoiceDetails 按照合约逻辑计算出唯一哈希

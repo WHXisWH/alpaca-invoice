@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { AleoInvoiceRecord } from '@/services/CryptoService/ICryptoService';
+import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
 import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
@@ -48,6 +48,7 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSyncingStatus, setIsSyncingStatus] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // 使用 useMemo 缓存服务实例，避免每次渲染都创建新实例导致无限循环
@@ -144,6 +145,208 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
   }, [invoice, getStatusConfig]);
 
   /**
+   * 手动同步发票状态（从链上获取最新 record）
+   * 根据 invoice_id 查找最新的 record（InvoiceRecord 或 PaymentRecord）
+   */
+  const handleSyncStatus = useCallback(async () => {
+    if (!invoice || !invoiceHash || !masterKey || !publicKey) {
+      toast.error('Unable to sync', {
+        description: 'Missing required data'
+      });
+      return;
+    }
+
+    setIsSyncingStatus(true);
+    try {
+      console.log('🔄 [handleSyncStatus] Starting manual sync for invoice:', invoice.id);
+      toast.loading('Syncing status...', { id: 'sync-status' });
+
+      // Scan all records from chain
+      const response = await walletService.requestRecords(PROGRAM_ID);
+      const records: any[] = response.records || [];
+      console.log(`📋 [handleSyncStatus] Found ${records.length} records on chain`);
+
+      let latestInvoiceRecord: AleoInvoiceRecord | null = null;
+      let latestPaymentRecord: AleoPaymentRecord | null = null;
+
+      // Iterate through all records to find the latest record matching invoice_id
+      for (const record of records) {
+        try {
+          // Parse Record data
+          let recordData: any;
+          
+          if (typeof record === 'string') {
+            recordData = JSON.parse(record);
+          } else if (record && typeof record === 'object') {
+            if (record.data) {
+              recordData = typeof record.data === 'string' 
+                ? JSON.parse(record.data) 
+                : record.data;
+            } else {
+              recordData = record;
+            }
+          } else {
+            continue;
+          }
+          
+          if (!recordData) continue;
+
+          // Parse to common format
+          const recordJsonString = typeof recordData === 'string' 
+            ? recordData 
+            : JSON.stringify(recordData);
+          
+          const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
+          
+          // Determine if it's InvoiceRecord or PaymentRecord
+          // PaymentRecord has payment_id field, InvoiceRecord has invoice_hash field
+          const isPaymentRecord = 'payment_id' in parsedRecord && parsedRecord.payment_id;
+          const isInvoiceRecord = 'invoice_hash' in parsedRecord && parsedRecord.invoice_hash;
+          
+          if (isPaymentRecord) {
+            // PaymentRecord
+            const cleanRecordInvoiceId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
+            const cleanCurrentInvoiceId = invoice.id?.replace(/field\.(private|public)$/, 'field');
+            
+            console.log('🔍 [handleSyncStatus] Comparing PaymentRecord invoice_id:', {
+              recordInvoiceId: cleanRecordInvoiceId,
+              currentInvoiceId: cleanCurrentInvoiceId,
+              match: cleanRecordInvoiceId === cleanCurrentInvoiceId
+            });
+
+            if (cleanRecordInvoiceId === cleanCurrentInvoiceId) {
+              console.log('✅ [handleSyncStatus] Found matching PaymentRecord:', parsedRecord);
+              latestPaymentRecord = parsedRecord as AleoPaymentRecord;
+              // PaymentRecord takes priority, break when found
+              break;
+            }
+          } else if (isInvoiceRecord) {
+            // InvoiceRecord
+            const cleanRecordInvoiceId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
+            const cleanCurrentInvoiceId = invoice.id?.replace(/field\.(private|public)$/, 'field');
+            
+            console.log('🔍 [handleSyncStatus] Comparing InvoiceRecord invoice_id:', {
+              recordInvoiceId: cleanRecordInvoiceId,
+              currentInvoiceId: cleanCurrentInvoiceId,
+              match: cleanRecordInvoiceId === cleanCurrentInvoiceId
+            });
+
+            if (cleanRecordInvoiceId === cleanCurrentInvoiceId) {
+              console.log('✅ [handleSyncStatus] Found matching InvoiceRecord:', parsedRecord);
+              latestInvoiceRecord = parsedRecord as AleoInvoiceRecord;
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to parse record:', error);
+          continue;
+        }
+      }
+
+      // Use PaymentRecord first, if not available then use InvoiceRecord
+      const recordToUse = latestPaymentRecord || latestInvoiceRecord;
+      const recordType = latestPaymentRecord ? 'payment' : 'invoice';
+
+      if (!recordToUse) {
+        toast.error('No matching on-chain record found', { id: 'sync-status' });
+        return;
+      }
+
+      console.log(`🔄 [handleSyncStatus] Updating with ${recordType} record`);
+
+      // Build update data based on different record types
+      let updatedInvoice: Partial<Invoice>;
+
+      if (latestPaymentRecord) {
+        // Build update data from PaymentRecord
+        const cleanInvoiceId = latestPaymentRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
+        const cleanAmount = cleanAleoNumber(latestPaymentRecord.amount);
+        const cleanPaidAt = cleanAleoNumber(latestPaymentRecord.paid_at);
+
+        updatedInvoice = {
+          id: cleanInvoiceId,
+          invoiceHash: invoice.invoiceHash, // Keep original hash
+          seller: latestPaymentRecord.payee as any, // PaymentRecord's payee is the seller
+          buyer: latestPaymentRecord.payer as any,  // PaymentRecord's payer is the buyer
+          amount: BigInt(cleanAmount) as any,
+          dueDate: invoice.dueDate, // Keep original due date
+          createdAt: invoice.createdAt, // Keep original created at
+          status: 1 as any // PaymentRecord indicates paid, status = 1 (PAID)
+        };
+
+        console.log('✅ [handleSyncStatus] Updated from PaymentRecord - Status: PAID');
+      } else if (latestInvoiceRecord) {
+        // Build update data from InvoiceRecord
+        const cleanChainHash = latestInvoiceRecord.invoice_hash?.replace(/field\.(private|public)$/, 'field') as AleoField;
+        const cleanInvoiceId = latestInvoiceRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
+        const cleanAmount = cleanAleoNumber(latestInvoiceRecord.amount);
+        const cleanDueDate = cleanAleoNumber(latestInvoiceRecord.due_date);
+        const cleanCreatedAt = cleanAleoNumber(latestInvoiceRecord.created_at);
+        const cleanStatus = cleanAleoNumber(latestInvoiceRecord.status);
+
+        updatedInvoice = {
+          id: cleanInvoiceId,
+          invoiceHash: cleanChainHash,
+          seller: latestInvoiceRecord.seller as any,
+          buyer: latestInvoiceRecord.buyer as any,
+          amount: BigInt(cleanAmount) as any,
+          dueDate: new Date(Number(cleanDueDate) * 1000),
+          createdAt: new Date(Number(cleanCreatedAt) * 1000),
+          status: Number(cleanStatus) as any
+        };
+
+        console.log(`✅ [handleSyncStatus] Updated from InvoiceRecord - Status: ${getStatusLabel(Number(cleanStatus))}`);
+      } else {
+        toast.error('Invalid record type', { id: 'sync-status' });
+        return;
+      }
+      
+      // Update Store
+      updateInvoice(invoice.id, updatedInvoice);
+      setConfirmationStatus(invoiceHash, 'CONFIRMED');
+
+      // Sync update IndexedDB (keep details unchanged)
+      if (invoice.details) {
+        const encryptedPayload = await cryptoService.encryptInvoiceDetails(
+          invoice.details,
+          masterKey
+        );
+        await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
+      }
+
+      toast.success('Status sync successful', {
+        id: 'sync-status',
+        description: recordType === 'payment' 
+          ? '✅ Paid (Payment Record)' 
+          : `${getStatusLabel(updatedInvoice.status as number)}`
+      });
+
+      console.log('✅ [handleSyncStatus] Sync completed successfully');
+    } catch (error) {
+      console.error('Failed to sync status:', error);
+      toast.error('Sync failed', {
+        id: 'sync-status',
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+      handleError(error as Error);
+    } finally {
+      setIsSyncingStatus(false);
+    }
+  }, [invoice, invoiceHash, masterKey, publicKey, walletService, cryptoService, storageService, updateInvoice, setConfirmationStatus, handleError]);
+
+  /**
+   * 获取状态标签
+   */
+  const getStatusLabel = useCallback((status: number): string => {
+    switch (status) {
+      case 0: return 'Pending';
+      case 1: return 'Paid';
+      case 2: return 'Cancelled';
+      case 3: return 'Expired';
+      default: return 'Unknown';
+    }
+  }, []);
+
+  /**
    * 处理支付
    */
   const handlePay = useCallback(async () => {
@@ -205,7 +408,6 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
       const response = await walletService.requestRecords(PROGRAM_ID);
       const records: any[] = response.records || [];
       console.log(`📋 [scanChainRecords] Found ${records.length} records`);
-      console.log('records', records)
 
       // 遍历Records，查找匹配的发票
       for (const record of records) {
@@ -423,8 +625,10 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     userRole,
     statusConfig,
     isProcessing,
+    isSyncingStatus,
     handlePay,
     handleCancel,
+    handleSyncStatus,
     startPolling,
     stopPolling
   };

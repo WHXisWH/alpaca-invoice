@@ -32,8 +32,10 @@ export default function InvoiceDetailPage() {
     userRole,
     statusConfig,
     isProcessing,
+    isSyncingStatus,
     handlePay,
-    handleCancel
+    handleCancel,
+    handleSyncStatus
   } = useInvoiceDetail(invoiceHash);
 
   // 显示授权遮罩
@@ -44,16 +46,16 @@ export default function InvoiceDetailPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
           <div className="mb-4">
             <div className="text-lg font-semibold text-slate-900 mb-2">
-              解锁隐私数据
+              Unlock Private Data
             </div>
             <p className="text-sm text-slate-600 mb-4">
-              需要授权访问您的私有发票数据
+              Authorization required to access your private invoice data
             </p>
             <button
               onClick={handleUnlock}
               className="rounded-lg bg-amber-600 px-6 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
             >
-              解锁
+              Unlock
             </button>
           </div>
         </div>
@@ -67,7 +69,7 @@ export default function InvoiceDetailPage() {
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-          <div className="text-sm text-slate-600">正在加载发票数据...</div>
+          <div className="text-sm text-slate-600">Loading invoice data...</div>
         </div>
       </div>
     );
@@ -87,22 +89,36 @@ export default function InvoiceDetailPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
-        {/* 链上确认状态 */}
-        <div className="flex items-center gap-2">
+        {/* Chain confirmation status and sync button */}
+        <div className="flex items-center gap-3">
           {isSyncing && (
             <span className="text-xs text-amber-600 animate-pulse">
-              正在同步链上记录...
+              Syncing chain records...
             </span>
           )}
           {isConfirmed && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-              ✓ 已确认 (Found on Chain)
+              ✓ Confirmed (Found on Chain)
             </span>
           )}
           {!isConfirmed && !isSyncing && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-              ⏳ 发送中
+              ⏳ Sending
             </span>
+          )}
+          {/* Manual sync button */}
+          {isConfirmed && (
+            <button
+              onClick={handleSyncStatus}
+              disabled={isSyncingStatus || isProcessing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Sync latest status from chain"
+            >
+              <svg className={`w-3.5 h-3.5 ${isSyncingStatus ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {isSyncingStatus ? 'Syncing...' : 'Sync Status'}
+            </button>
           )}
         </div>
       </div>

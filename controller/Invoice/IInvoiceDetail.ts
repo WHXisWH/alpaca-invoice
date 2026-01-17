@@ -43,11 +43,17 @@ export interface IInvoiceDetail {
   /** 是否正在处理操作（支付/取消） */
   isProcessing: boolean;
   
+  /** 是否正在手动同步状态 */
+  isSyncingStatus: boolean;
+  
   /** 处理支付 */
   handlePay: () => Promise<void>;
   
   /** 处理取消 */
   handleCancel: () => Promise<void>;
+  
+  /** 手动同步发票状态（从链上获取最新 record） */
+  handleSyncStatus: () => Promise<void>;
   
   /** 开始轮询扫描链上Record */
   startPolling: () => void;
