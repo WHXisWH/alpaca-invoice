@@ -25,7 +25,7 @@ graph TB
 
 ### 1.2 架构概述
 
-本系统采用**四层解耦架构**，旨在将复杂的零知识证明（ZKP）计算、隐私数据管理与 UI 渲染完全分离，实现业务逻辑与 Aleo 底层协议的深度解耦。
+本系统采用**四层解耦架构**，旨在将隐私数据管理与 UI 渲染完全分离，实现业务逻辑与 Aleo 底层协议的深度解耦。零知识证明（ZKP）的生成由钱包内部处理，应用层通过 `WalletService` 与钱包交互。
 
 ---
 
@@ -75,7 +75,7 @@ graph TB
 
 **核心功能**：
 
-1. **Aleo SDK 交互**：封装 `requestRecords`、执行 `Transition`、生成 ZKP 证明
+1. **钱包交互**：封装 `requestRecords`、`requestTransaction`，与钱包进行交互（ZKP 证明由钱包内部生成）
 2. **加密算法**：执行发票明细的 AES 加密、Audit Key 的派生、SHA-256 哈希计算
 3. **单位转换**：处理 Microcredits 与 Credits 之间的精度转换
 4. **RPC 通信**：与 Aleo 节点进行网络通信
@@ -120,7 +120,7 @@ graph TB
 |---------|---------|---------|
 | `useWalletController` | 处理钱包连接、余额轮询及身份授权 | [IWalletController.ts](../controller/Wallet/IWalletController.ts) |
 | `useInvoiceController` | 处理发票列表的显示逻辑、解密触发 | [IInvoiceController.ts](../controller/Invoice/IInvoiceController.ts) |
-| `useTransactionController` | 管理高耗时 ZKP 流程（创建/支付/撤销） | [ITxController.ts](../controller/Transaction/ITxController.ts) |
+| `useTransactionController` | 管理交易流程（创建/支付/撤销），通过钱包服务处理链上交互 | [ITxController.ts](../controller/Transaction/ITxController.ts) |
 | `useAuditController` | 负责隐私数据的打包、签名与导出 | [IAuditController.ts](../controller/Audit/IAuditController.ts) |
 
 ### 3.2 Model 层 (Stores)
@@ -136,11 +136,12 @@ graph TB
 
 | 服务接口 | 职责描述 | 接口定义 | 实现状态 |
 |---------|---------|---------|---------|
-| **IWalletService** | 连接钱包、获取 ViewKey、获取余额、签名 | [IWalletService.ts](../services/WalletService/IWalletService.ts) | ✅ 完全实现 |
+| **IWalletService** | 连接钱包、获取 ViewKey、获取余额、签名、请求交易 | [IWalletService.ts](../services/WalletService/IWalletService.ts) | ✅ 完全实现 |
 | **ICryptoService** | 计算发票哈希、本地加解密、Record 解析、完整性验证 | [ICryptoService.ts](../services/CryptoService/ICryptoService.ts) | ✅ 完全实现 |
 | **IStorageService** | IndexedDB 的 CRUD，用于持久化数据 | [IStorageService.ts](../services/StorageService/IStorageService.ts) | ✅ 完全实现 |
 | **IAleoProtocolService** | 节点 RPC 交互（广播交易、查询 Mapping、扫描高度） | [IAleoProtocolService.ts](../services/AleoProtocolService/IAleoProtocolService.ts) | ⚠️ 部分实现 |
-| **IZKProofService** | 生成 ZKP 证明（未使用，钱包内部处理） | [IZKProofService.ts](../services/ZKProofService/IZKProofService.ts) | ⭕ 未使用 |
+
+> **说明**: 零知识证明（ZKP）的生成由 Leo Wallet 内部处理，应用层通过 `WalletService.requestTransaction` 调用钱包功能，钱包会自动生成证明并广播交易。
 
 > ***ICryptoService 说明**:  
 > - ✅ 已使用：`computeInvoiceHash` - 发票哈希计算（SHA-256 + 模运算）  
@@ -827,25 +828,25 @@ sequenceDiagram
 | **Record 解密** | ⚠️ 简化实现 | 依赖钱包自动解密 | - |
 | **交易监控** | ⚠️ 基础实现 | 实时进度反馈 | v2.0 |
 
-#### ❌ 未实现功能
-
-| 功能模块 | 原因 | 计划版本 |
-|---------|-----|---------|
-| **ZKProofService** | 钱包内部已处理证明生成 | 不需要 |
-
 ### 6.2 技术架构决策
 
-#### 决策 1: 不使用独立的 ZKProofService
+#### 决策 1: 钱包处理 ZKP 生成
 
 **原因**:
-- Leo Wallet 的 `requestTransaction` 已内置 ZKP 生成
-- 无需重复封装，减少代码复杂度
-- 钱包可以更好地管理证明生成过程
+- Leo Wallet 的 `requestTransaction` 已内置零知识证明生成
+- 无需应用层重复实现，减少代码复杂度
+- 钱包可以更好地管理证明生成过程和性能优化
+
+**实现**:
+- 应用层通过 `WalletService.requestTransaction` 调用钱包功能
+- 钱包自动生成证明并广播交易
+- 应用层只关注业务逻辑，不处理底层证明生成
 
 **影响**:
-- ✅ 简化了架构
+- ✅ 简化了架构（无需独立的 ZKProofService）
 - ✅ 提高了开发效率
-- ⚠️ 依赖钱包实现（但这是必然的）
+- ✅ 减少了维护成本
+- ⚠️ 依赖钱包实现（但这是必然的，符合 Aleo 生态最佳实践）
 
 #### 决策 2: v1.0 使用 IndexedDB + 加密存储
 

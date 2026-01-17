@@ -8,18 +8,17 @@ export interface ITxController {
 
   // --- 业务方法 ---
   /** * 逻辑：
-   * 1. 调用 CryptoService.computeInvoiceHash 
-   * 2. 启动 ZKProofService.subscribeStatus 监听
-   * 3. 调用 ZKProofService.proveCreateInvoice
-   * 4. 调用 AleoProtocolService.broadcastTransaction
-   * @returns invoiceId 用于跳转到发票详情页（链上的唯一标识符）
+   * 1. 调用 CryptoService.computeInvoiceHash 计算发票哈希
+   * 2. 调用 WalletService.requestTransaction 请求交易（钱包内部生成 ZKP 证明）
+   * 3. 本地加密归档到 IndexedDB
+   * @returns invoiceHash 用于跳转到发票详情页
    */
   executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoField>;
 
   /** * 逻辑：
-   * 1. 调用 WalletService.getFeeRecords 选票
-   * 2. 调用 ZKProofService.provePayInvoice
-   * 3. 广播并等待确认 -> 确认后刷新余额
+   * 1. 从链上获取 InvoiceRecord
+   * 2. 调用 WalletService.requestTransaction 请求支付交易（钱包内部生成 ZKP 证明）
+   * 3. 返回交易 ID
    */
   executePay(invoiceId: AleoField): Promise<AleoTransactionId>;
 
