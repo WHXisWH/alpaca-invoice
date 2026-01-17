@@ -419,6 +419,50 @@ export class WalletService {
   }
 
   /**
+   * 请求 Records（封装钱包适配器的 requestRecords 方法）
+   * @param program 程序ID（如 'zk_invoice.aleo' 或 'credits.aleo'）
+   * @returns 返回包含 records 数组的对象
+   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, DECRYPTION_FAILED
+   * 
+   * 说明：
+   * - 封装钱包适配器的 requestRecords 或 requestRecordPlaintexts 方法
+   * - 自动处理返回格式，统一返回 { records: any[] }
+   * - 钱包适配器会自动利用钱包内部的 ViewKey 解密属于当前用户的 Records
+   */
+  async requestRecords(program: string): Promise<{ records: any[] }> {
+    if (!this.wallet) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet not connected. Please connect first.'
+      );
+    }
+
+    const requestRecords = this.wallet.requestRecords || this.wallet.requestRecordPlaintexts;
+
+    if (!requestRecords) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet does not support requestRecords'
+      );
+    }
+
+    try {
+      const response = await requestRecords(program);
+      // 统一返回格式：确保返回 { records: any[] }
+      if (Array.isArray(response)) {
+        return { records: response };
+      }
+      return response?.records ? { records: response.records } : { records: [] };
+    } catch (error: any) {
+      throw new WalletServiceError(
+        WalletError.DECRYPTION_FAILED,
+        'Failed to request records',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
    * 请求创建交易
    * @param params 交易参数对象
    * @returns 交易结果（包含 transactionId 等）

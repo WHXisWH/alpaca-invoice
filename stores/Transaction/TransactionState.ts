@@ -1,6 +1,6 @@
 export interface TransactionState {
   isProcessing: boolean;
-  stage: 'IDLE' | 'HASHING' | 'PROVING' | 'BROADCASTING' | 'CONFIRMING';
+  stage: 'IDLE' | 'HASHING' | 'REQUESTING' | 'ARCHIVING';
   progress: number;                 // 0-100
   logs: string[];                   // 实时日志流
   

@@ -44,7 +44,7 @@ export function useTransactionController(): ITxController {
    * 3. 本地加密归档与状态同步
    */
   const executeCreateInvoice = useCallback(
-    async (params: CreateInvoiceParams): Promise<AleoTransactionId> => {
+    async (params: CreateInvoiceParams): Promise<AleoField> => {
       try {
         // ==================== 阶段 1: 权限检查与数据准备 ====================
         // 检查钱包连接
@@ -107,6 +107,12 @@ export function useTransactionController(): ITxController {
 
         // 计算发票哈希
         const invoiceHash = await cryptoService.computeInvoiceHash(params.details);
+        
+        // 调试日志：记录原始数据和计算出的哈希
+        console.log('🔍 [CREATE] Original details:', JSON.stringify(params.details, null, 2));
+        console.log('🔍 [CREATE] Canonical JSON:', JSON.stringify(params.details, Object.keys(params.details).sort()));
+        console.log('🔍 [CREATE] Computed hash:', invoiceHash);
+        
         updateProgress(15, `✓ 发票哈希: ${invoiceHash.slice(0, 20)}...`);
 
         // 准备链上参数
@@ -127,16 +133,15 @@ export function useTransactionController(): ITxController {
 
         updateProgress(25, '✓ 交易参数准备完成');
 
-        // ==================== 阶段 2: 零知识证明生成与链上广播 ====================
+        // ==================== 阶段 2: 提交交易请求 (异步任务提交) ====================
         
-        startTx('PROVING');
-        updateProgress(30, 'PROVING - 生成零知识证明并广播交易...');
-        updateProgress(40, '提示：钱包会自动完成证明生成、构建交易和广播');
+        startTx('REQUESTING');
+        updateProgress(30, 'REQUESTING - 提交交易请求...');
 
-        // 通过钱包服务请求交易（钱包内部自动完成 ZKP 生成和广播）
+        // 通过钱包服务请求交易（钱包在后台生成证明并准备广播）
         // 从环境变量获取 chainId，与 useWalletController 保持一致
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
-        const response = await walletService.requestTransaction({
+        const requestId = await walletService.requestTransaction({
           functionName: 'create_invoice',
           inputs: [
             params.buyer,
@@ -151,25 +156,23 @@ export function useTransactionController(): ITxController {
           chainId: chainId
         });
 
-        if (!response) {
+        if (!requestId) {
           throw new WalletServiceError(
             WalletError.UNAUTHORIZED,
             'Transaction failed - no response from wallet'
           );
         }
 
-        // 进度更新
-        updateProgress(60, '✓ 零知识证明已生成');
-        updateProgress(70, '✓ 交易已广播到链上');
-        updateProgress(80, `✓ 交易ID: ${response.slice(0, 20)}...`);
+        // 注意：requestTransaction 立即返回 requestId (UUID)
+        // 钱包在后台生成证明并准备广播，不阻塞后续流程
+        updateProgress(35, `✓ 交易请求已提交 (requestId: ${requestId.slice(0, 20)}...)`);
 
-        const transactionId = response as AleoTransactionId;
         const invoiceId = `${nonceField.slice(0, 32)}field` as AleoField;
 
-        // ==================== 阶段 3: 本地加密归档与状态同步 ====================
+        // ==================== 阶段 3: 本地加密归档与即时跳转 ====================
         
-        startTx('CONFIRMING');
-        updateProgress(85, 'ARCHIVING - 加密存储发票明细...');
+        startTx('ARCHIVING');
+        updateProgress(90, 'ARCHIVING - 加密存储发票明细...');
 
         // 确保 currentMasterKey 存在
         if (!currentMasterKey) {
@@ -200,16 +203,16 @@ export function useTransactionController(): ITxController {
             params.details,
             currentMasterKey
           );
-          updateProgress(88, '✓ 发票明细已加密');
+          updateProgress(92, '✓ 发票明细已加密');
           console.log('✅ [TransactionController] 发票明细加密成功:', {
             payloadSize: JSON.stringify(encryptedPayload).length,
             hasCiphertext: !!encryptedPayload.ciphertext,
             hasIv: !!encryptedPayload.iv
           });
 
-          // 保存到 IndexedDB
+          // 保存到 IndexedDB（初始状态设为 'SENDING'）
           await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
-          updateProgress(92, '✓ 已保存到本地存储');
+          updateProgress(95, '✓ 已保存到本地存储 (状态: SENDING)');
           console.log('✅ [TransactionController] 发票已保存到 IndexedDB:', invoiceHash);
         } catch (error: any) {
           // 记录详细的错误信息
@@ -271,13 +274,15 @@ export function useTransactionController(): ITxController {
           });
         }
 
-        updateProgress(95, '✓ 状态已同步');
+        updateProgress(98, '✓ 状态已同步');
         updateProgress(100, '✓ 发票创建成功！');
 
         // 完成交易
         completeTx();
 
-        return transactionId;
+        // 返回 invoiceHash（View 层用于跳转到发票详情页）
+        // 注意：根据时序图，归档成功后应跳转到 /invoices/:hash
+        return invoiceHash;
       } catch (error: any) {
         // 重置状态
         completeTx();

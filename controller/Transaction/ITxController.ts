@@ -12,8 +12,9 @@ export interface ITxController {
    * 2. 启动 ZKProofService.subscribeStatus 监听
    * 3. 调用 ZKProofService.proveCreateInvoice
    * 4. 调用 AleoProtocolService.broadcastTransaction
+   * @returns invoiceId 用于跳转到发票详情页（链上的唯一标识符）
    */
-  executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoTransactionId>;
+  executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoField>;
 
   /** * 逻辑：
    * 1. 调用 WalletService.getFeeRecords 选票

@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { InvoiceStatus, type Invoice } from '@/lib/types';
-import { useInvoiceStore } from '@/stores/invoiceStore';
+import { InvoiceStatus } from '@/lib/types';
+import { useInvoices } from '@/controller/Invoice/useInvoices';
 import InvoiceCard from '@/components/invoice-card';
 
 const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string; status?: InvoiceStatus }> = [
@@ -14,43 +13,80 @@ const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string
 ];
 
 export default function InvoicesPage() {
-  const { sentInvoices, receivedInvoices, fetchInvoices, filter, setFilter } = useInvoiceStore();
-  const [search, setSearch] = useState('');
+  // 使用新的架构：useInvoices hook（包含所有业务逻辑）
+  const {
+    filteredInvoices,
+    filter,
+    search,
+    isLoading,
+    showAuthModal,
+    showLoading,
+    showWalletPrompt,
+    showMainContent,
+    setFilter,
+    setSearch,
+    handleUnlock,
+    refresh
+  } = useInvoices();
 
-  useEffect(() => {
-    fetchInvoices();
-  }, [fetchInvoices]);
+  // 授权遮罩 UI（业务逻辑判断在 Controller 中）
+  if (showAuthModal) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="space-y-4 text-center">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">解锁隐私数据</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                需要您的签名授权以解密本地存储的发票数据
+              </p>
+            </div>
+            <button
+              onClick={handleUnlock}
+              disabled={isLoading}
+              className="rounded-lg bg-slate-900 px-6 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              {isLoading ? '处理中...' : '解锁'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const merged = useMemo(() => {
-    const map = new Map<string, { invoice: Invoice; role: 'SELLER' | 'BUYER' | 'BOTH' }>();
-    sentInvoices.forEach((inv) => map.set(inv.id, { invoice: inv, role: 'SELLER' }));
-    receivedInvoices.forEach((inv) => {
-      const existing = map.get(inv.id);
-      if (existing) {
-        map.set(inv.id, { invoice: existing.invoice, role: 'BOTH' });
-      } else {
-        map.set(inv.id, { invoice: inv, role: 'BUYER' });
-      }
-    });
-    return Array.from(map.values());
-  }, [sentInvoices, receivedInvoices]);
+  // 加载中状态（业务逻辑判断在 Controller 中）
+  if (showLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
+          <p className="text-sm text-slate-600">正在加载发票数据...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const filtered = merged.filter(({ invoice }) => {
-    const matchStatus =
-      filter === 'all'
-        ? true
-        : filter === 'pending'
-          ? invoice.status === InvoiceStatus.PENDING
-          : filter === 'paid'
-            ? invoice.status === InvoiceStatus.PAID
-            : invoice.status === InvoiceStatus.CANCELLED;
-    const matchSearch =
-      search.trim() === '' ||
-      invoice.id.toLowerCase().includes(search.trim().toLowerCase()) ||
-      invoice.buyer.toLowerCase().includes(search.trim().toLowerCase()) ||
-      invoice.seller.toLowerCase().includes(search.trim().toLowerCase());
-    return matchStatus && matchSearch;
-  });
+  // 钱包连接提示（业务逻辑判断在 Controller 中）
+  if (showWalletPrompt) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Invoice manager</h2>
+            <p className="text-sm text-slate-600">View pending/paid/cancelled invoices, filter quickly, and open details.</p>
+          </div>
+        </div>
+        <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-slate-200 bg-white">
+          <p className="text-sm text-slate-500">Please connect your wallet to view invoices.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 主内容（业务逻辑判断在 Controller 中）
+  if (!showMainContent) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -67,10 +103,11 @@ export default function InvoicesPage() {
             Create invoice
           </Link>
           <button
-            onClick={() => fetchInvoices()}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300"
+            onClick={refresh}
+            disabled={isLoading}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300 disabled:opacity-50"
           >
-            Sync
+            {isLoading ? 'Syncing...' : 'Sync'}
           </button>
         </div>
       </div>
@@ -93,21 +130,26 @@ export default function InvoicesPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search invoice ID / buyer / seller address"
+          placeholder="Search invoice ID / hash / buyer / seller address"
           className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
         />
       </div>
 
-      {filtered.length === 0 && (
+      {filteredInvoices.length === 0 && (
         <p className="text-sm text-slate-500">No matching invoices.</p>
       )}
 
       <div className="grid gap-3 md:grid-cols-2">
-        {filtered.map(({ invoice, role }) => (
+        {filteredInvoices.map(({ invoice, role }) => (
           <div key={invoice.id} className="space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>{role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}</span>
-              <Link href={`/invoices/${invoice.id}`} className="text-emerald-600 hover:underline">
+              <span>
+                {role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}
+              </span>
+              <Link 
+                href={`/invoices/${invoice.invoiceHash}`} 
+                className="text-emerald-600 hover:underline"
+              >
                 View details
               </Link>
             </div>

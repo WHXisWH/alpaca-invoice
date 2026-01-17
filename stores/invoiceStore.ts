@@ -73,30 +73,60 @@ export const useInvoiceStore = create<InvoiceStore>((set, get) => ({
   payInvoice: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // Get invoice from service (localStorage)
+      // 阶段 0: 获取发票信息
+      console.log('[InvoiceStore] Step 0: Fetching invoice from localStorage...');
       const invoice = await invoiceService.getById(id);
       if (!invoice) {
         throw new Error('Invoice not found');
       }
 
-      // Call payment service
+      if (invoice.status !== InvoiceStatus.PENDING) {
+        throw new Error(`Cannot pay invoice with status: ${InvoiceStatus[invoice.status]}`);
+      }
+
+      console.log('[InvoiceStore] Invoice found:', {
+        id: invoice.id,
+        amount: invoice.amount.toString(),
+        seller: invoice.seller
+      });
+
+      // 阶段 1: 执行支付流程
+      console.log('[InvoiceStore] Step 1: Executing payment process...');
       const result = await paymentService.pay({
         invoice: invoice,
         recipientAddress: invoice.seller,
         amount: invoice.amount
       });
 
-      // Update invoice status
+      console.log('[InvoiceStore] Payment completed:', {
+        transactionId: result.transactionId,
+        paymentId: result.paymentId
+      });
+
+      // 阶段 2: 更新本地发票状态
+      console.log('[InvoiceStore] Step 2: Updating local invoice status...');
       await invoiceService.markAsPaid(id);
 
-      // Fetch updated data
+      // 阶段 3: 刷新数据
+      console.log('[InvoiceStore] Step 3: Refreshing invoice list and receipts...');
       await get().fetchInvoices();
       const receipts = await paymentService.listReceipts();
-      set({ paymentReceipts: receipts, isLoading: false });
+      
+      set({ 
+        paymentReceipts: receipts, 
+        isLoading: false,
+        error: null
+      });
 
+      console.log('[InvoiceStore] Payment flow completed successfully');
       return result;
     } catch (err) {
-      set({ isLoading: false, error: (err as Error).message });
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      console.error('[InvoiceStore] Payment failed:', errorMessage);
+      set({ 
+        isLoading: false, 
+        error: errorMessage
+      });
       throw err;
     }
   },

@@ -2,7 +2,6 @@ import {
   AleoAddress,
   AleoField,
   AleoTransactionId,
-  InvoiceStatus,
   Microcredits
 } from '@/lib/types';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';

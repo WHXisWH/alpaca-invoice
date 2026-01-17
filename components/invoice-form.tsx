@@ -1,21 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { AleoAddress, InvoiceDetails } from '@/lib/types';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
-import { toast } from 'sonner';
 
 function buildDetails(
   invoiceNumber: string,
   description: string,
   amountCredits: number
 ): InvoiceDetails {
-  const subtotal = amountCredits;
+  // 标准化数字，保留6位小数，避免浮点数精度问题
+  const subtotal = Math.round(amountCredits * 1000000) / 1000000;
   const taxRate = 0;
   const taxAmount = 0;
-  const total = subtotal + taxAmount;
+  const total = Math.round((subtotal + taxAmount) * 1000000) / 1000000;
+  
   return {
     invoiceNumber,
     lineItems: [
@@ -31,10 +33,12 @@ function buildDetails(
     taxAmount,
     total,
     currency: 'CREDITS'
+    // notes 字段不设置，保持 undefined
   };
 }
 
 export default function InvoiceForm() {
+  const router = useRouter();
   const { executeCreateInvoice, isProcessing, currentProgress, currentLog } = useTransactionController();
   const { publicKey } = useUserStore();
   const { handleError } = useErrorHandler();
@@ -56,18 +60,15 @@ export default function InvoiceForm() {
     );
     
     try {
-      const transactionId = await executeCreateInvoice({
+      const invoiceHash = await executeCreateInvoice({
         buyer: buyer as AleoAddress,
         amount: microcredits,
         dueDate: new Date(dueDate),
         details
       });
-      console.log('transactionId', transactionId)
       
-      // 成功时显示通知
-      toast.success('发票创建成功！', {
-        description: `交易ID: ${transactionId.slice(0, 20)}...`
-      });
+      // 归档成功后，跳转到发票详情页（使用链上的 nonceField
+      router.push(`/invoices/${invoiceHash}`);
     } catch (err) {
       // 统一错误处理
       handleError(err);

@@ -62,15 +62,40 @@ export class CryptoService implements ICryptoService {
    */
   async computeInvoiceHash(details: InvoiceDetails): Promise<AleoField> {
     try {
-      // 1. 规范化 JSON 字符串（确保相同对象产生相同哈希）
-      const canonical = JSON.stringify(details, Object.keys(details).sort());
+      // 1. 规范化对象：通过 JSON.parse(JSON.stringify()) 移除 undefined 值
+      // 这确保加密/解密前后的对象结构一致
+      const normalized = JSON.parse(JSON.stringify(details));
       
-      // 2. 获取浏览器原生 Crypto API
+      // 2. 深度排序对象键（递归处理嵌套对象和数组）
+      const sortObjectKeys = (obj: any): any => {
+        if (Array.isArray(obj)) {
+          return obj.map(item => sortObjectKeys(item));
+        }
+        if (obj !== null && typeof obj === 'object') {
+          return Object.keys(obj)
+            .sort()
+            .reduce((sorted: any, key) => {
+              sorted[key] = sortObjectKeys(obj[key]);
+              return sorted;
+            }, {});
+        }
+        return obj;
+      };
+      
+      const sortedNormalized = sortObjectKeys(normalized);
+      const canonical = JSON.stringify(sortedNormalized);
+      
+      // 调试日志
+      console.log('🔐 [computeInvoiceHash] Normalized object:', normalized);
+      console.log('🔐 [computeInvoiceHash] Sorted normalized:', sortedNormalized);
+      console.log('🔐 [computeInvoiceHash] Canonical JSON:', canonical);
+      
+      // 3. 获取浏览器原生 Crypto API
       const encoder = new TextEncoder();
       const data = encoder.encode(canonical);
       const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
       
-      // 3. 将 ArrayBuffer 转换为 BigInt (不使用 Buffer)
+      // 4. 将 ArrayBuffer 转换为 BigInt (不使用 Buffer)
       // 方案：将 hashBuffer 包装为 Uint8Array，然后逐字节处理
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray
@@ -79,11 +104,14 @@ export class CryptoService implements ICryptoService {
       
       const hashBigInt = BigInt('0x' + hashHex);
       
-      // 4. 应用模运算确保在 Aleo Field 范围内
+      // 5. 应用模运算确保在 Aleo Field 范围内
       const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
       
-      // 5. 返回 AleoField 格式字符串
-      return `${fieldValue.toString()}field` as AleoField;
+      // 6. 返回 AleoField 格式字符串
+      const result = `${fieldValue.toString()}field` as AleoField;
+      console.log('🔐 [computeInvoiceHash] Result hash:', result);
+      
+      return result;
     } catch (error: any) {
       throw new CryptoServiceError(
         CryptoError.ENCRYPTION_FAILED,
@@ -198,7 +226,42 @@ export class CryptoService implements ICryptoService {
 
       // 处理已解密的 JSON 数据（来自 wallet.requestRecords()）
       if (jsonString.startsWith('{') || jsonString.startsWith('[')) {
-        return JSON.parse(jsonString) as T;
+        const parsed = JSON.parse(jsonString);
+        
+        // 清理 Aleo 格式的类型标记和可见性修饰符
+        const cleanRecord = (obj: any): any => {
+          if (typeof obj === 'string') {
+            // 移除 field.private 或 field.public 后缀
+            if (obj.includes('field.')) {
+              return obj.replace(/field\.(private|public)$/, 'field');
+            }
+            // 移除数值类型后缀 (u8, u16, u32, u64, u128, i8, i16, i32, i64, i128)
+            // 例如: "1000000u64" -> "1000000", "0u8" -> "0"
+            if (obj.match(/^\d+[ui](8|16|32|64|128)$/)) {
+              return obj.replace(/[ui](8|16|32|64|128)$/, '');
+            }
+            // 移除其他类型的可见性修饰符（如 .private, .public）
+            if (obj.match(/\.(private|public)$/)) {
+              return obj.replace(/\.(private|public)$/, '');
+            }
+          }
+          if (Array.isArray(obj)) {
+            return obj.map(item => cleanRecord(item));
+          }
+          if (obj !== null && typeof obj === 'object') {
+            const cleaned: any = {};
+            for (const key in obj) {
+              cleaned[key] = cleanRecord(obj[key]);
+            }
+            return cleaned;
+          }
+          return obj;
+        };
+        
+        const cleaned = cleanRecord(parsed);
+        console.log('🧹 [parseAleoRecord] Original record:', parsed);
+        console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
+        return cleaned as T;
       }
       
       // 如果是 record1... 格式，提示使用正确的方式
@@ -252,8 +315,17 @@ export class CryptoService implements ICryptoService {
       // 重新计算本地明细的哈希
       const computedHash = await this.computeInvoiceHash(localDetails);
       
+      // 清理链上哈希的可见性修饰符（双重保险，防止 parseAleoRecord 未清理）
+      const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
+      
+      // 调试日志
+      console.log('🔍 [verifyInvoiceIntegrity] Computed hash:', computedHash);
+      console.log('🔍 [verifyInvoiceIntegrity] Chain hash (original):', chainInvoiceHash);
+      console.log('🔍 [verifyInvoiceIntegrity] Chain hash (cleaned):', cleanChainHash);
+      console.log('🔍 [verifyInvoiceIntegrity] Match:', computedHash === cleanChainHash);
+      
       // 对比两个哈希值
-      return computedHash === chainInvoiceHash;
+      return computedHash === cleanChainHash;
     } catch (error: any) {
       throw new CryptoServiceError(
         CryptoError.HASH_MISMATCH,

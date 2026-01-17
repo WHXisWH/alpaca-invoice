@@ -4,7 +4,14 @@ import type { Invoice } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { useInvoiceStore } from '@/stores/invoiceStore';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 function getStatusConfig(status: InvoiceStatus) {
   switch (status) {
@@ -51,28 +58,62 @@ function getStatusConfig(status: InvoiceStatus) {
   }
 }
 
-export default function InvoiceCard({ invoice }: { invoice: Invoice }) {
+interface InvoiceCardProps {
+  invoice: Invoice;
+  showFullAddresses?: boolean;
+}
+
+export default function InvoiceCard({ invoice, showFullAddresses = false }: InvoiceCardProps) {
   const { payInvoice, cancelInvoice, isLoading } = useInvoiceStore();
   const statusConfig = getStatusConfig(invoice.status);
 
   const handlePay = async () => {
-    await payInvoice(invoice.id);
+    try {
+      toast.loading('Processing payment...', { id: 'pay-invoice' });
+      const result = await payInvoice(invoice.id);
+      toast.success('Payment successful!', {
+        id: 'pay-invoice',
+        description: `Transaction ID: ${result.transactionId.slice(0, 16)}...`
+      });
+    } catch (error) {
+      toast.error('Payment failed', {
+        id: 'pay-invoice',
+        description: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
   };
 
   const handleCancel = async () => {
-    await cancelInvoice(invoice.id);
+    try {
+      toast.loading('Cancelling invoice...', { id: 'cancel-invoice' });
+      await cancelInvoice(invoice.id);
+      toast.success('Invoice cancelled successfully', { id: 'cancel-invoice' });
+    } catch (error) {
+      toast.error('Failed to cancel invoice', {
+        id: 'cancel-invoice',
+        description: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
   };
 
   return (
-    <div className="rounded-xl border-2 border-amber-200 bg-white p-5 hover:border-amber-400 transition-colors">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <div className="text-xs text-slate-500 mb-1">Invoice ID</div>
-          <code className="text-sm font-mono font-semibold text-slate-900">
-            {invoice.id.slice(0, 12)}...
-          </code>
-        </div>
+    <TooltipProvider>
+      <div className="rounded-xl border-2 border-amber-200 bg-white p-5 hover:border-amber-400 transition-colors">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="text-xs text-slate-500 mb-1">Invoice ID</div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <code className="text-sm font-mono font-semibold text-slate-900">
+                  {invoice.id.slice(0, 30)}...
+                </code>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="font-mono text-xs">{invoice.id}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         <span
           className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border-2 ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
         >
@@ -95,13 +136,13 @@ export default function InvoiceCard({ invoice }: { invoice: Invoice }) {
         <div className="flex justify-between">
           <span className="text-slate-600">Buyer</span>
           <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900">
-            {invoice.buyer.slice(0, 8)}...{invoice.buyer.slice(-6)}
+            {showFullAddresses ? invoice.buyer : `${invoice.buyer.slice(0, 8)}...${invoice.buyer.slice(-6)}`}
           </code>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-600">Seller</span>
           <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900">
-            {invoice.seller.slice(0, 8)}...{invoice.seller.slice(-6)}
+            {showFullAddresses ? invoice.seller : `${invoice.seller.slice(0, 8)}...${invoice.seller.slice(-6)}`}
           </code>
         </div>
         <div className="flex justify-between">
@@ -141,5 +182,6 @@ export default function InvoiceCard({ invoice }: { invoice: Invoice }) {
         )}
       </div>
     </div>
+    </TooltipProvider>
   );
 }

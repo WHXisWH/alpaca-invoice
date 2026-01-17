@@ -8,6 +8,11 @@ export enum StorageError {
   QUOTA_EXCEEDED = 'QUOTA_EXCEEDED' // 存储配额超出限制
 }
 
+export interface InvoiceWithHash {
+  invoiceHash: AleoField;
+  payload: EncryptedPayload;
+}
+
 export interface IStorageService {
   /**
    * 存储加密后的发票明细
@@ -22,6 +27,11 @@ export interface IStorageService {
    * 读取加密后的发票明细
    */
   getEncryptedInvoice(invoiceHash: AleoField): Promise<EncryptedPayload | null>;
+
+  /**
+   * 获取所有加密的发票明细（用于批量加载）
+   */
+  getAllEncryptedInvoices(): Promise<InvoiceWithHash[]>;
 
   /**
    * 删除本地缓存（用于用户注销或清理空间）

@@ -1,5 +1,5 @@
 import { AleoField, EncryptedPayload } from '@/lib/types';
-import { IStorageService, StorageError } from './IStorageService';
+import { IStorageService, StorageError, InvoiceWithHash } from './IStorageService';
 import { createServiceError } from '@/lib/service-errors';
 
 const StorageServiceError = createServiceError<StorageError>('StorageService');
@@ -134,6 +134,46 @@ export class StorageService implements IStorageService {
       throw new StorageServiceError(
         StorageError.READ_FAILED,
         `Failed to get encrypted invoice: ${(error as Error).message}`
+      );
+    }
+  }
+
+  /**
+   * 获取所有加密的发票明细（用于批量加载）
+   */
+  async getAllEncryptedInvoices(): Promise<InvoiceWithHash[]> {
+    try {
+      const db = await this.getDB();
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+
+      return new Promise((resolve, reject) => {
+        const request = store.getAll();
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          const invoices: InvoiceWithHash[] = results.map((result: any) => ({
+            invoiceHash: result.invoiceHash,
+            payload: {
+              iv: result.iv,
+              ciphertext: result.ciphertext
+            }
+          }));
+          resolve(invoices);
+        };
+
+        request.onerror = () =>
+          reject(
+            new StorageServiceError(
+              StorageError.READ_FAILED,
+              'Failed to read all encrypted invoices'
+            )
+          );
+      });
+    } catch (error) {
+      throw new StorageServiceError(
+        StorageError.READ_FAILED,
+        `Failed to get all encrypted invoices: ${(error as Error).message}`
       );
     }
   }

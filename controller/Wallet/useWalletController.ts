@@ -384,27 +384,11 @@ export function useWalletController(): IWalletController {
   }, [wallet?.publicKey, wallet?.connected, publicKey, connected, setAccount, clearUser, syncBalances]);
 
   useEffect(() => {
-    // 连接账户成功后，同步余额
+    // 连接账户成功后，同步余额（页面加载时同步一次）
     if (publicKey && connected) {
       syncBalances()
     }
-  }, [publicKey, connected])
-
-
-  /**
-   * 定期同步余额（每 30 秒）
-   */
-  useEffect(() => {
-    if (!publicKey) return;
-
-    const interval = setInterval(() => {
-      syncBalances();
-    }, 30_000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [publicKey, syncBalances]); 
+  }, [publicKey, connected, syncBalances]) 
 
   return {
     // 状态
