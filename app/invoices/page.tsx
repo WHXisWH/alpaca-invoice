@@ -13,7 +13,7 @@ const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string
 ];
 
 export default function InvoicesPage() {
-  // 使用新的架构：useInvoices hook（包含所有业务逻辑）
+  // Use new architecture: useInvoices hook (contains all business logic)
   const {
     filteredInvoices,
     filter,
@@ -29,16 +29,16 @@ export default function InvoicesPage() {
     refresh
   } = useInvoices();
 
-  // 授权遮罩 UI（业务逻辑判断在 Controller 中）
+  // Authorization modal UI (business logic in Controller)
   if (showAuthModal) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
           <div className="space-y-4 text-center">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">解锁隐私数据</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Unlock Private Data</h3>
               <p className="mt-2 text-sm text-slate-600">
-                需要您的签名授权以解密本地存储的发票数据
+                Your signature is required to decrypt locally stored invoice data
               </p>
             </div>
             <button
@@ -46,7 +46,7 @@ export default function InvoicesPage() {
               disabled={isLoading}
               className="rounded-lg bg-slate-900 px-6 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {isLoading ? '处理中...' : '解锁'}
+              {isLoading ? 'Processing...' : 'Unlock'}
             </button>
           </div>
         </div>
@@ -54,19 +54,19 @@ export default function InvoicesPage() {
     );
   }
 
-  // 加载中状态（业务逻辑判断在 Controller 中）
+  // Loading state (business logic in Controller)
   if (showLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
           <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
-          <p className="text-sm text-slate-600">正在加载发票数据...</p>
+          <p className="text-sm text-slate-600">Loading invoice data...</p>
         </div>
       </div>
     );
   }
 
-  // 钱包连接提示（业务逻辑判断在 Controller 中）
+  // Wallet connection prompt (business logic in Controller)
   if (showWalletPrompt) {
     return (
       <div className="space-y-6">
@@ -83,7 +83,7 @@ export default function InvoicesPage() {
     );
   }
 
-  // 主内容（业务逻辑判断在 Controller 中）
+  // Main content (business logic in Controller)
   if (!showMainContent) {
     return null;
   }
