@@ -1,16 +1,14 @@
 {
-  "program": "zk_invoice.aleo",
+  "program": "zkinvoice.aleo",
   "version": "0.1.0",
   "description": "Privacy-preserving B2B invoice system",
   "license": "MIT",
-  "leo": "3.4.0",
+  "network": "testnet",
   "dependencies": [
     {
       "name": "credits.aleo",
       "location": "network",
-      "path": null,
-      "edition": null
+      "network": "testnet"
     }
-  ],
-  "dev_dependencies": null
+  ]
 }
