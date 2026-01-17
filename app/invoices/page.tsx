@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { InvoiceStatus } from '@/lib/types';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
-import InvoiceCard from '@/components/invoice-card';
+import InvoiceCard, { type StatusConfig } from '@/components/invoice-card';
 
 const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string; status?: InvoiceStatus }> = [
   { key: 'all', label: 'All' },
@@ -12,6 +12,51 @@ const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string
   { key: 'cancelled', label: 'Cancelled', status: InvoiceStatus.CANCELLED }
 ];
 
+function getStatusConfig(status: InvoiceStatus): StatusConfig {
+  switch (status) {
+    case InvoiceStatus.PENDING:
+      return {
+        label: 'Pending',
+        icon: '⏳',
+        bg: 'bg-amber-100',
+        text: 'text-amber-700',
+        border: 'border-amber-300'
+      };
+    case InvoiceStatus.PAID:
+      return {
+        label: 'Paid',
+        icon: '✅',
+        bg: 'bg-green-100',
+        text: 'text-green-700',
+        border: 'border-green-300'
+      };
+    case InvoiceStatus.CANCELLED:
+      return {
+        label: 'Cancelled',
+        icon: '❌',
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-300'
+      };
+    case InvoiceStatus.EXPIRED:
+      return {
+        label: 'Expired',
+        icon: '⚠️',
+        bg: 'bg-red-100',
+        text: 'text-red-700',
+        border: 'border-red-300'
+      };
+    default:
+      return {
+        label: 'Unknown',
+        icon: '❓',
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-300'
+      };
+  }
+}
+
 export default function InvoicesPage() {
   // Use new architecture: useInvoices hook (contains all business logic)
   const {
@@ -19,6 +64,7 @@ export default function InvoicesPage() {
     filter,
     search,
     isLoading,
+    isSyncing,
     showAuthModal,
     showLoading,
     showWalletPrompt,
@@ -26,7 +72,10 @@ export default function InvoicesPage() {
     setFilter,
     setSearch,
     handleUnlock,
-    refresh
+    refresh,
+    handleSyncAll,
+    handlePay,
+    handleCancel
   } = useInvoices();
 
   // Authorization modal UI (business logic in Controller)
@@ -103,11 +152,15 @@ export default function InvoicesPage() {
             Create invoice
           </Link>
           <button
-            onClick={refresh}
-            disabled={isLoading}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300 disabled:opacity-50"
+            onClick={handleSyncAll}
+            disabled={isSyncing || isLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Sync latest status from chain for all invoices"
           >
-            {isLoading ? 'Syncing...' : 'Sync'}
+            <svg className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isSyncing ? 'Syncing...' : 'Sync All'}
           </button>
         </div>
       </div>
@@ -142,18 +195,19 @@ export default function InvoicesPage() {
       <div className="grid gap-3 md:grid-cols-2">
         {filteredInvoices.map(({ invoice, role }) => (
           <div key={invoice.id} className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-500">
+            <div className="flex items-center justify-start text-xs text-slate-500">
               <span>
                 {role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}
               </span>
-              <Link 
-                href={`/invoices/${invoice.invoiceHash}`} 
-                className="text-emerald-600 hover:underline"
-              >
-                View details
-              </Link>
             </div>
-            <InvoiceCard invoice={invoice} />
+            <InvoiceCard 
+              invoice={invoice}
+              role={role}
+              statusConfig={getStatusConfig(invoice.status)}
+              isLoading={isLoading}
+              onPay={handlePay}
+              onCancel={handleCancel}
+            />
           </div>
         ))}
       </div>

@@ -1,11 +1,9 @@
 'use client';
 
-import type { Invoice } from '@/lib/types';
+import type { Invoice, AleoField } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { toast } from 'sonner';
-import { useInvoiceStore } from '@/stores/invoiceStore';
 import {
   Tooltip,
   TooltipContent,
@@ -13,88 +11,33 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-function getStatusConfig(status: InvoiceStatus) {
-  switch (status) {
-    case InvoiceStatus.PENDING:
-      return {
-        label: 'Pending',
-        icon: '⏳',
-        bg: 'bg-amber-100',
-        text: 'text-amber-700',
-        border: 'border-amber-300'
-      };
-    case InvoiceStatus.PAID:
-      return {
-        label: 'Paid',
-        icon: '✅',
-        bg: 'bg-green-100',
-        text: 'text-green-700',
-        border: 'border-green-300'
-      };
-    case InvoiceStatus.CANCELLED:
-      return {
-        label: 'Cancelled',
-        icon: '❌',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-    case InvoiceStatus.EXPIRED:
-      return {
-        label: 'Expired',
-        icon: '⚠️',
-        bg: 'bg-red-100',
-        text: 'text-red-700',
-        border: 'border-red-300'
-      };
-    default:
-      return {
-        label: 'Unknown',
-        icon: '❓',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-  }
+export interface StatusConfig {
+  label: string;
+  icon: string;
+  bg: string;
+  text: string;
+  border: string;
 }
 
 interface InvoiceCardProps {
   invoice: Invoice;
+  role?: 'SELLER' | 'BUYER' | 'BOTH';
+  statusConfig: StatusConfig;
   showFullAddresses?: boolean;
+  isLoading?: boolean;
+  onPay?: (invoiceId: AleoField) => void;
+  onCancel?: (invoiceId: AleoField) => void;
 }
 
-export default function InvoiceCard({ invoice, showFullAddresses = false }: InvoiceCardProps) {
-  const { payInvoice, cancelInvoice, isLoading } = useInvoiceStore();
-  const statusConfig = getStatusConfig(invoice.status);
-
-  const handlePay = async () => {
-    try {
-      toast.loading('Processing payment...', { id: 'pay-invoice' });
-      const result = await payInvoice(invoice.id);
-      toast.success('Payment successful!', {
-        id: 'pay-invoice',
-        description: `Transaction ID: ${result.transactionId.slice(0, 16)}...`
-      });
-    } catch (error) {
-      toast.error('Payment failed', {
-        id: 'pay-invoice',
-        description: error instanceof Error ? error.message : 'Unknown error occurred'
-      });
-    }
-  };
-
-  const handleCancel = async () => {
-    try {
-      toast.loading('Cancelling invoice...', { id: 'cancel-invoice' });
-      await cancelInvoice(invoice.id);
-      toast.success('Invoice cancelled successfully', { id: 'cancel-invoice' });
-    } catch (error) {
-      toast.error('Failed to cancel invoice', {
-        id: 'cancel-invoice',
-        description: error instanceof Error ? error.message : 'Unknown error occurred'
-      });
-    }
-  };
+export default function InvoiceCard({ 
+  invoice, 
+  role,
+  statusConfig,
+  showFullAddresses = false,
+  isLoading = false,
+  onPay,
+  onCancel
+}: InvoiceCardProps) {
 
   return (
     <TooltipProvider>
@@ -153,31 +96,59 @@ export default function InvoiceCard({ invoice, showFullAddresses = false }: Invo
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2">
+      {/* Action buttons */}
+      <div className="flex gap-2 pt-4 border-t border-amber-100">
+        {/* View Details button - always show */}
         <Link
-          href={`/invoices/${invoice.id}`}
+          href={`/invoices/${invoice.invoiceHash}`}
           className="flex-1 text-center rounded-lg border-2 border-amber-200 px-3 py-2 text-sm font-semibold text-slate-900 hover:border-amber-400 transition-colors"
         >
           View Details
         </Link>
 
-        {invoice.status === InvoiceStatus.PENDING && (
+        {/* Action buttons - only show for PENDING invoices */}
+        {invoice.status === InvoiceStatus.PENDING && role && (
           <>
-            <button
-              onClick={handlePay}
-              disabled={isLoading}
-              className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Pay
-            </button>
-            <button
-              onClick={handleCancel}
-              disabled={isLoading}
-              className="rounded-lg border-2 border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Cancel
-            </button>
+            {role === 'BUYER' && onPay && (
+              <button
+                onClick={() => onPay(invoice.id)}
+                disabled={isLoading}
+                className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                💳 Pay
+              </button>
+            )}
+            {role === 'SELLER' && onCancel && (
+              <button
+                onClick={() => onCancel(invoice.id)}
+                disabled={isLoading}
+                className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                ❌ Cancel
+              </button>
+            )}
+            {role === 'BOTH' && (
+              <>
+                {onPay && (
+                  <button
+                    onClick={() => onPay(invoice.id)}
+                    disabled={isLoading}
+                    className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    💳 Pay
+                  </button>
+                )}
+                {onCancel && (
+                  <button
+                    onClick={() => onCancel(invoice.id)}
+                    disabled={isLoading}
+                    className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    ❌ Cancel
+                  </button>
+                )}
+              </>
+            )}
           </>
         )}
       </div>

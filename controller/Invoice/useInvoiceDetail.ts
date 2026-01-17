@@ -276,7 +276,6 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
         console.log('✅ [handleSyncStatus] Updated from PaymentRecord - Status: PAID');
       } else if (latestInvoiceRecord) {
         // Build update data from InvoiceRecord
-        const cleanChainHash = latestInvoiceRecord.invoice_hash?.replace(/field\.(private|public)$/, 'field') as AleoField;
         const cleanInvoiceId = latestInvoiceRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
         const cleanAmount = cleanAleoNumber(latestInvoiceRecord.amount);
         const cleanDueDate = cleanAleoNumber(latestInvoiceRecord.due_date);
@@ -285,7 +284,7 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
 
         updatedInvoice = {
           id: cleanInvoiceId,
-          invoiceHash: cleanChainHash,
+          invoiceHash: invoice.invoiceHash, // Keep original hash - DO NOT UPDATE
           seller: latestInvoiceRecord.seller as any,
           buyer: latestInvoiceRecord.buyer as any,
           amount: BigInt(cleanAmount) as any,
@@ -496,7 +495,6 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
       console.log('🔍 [confirmInvoice] Raw record data:', record);
       
       // 清理链上哈希的可见性修饰符
-      const cleanChainHash = record.invoice_hash?.replace(/field\.(private|public)$/, 'field') as AleoField;
       const cleanInvoiceId = record.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
       
       // 清理数字字段的 Aleo 类型后缀
@@ -518,7 +516,7 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
       // 从链上Record更新Invoice对象的所有字段（包括最新的invoiceId）
       const updatedInvoice: Partial<Invoice> = {
         id: cleanInvoiceId,
-        invoiceHash: cleanChainHash,
+        invoiceHash: invoice.invoiceHash, // Keep original hash - DO NOT UPDATE
         seller: record.seller as any,
         buyer: record.buyer as any,
         amount: BigInt(cleanAmount) as any,

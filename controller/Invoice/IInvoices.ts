@@ -27,6 +27,9 @@ export interface IInvoices {
   /** 是否已就绪（初始化完成） */
   isReady: boolean;
 
+  /** 是否正在同步状态 */
+  isSyncing: boolean;
+
   /** 是否显示授权遮罩（业务逻辑判断） */
   showAuthModal: boolean;
   
@@ -51,4 +54,13 @@ export interface IInvoices {
   
   /** 刷新发票列表（重新初始化） */
   refresh: () => Promise<void>;
+
+  /** 从链上同步所有发票的最新状态 */
+  handleSyncAll: () => Promise<void>;
+
+  /** 处理支付发票（买家操作） */
+  handlePay: (invoiceId: AleoField) => Promise<void>;
+
+  /** 处理取消发票（卖家操作） */
+  handleCancel: (invoiceId: AleoField) => Promise<void>;
 }
