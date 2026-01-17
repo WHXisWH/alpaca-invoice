@@ -1,9 +1,9 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
-import { useInvoiceStore as useOldInvoiceStore } from '@/stores/invoiceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceInitialize } from './useInvoiceInitialize';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { InvoiceStatus, type Invoice, AleoField } from '@/lib/types';
 import { IInvoices } from './IInvoices';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
@@ -34,11 +34,10 @@ export function useInvoices(): IInvoices {
   
   // 从 Store 获取数据
   const { invoices, updateInvoice, setConfirmationStatus } = useInvoiceStore();
-  const { 
-    payInvoice: storePayInvoice,
-    cancelInvoice: storeCancelInvoice
-  } = useOldInvoiceStore();
   const { publicKey, masterKey } = useUserStore();
+  
+  // 使用 Transaction Controller
+  const { executePay, executeCancel } = useTransactionController();
   
   // 本地状态：过滤和搜索
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled'>('all');
@@ -110,14 +109,15 @@ export function useInvoices(): IInvoices {
 
   /**
    * 处理支付发票（买家操作）
+   * 使用 TransactionController 的 executePay
    */
   const handlePay = useCallback(async (invoiceId: AleoField) => {
     try {
       toast.loading('Processing payment...', { id: `pay-${invoiceId}` });
-      const result = await storePayInvoice(invoiceId);
+      const transactionId = await executePay(invoiceId);
       toast.success('Payment successful!', {
         id: `pay-${invoiceId}`,
-        description: `Transaction ID: ${result.transactionId.slice(0, 16)}...`
+        description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
       // Refresh invoice list to show updated status
       await refresh();
@@ -128,16 +128,20 @@ export function useInvoices(): IInvoices {
       });
       throw error;
     }
-  }, [storePayInvoice, refresh]);
+  }, [executePay, refresh]);
 
   /**
    * 处理取消发票（卖家操作）
+   * 使用 TransactionController 的 executeCancel
    */
   const handleCancel = useCallback(async (invoiceId: AleoField) => {
     try {
       toast.loading('Cancelling invoice...', { id: `cancel-${invoiceId}` });
-      await storeCancelInvoice(invoiceId);
-      toast.success('Invoice cancelled successfully', { id: `cancel-${invoiceId}` });
+      const transactionId = await executeCancel(invoiceId);
+      toast.success('Invoice cancelled successfully', { 
+        id: `cancel-${invoiceId}`,
+        description: `Transaction ID: ${transactionId.slice(0, 16)}...`
+      });
       // Refresh invoice list to show updated status
       await refresh();
     } catch (error) {
@@ -147,7 +151,7 @@ export function useInvoices(): IInvoices {
       });
       throw error;
     }
-  }, [storeCancelInvoice, refresh]);
+  }, [executeCancel, refresh]);
 
   /**
    * 从链上同步所有发票的最新状态

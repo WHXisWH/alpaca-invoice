@@ -294,19 +294,215 @@ export function useTransactionController(): ITxController {
   );
 
   /**
-   * 执行支付发票（待实现）
+   * 执行支付发票（mark_as_paid）
    */
   const executePay = useCallback(
     async (invoiceId: AleoField): Promise<AleoTransactionId> => {
       try {
-        // TODO: 实现支付逻辑
-        throw new Error('支付功能待实现');
+        // 检查钱包连接
+        if (!publicKey) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Wallet not connected. Please connect your wallet first.'
+          );
+        }
+
+        if (!walletService) {
+          throw new WalletServiceError(
+            WalletError.NOT_INSTALLED,
+            'Wallet service not initialized.'
+          );
+        }
+
+        startTx('REQUESTING');
+        updateProgress(10, 'Fetching invoice record from chain...');
+
+        // 1. 从链上获取 InvoiceRecord
+        const response = await walletService.requestRecords(PROGRAM_ID);
+        const records: any[] = response.records || [];
+        
+        let invoiceRecord: any = null;
+        for (const record of records) {
+          try {
+            let recordData: any;
+            if (typeof record === 'string') {
+              recordData = JSON.parse(record);
+            } else if (record && typeof record === 'object') {
+              recordData = record.data ? (typeof record.data === 'string' ? JSON.parse(record.data) : record.data) : record;
+            } else {
+              continue;
+            }
+            
+            if (!recordData) continue;
+            
+            const recordJsonString = typeof recordData === 'string' ? recordData : JSON.stringify(recordData);
+            const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
+            
+            // 查找匹配的 invoice_id
+            const cleanRecordId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
+            const cleanInvoiceId = invoiceId?.replace(/field\.(private|public)$/, 'field');
+            
+            if (cleanRecordId === cleanInvoiceId) {
+              invoiceRecord = recordJsonString;
+              break;
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+
+        if (!invoiceRecord) {
+          throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
+        }
+
+        updateProgress(30, 'Invoice record found. Preparing payment...');
+
+        // 2. 生成 payment_nonce
+        const paymentNonce = await cryptoService.computeInvoiceHash({
+          invoiceNumber: `PAYMENT-${Date.now()}-${Math.random()}`,
+          lineItems: [],
+          subtotal: 0,
+          taxRate: 0,
+          taxAmount: 0,
+          total: 0,
+          currency: 'CREDITS'
+        });
+
+        updateProgress(50, 'Submitting payment transaction...');
+
+        // 3. 调用 mark_as_paid transition
+        const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+        const requestId = await walletService.requestTransaction({
+          functionName: 'mark_as_paid',
+          inputs: [
+            invoiceRecord,
+            paymentNonce
+          ],
+          publicKey: publicKey,
+          programId: PROGRAM_ID,
+          fee: 1000000,
+          chainId: chainId
+        });
+
+        if (!requestId) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Payment transaction failed - no response from wallet'
+          );
+        }
+
+        updateProgress(90, 'Payment transaction submitted successfully');
+        updateProgress(100, '✓ Payment completed!');
+        
+        completeTx();
+
+        // 返回 requestId 作为 transactionId
+        return requestId as AleoTransactionId;
       } catch (error: any) {
-        // 重新抛出错误，让 View 层处理
+        completeTx();
         throw error;
       }
     },
-    []
+    [publicKey, walletService, startTx, updateProgress, completeTx]
+  );
+
+  /**
+   * 执行取消发票（cancel_invoice）
+   */
+  const executeCancel = useCallback(
+    async (invoiceId: AleoField): Promise<AleoTransactionId> => {
+      try {
+        // 检查钱包连接
+        if (!publicKey) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Wallet not connected. Please connect your wallet first.'
+          );
+        }
+
+        if (!walletService) {
+          throw new WalletServiceError(
+            WalletError.NOT_INSTALLED,
+            'Wallet service not initialized.'
+          );
+        }
+
+        startTx('REQUESTING');
+        updateProgress(10, 'Fetching invoice record from chain...');
+
+        // 1. 从链上获取 InvoiceRecord
+        const response = await walletService.requestRecords(PROGRAM_ID);
+        const records: any[] = response.records || [];
+        
+        let invoiceRecord: any = null;
+        for (const record of records) {
+          try {
+            let recordData: any;
+            if (typeof record === 'string') {
+              recordData = JSON.parse(record);
+            } else if (record && typeof record === 'object') {
+              recordData = record.data ? (typeof record.data === 'string' ? JSON.parse(record.data) : record.data) : record;
+            } else {
+              continue;
+            }
+            
+            if (!recordData) continue;
+            
+            const recordJsonString = typeof recordData === 'string' ? recordData : JSON.stringify(recordData);
+            const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
+            
+            // 查找匹配的 invoice_id
+            const cleanRecordId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
+            const cleanInvoiceId = invoiceId?.replace(/field\.(private|public)$/, 'field');
+            
+            if (cleanRecordId === cleanInvoiceId) {
+              invoiceRecord = recordJsonString;
+              break;
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+
+        if (!invoiceRecord) {
+          throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
+        }
+
+        updateProgress(40, 'Invoice record found. Preparing cancellation...');
+
+        // 2. 调用 cancel_invoice transition
+        const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+        const requestId = await walletService.requestTransaction({
+          functionName: 'cancel_invoice',
+          inputs: [
+            invoiceRecord
+          ],
+          publicKey: publicKey,
+          programId: PROGRAM_ID,
+          fee: 1000000,
+          chainId: chainId
+        });
+
+        if (!requestId) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Cancellation transaction failed - no response from wallet'
+          );
+        }
+
+        updateProgress(90, 'Cancellation transaction submitted successfully');
+        updateProgress(100, '✓ Invoice cancelled!');
+        
+        completeTx();
+
+        // 返回 requestId 作为 transactionId
+        return requestId as AleoTransactionId;
+      } catch (error: any) {
+        completeTx();
+        throw error;
+      }
+    },
+    [publicKey, walletService, startTx, updateProgress, completeTx]
   );
 
   return {
@@ -314,6 +510,7 @@ export function useTransactionController(): ITxController {
     currentProgress: progress,
     currentLog: logs[logs.length - 1] || '',
     executeCreateInvoice,
-    executePay
+    executePay,
+    executeCancel
   };
 }

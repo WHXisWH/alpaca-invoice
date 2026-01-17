@@ -1,7 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInoviceStore';
-import { useInvoiceStore as useOldInvoiceStore } from '@/stores/invoiceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
@@ -9,6 +8,7 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
 import { cleanAleoNumber } from '@/lib/utils';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
@@ -39,12 +39,10 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     setConfirmationStatus,
     confirmationStatus
   } = useNewInvoiceStore();
-  const { 
-    payInvoice: storePayInvoice,
-    cancelInvoice: storeCancelInvoice,
-    isLoading
-  } = useOldInvoiceStore();
   const { handleError } = useErrorHandler();
+  
+  // 使用 Transaction Controller
+  const { executePay, executeCancel } = useTransactionController();
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -347,6 +345,7 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
 
   /**
    * 处理支付
+   * 使用 TransactionController 的 executePay
    */
   const handlePay = useCallback(async () => {
     if (!invoice?.id) return;
@@ -354,11 +353,13 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     setIsProcessing(true);
     try {
       toast.loading('Processing payment...', { id: 'pay-invoice' });
-      const result = await storePayInvoice(invoice.id);
+      const transactionId = await executePay(invoice.id);
       toast.success('Payment successful!', {
         id: 'pay-invoice',
-        description: `Transaction ID: ${result.transactionId.slice(0, 16)}...`
+        description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
+      // Trigger sync to update invoice status
+      await handleSyncStatus();
     } catch (error) {
       toast.error('Payment failed', {
         id: 'pay-invoice',
@@ -368,10 +369,11 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     } finally {
       setIsProcessing(false);
     }
-  }, [invoice, storePayInvoice, handleError]);
+  }, [invoice, executePay, handleSyncStatus, handleError]);
 
   /**
    * 处理取消
+   * 使用 TransactionController 的 executeCancel
    */
   const handleCancel = useCallback(async () => {
     if (!invoice?.id) return;
@@ -379,8 +381,13 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     setIsProcessing(true);
     try {
       toast.loading('Cancelling invoice...', { id: 'cancel-invoice' });
-      await storeCancelInvoice(invoice.id);
-      toast.success('Invoice cancelled successfully', { id: 'cancel-invoice' });
+      const transactionId = await executeCancel(invoice.id);
+      toast.success('Invoice cancelled successfully', { 
+        id: 'cancel-invoice',
+        description: `Transaction ID: ${transactionId.slice(0, 16)}...`
+      });
+      // Trigger sync to update invoice status
+      await handleSyncStatus();
     } catch (error) {
       toast.error('Failed to cancel invoice', {
         id: 'cancel-invoice',
@@ -390,7 +397,7 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     } finally {
       setIsProcessing(false);
     }
-  }, [invoice, storeCancelInvoice, handleError]);
+  }, [invoice, executeCancel, handleSyncStatus, handleError]);
 
   /**
    * 扫描链上Record，查找匹配的发票

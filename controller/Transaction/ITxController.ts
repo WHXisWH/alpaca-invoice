@@ -22,4 +22,12 @@ export interface ITxController {
    * 3. 广播并等待确认 -> 确认后刷新余额
    */
   executePay(invoiceId: AleoField): Promise<AleoTransactionId>;
+
+  /** * 执行取消发票
+   * 逻辑：
+   * 1. 从链上获取 InvoiceRecord
+   * 2. 调用 cancel_invoice transition
+   * 3. 更新本地状态
+   */
+  executeCancel(invoiceId: AleoField): Promise<AleoTransactionId>;
 }
