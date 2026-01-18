@@ -2,12 +2,57 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import InvoiceCard from '@/components/invoice-card';
+import InvoiceCard, { type StatusConfig } from '@/components/invoice-card';
 import { useInvoiceStore } from '@/stores/invoiceStore';
 import { useWalletStore } from '@/stores/walletStore';
 import WalletConnectButton from '@/components/wallet-connect-button';
 import FunctionGuide from '@/components/function-guide';
 import { InvoiceStatus } from '@/lib/types';
+
+function getStatusConfig(status: InvoiceStatus): StatusConfig {
+  switch (status) {
+    case InvoiceStatus.PENDING:
+      return {
+        label: 'Pending',
+        icon: '⏳',
+        bg: 'bg-amber-100',
+        text: 'text-amber-700',
+        border: 'border-amber-300'
+      };
+    case InvoiceStatus.PAID:
+      return {
+        label: 'Paid',
+        icon: '✅',
+        bg: 'bg-green-100',
+        text: 'text-green-700',
+        border: 'border-green-300'
+      };
+    case InvoiceStatus.CANCELLED:
+      return {
+        label: 'Cancelled',
+        icon: '❌',
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-300'
+      };
+    case InvoiceStatus.EXPIRED:
+      return {
+        label: 'Expired',
+        icon: '⚠️',
+        bg: 'bg-red-100',
+        text: 'text-red-700',
+        border: 'border-red-300'
+      };
+    default:
+      return {
+        label: 'Unknown',
+        icon: '❓',
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-300'
+      };
+  }
+}
 
 export default function DashboardPage() {
   const { sentInvoices, receivedInvoices, fetchInvoices } = useInvoiceStore();
@@ -178,7 +223,7 @@ export default function DashboardPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {sentInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} />
+              <InvoiceCard key={inv.id} invoice={inv} statusConfig={getStatusConfig(inv.status)} />
             ))}
           </div>
         )}
@@ -215,7 +260,7 @@ export default function DashboardPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {receivedInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} />
+              <InvoiceCard key={inv.id} invoice={inv} statusConfig={getStatusConfig(inv.status)} />
             ))}
           </div>
         )}

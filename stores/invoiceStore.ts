@@ -1,13 +1,14 @@
 'use client';
 
 import { create } from 'zustand';
-import type {
-  AleoField,
-  CreateInvoiceParams,
-  CreateInvoiceResult,
-  Invoice,
-  PaymentReceipt,
-  PaymentResult
+import {
+  type AleoField,
+  type CreateInvoiceParams,
+  type CreateInvoiceResult,
+  type Invoice,
+  type PaymentReceipt,
+  type PaymentResult,
+  InvoiceStatus
 } from '@/lib/types';
 import { invoiceService } from '@/services/invoiceService';
 import { paymentService } from '@/services/paymentService';
