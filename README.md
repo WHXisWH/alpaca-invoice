@@ -280,7 +280,8 @@ npm run test
 - **[Architecture Documentation](./docs/ARCHITECTURE.md)** - Detailed technical architecture, data flows, security model
 - **[Business Flow Documentation](./docs/BUSINESS_FLOW.md)** - Complete business logic flows with diagrams
 - **[Deployment Guide](./ALEO_DEPLOYMENT_GUIDE.md)** - Aleo contract deployment guide
-- **[Product Requirements](./PRD&TDD.md)** - Product requirements and technical design (Chinese)
+- **[Product Requirements](./PRD&TDD.md)** - Product requirements and technical design 
+
 - [Aleo Developer Docs](https://developer.aleo.org/)
 - [Leo Language Guide](https://developer.aleo.org/leo/)
 
