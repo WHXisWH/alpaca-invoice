@@ -24,6 +24,11 @@ import type { AleoAddress } from '@/lib/types';
 export function createWalletAdapter(walletContext: WalletContextState): IWalletService {
   const network = getNetworkFromEnv();
   const programs = ['credits.aleo', 'zk_invoice.aleo'];
+  const isInvalidParamsError = (error: any) => {
+    const message = (error?.message || error?.error?.message || '').toLowerCase();
+    const code = error?.code || error?.error?.code;
+    return message.includes('invalid') || message.includes('params') || code === 400 || code === 'INVALID_PARAMS';
+  };
 
   return {
     // 适配 connect 方法：将无参数接口转换为需要参数的实际调用
@@ -79,8 +84,7 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         });
       }
 
-      // 4. 调用 connect，让钱包适配器自己处理内部状态
-      // connect() 方法可能不依赖于 wallet 对象，它内部会处理选中的钱包
+      // 4. 调用 connect，让钱包适配器自己处理内部状态（单次调用）
       console.log('🔍 [WalletAdapter] 准备调用 walletContext.connect()', {
         network,
         programs,
