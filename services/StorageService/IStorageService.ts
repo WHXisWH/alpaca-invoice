@@ -1,5 +1,3 @@
-// services/StorageService.ts
-import { AleoField, EncryptedPayload } from '@/lib/types';
 
 /** * Storage 异常枚举 */
 export enum StorageError {
@@ -8,39 +6,55 @@ export enum StorageError {
   QUOTA_EXCEEDED = 'QUOTA_EXCEEDED' // 存储配额超出限制
 }
 
-export interface InvoiceWithHash {
-  invoiceHash: AleoField;
-  payload: EncryptedPayload;
-}
-
+/**
+ * 通用存储服务接口
+ * 支持任意类型的数据存储，通过 tableName 区分不同的数据表
+ */
 export interface IStorageService {
   /**
-   * 存储加密后的发票明细
-   * 以 invoiceHash 为键，确保存证与明细的一一对应
+   * 添加数据到指定表（单个或批量）
+   * @param tableName 表名（用于区分不同的数据表，如 'invoices', 'settings' 等）
+   * @param keyOrList 单个 key 或数据项列表（包含 key 和 data）
+   * @param data 要存储的数据对象（单个模式时使用）
    */
-  saveEncryptedInvoice(
-    invoiceHash: AleoField, 
-    payload: EncryptedPayload
-  ): Promise<void>;
-
+  addData<T>(tableName: string, key: string, data: T): Promise<void>;
+  addData<T>(tableName: string, dataList: Array<{ key: string; data: T }>): Promise<void>;
+  
   /**
-   * 读取加密后的发票明细
+   * 通过 key 获取数据
+   * @param tableName 表名
+   * @param key 数据的唯一标识键
+   * @returns 数据对象，如果不存在则返回 undefined
    */
-  getEncryptedInvoice(invoiceHash: AleoField): Promise<EncryptedPayload | null>;
-
+  getData<T>(tableName: string, key: string): Promise<T | undefined>;
+  
   /**
-   * 获取所有加密的发票明细（用于批量加载）
+   * 获取指定表的所有数据
+   * @param tableName 表名
+   * @returns 数据对象数组
    */
-  getAllEncryptedInvoices(): Promise<InvoiceWithHash[]>;
-
+  getAllData<T>(tableName: string): Promise<T[]>;
+  
   /**
-   * 删除本地缓存（用于用户注销或清理空间）
+   * 更新部分数据
+   * @param tableName 表名
+   * @param key 数据的唯一标识键
+   * @param updates 要更新的部分数据（Partial<T>）
    */
-  deleteInvoice(invoiceHash: AleoField): Promise<void>;
-
+  updateData<T>(tableName: string, key: string, updates: Partial<T>): Promise<void>;
+  
   /**
-   * 存储同步高度（用于 AleoProtocolService 的增量扫描）
+   * 全量重置表数据（例如同步链上数据后）
+   * @param tableName 表名
+   * @param dataList 要重置的数据列表，每个数据项必须包含唯一标识字段（key/id/invoiceHash 等）
    */
-  setLastSyncHeight(height: number): Promise<void>;
-  getLastSyncHeight(): Promise<number>;
+  resetAllData<T extends { [key: string]: any }>(tableName: string, dataList: T[]): Promise<void>;
+  
+  /**
+   * 删除指定数据（单个或批量）
+   * @param tableName 表名
+   * @param keyOrKeys 单个 key 或 key 数组
+   */
+  deleteData(tableName: string, key: string): Promise<void>;
+  deleteData(tableName: string, keys: string[]): Promise<void>;
 }
