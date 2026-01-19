@@ -1,113 +1,106 @@
 'use client';
 
 import { useWalletController } from '@/controller/Wallet/useWalletController';
-import { getNetworkFromEnv, getNetworkDisplayName, getNetworkBadgeClass } from '@/lib/network';
+import { getNetworkFromEnv, getNetworkDisplayName } from '@/lib/network';
+import { Wallet, LogOut, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-/**
- * 钱包连接按钮（基于 Controller 架构）
- * 
- * 架构层级：View Layer
- * 职责：展示钱包连接状态，触发连接/断开操作，显示网络信息
- * 
- * 网络显示：始终显示应用配置的期望网络（从环境变量）
- */
 export default function WalletConnectButtonV2() {
-  const { 
-    address, 
-    publicBalance, 
+  const {
+    address,
+    publicBalance,
     privateBalance,
     isConnecting,
     networkChanged,
-    handleConnect, 
-    handleLogout 
+    handleConnect,
+    handleLogout,
   } = useWalletController();
 
-  // 应用期望的网络（静态配置）
   const expectedNetwork = getNetworkFromEnv();
   const networkName = getNetworkDisplayName(expectedNetwork);
-  const networkBadgeClass = getNetworkBadgeClass(expectedNetwork);
 
-  // 未连接状态
   if (!address) {
     return (
       <div className="inline-flex flex-col items-end gap-2">
-        {/* 网络标签 - 显示应用期望的网络 */}
-        <span className={`text-xs px-2 py-0.5 rounded border ${networkBadgeClass}`}>
-          {networkName}
-        </span>
-        
-        {/* 网络切换警告 */}
+        {/* Network Change Warning */}
         {networkChanged && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 max-w-xs">
-            <p className="font-medium mb-1">⚠️ 钱包已断开连接</p>
-            <p className="text-amber-700">
-              钱包网络可能已更改。请在钱包中切换到 <strong>{networkName}</strong> 后重新连接。
+          <div className="max-w-xs rounded-lg border border-warning-200 bg-warning-50 p-3 text-xs text-warning-800">
+            <p className="mb-1 font-medium">Wallet Disconnected</p>
+            <p className="text-warning-700">
+              Network may have changed. Switch to{' '}
+              <strong>{networkName}</strong> and reconnect.
             </p>
           </div>
         )}
-        
-        <button
-          onClick={handleConnect}
-          disabled={isConnecting}
-          className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-500 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isConnecting ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Connecting...
-            </>
-          ) : (
-            <>
-              <svg className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-              Connect Wallet
-            </>
-          )}
-        </button>
+
+        {/* Connect Button with integrated network badge */}
+        <div className="inline-flex items-center gap-2">
+          <span className="rounded-full bg-accent-100 px-2.5 py-1 text-xs font-medium text-accent-700">
+            {networkName}
+          </span>
+          <button
+            onClick={handleConnect}
+            disabled={isConnecting}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-4 py-2',
+              'bg-accent-500 text-sm font-semibold text-white',
+              'shadow-sm transition-all',
+              'hover:bg-accent-600 hover:shadow-md',
+              'disabled:cursor-not-allowed disabled:opacity-50'
+            )}
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <Wallet className="h-4 w-4" />
+                Connect Wallet
+              </>
+            )}
+          </button>
+        </div>
       </div>
     );
   }
 
-  // 已连接状态
   return (
-    <div className="inline-flex flex-col gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 shadow-sm">
-      {/* 地址和网络显示 */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-green-500"></div>
-          <span className="text-sm font-medium text-slate-700">
-            {address.slice(0, 12)}...{address.slice(-8)}
+    <div className="inline-flex items-center gap-3 rounded-xl border border-primary-200 bg-white px-4 py-2.5 shadow-sm">
+      {/* Connection Status */}
+      <div className="flex items-center gap-2.5">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-success-500" />
+        </span>
+        <div className="flex flex-col">
+          <span className="font-mono text-sm font-medium text-primary-900">
+            {address.slice(0, 8)}...{address.slice(-6)}
           </span>
-          {/* 网络徽章 - 显示应用期望的网络 */}
-          <span className={`text-xs px-1.5 py-0.5 rounded border ${networkBadgeClass}`}>
-            {networkName}
-          </span>
+          <span className="text-xs text-primary-500">{networkName}</span>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-xs text-slate-500 hover:text-red-600 transition-colors"
-          title="Disconnect"
-        >
-          Disconnect
-        </button>
       </div>
 
-      {/* 余额显示 */}
-      <div className="flex gap-4 text-xs text-slate-600 border-t border-slate-200 pt-2">
-        <div>
-          <span className="text-slate-500">Public:</span>{' '}
-          <span className="font-medium">{publicBalance} Aleo</span>
-        </div>
-        <div>
-          <span className="text-slate-500">Private:</span>{' '}
-          <span className="font-medium">{privateBalance} Aleo</span>
-        </div>
+      {/* Divider */}
+      <div className="h-8 w-px bg-primary-200" />
+
+      {/* Balance */}
+      <div className="flex flex-col text-right">
+        <span className="text-xs text-primary-500">Balance</span>
+        <span className="text-sm font-semibold text-primary-900">
+          {publicBalance} <span className="text-xs font-normal text-primary-500">credits</span>
+        </span>
       </div>
+
+      {/* Disconnect */}
+      <button
+        onClick={handleLogout}
+        className="rounded-lg p-2 text-primary-400 transition-colors hover:bg-error-50 hover:text-error-600"
+        title="Disconnect"
+      >
+        <LogOut className="h-4 w-4" />
+      </button>
     </div>
   );
 }
-

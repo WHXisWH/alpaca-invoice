@@ -2,57 +2,24 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import InvoiceCard, { type StatusConfig } from '@/components/invoice-card';
+import Image from 'next/image';
+import InvoiceCard from '@/components/invoice-card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoiceStore } from '@/stores/invoiceStore';
 import { useWalletStore } from '@/stores/walletStore';
-import WalletConnectButton from '@/components/wallet-connect-button';
-import FunctionGuide from '@/components/function-guide';
 import { InvoiceStatus } from '@/lib/types';
-
-function getStatusConfig(status: InvoiceStatus): StatusConfig {
-  switch (status) {
-    case InvoiceStatus.PENDING:
-      return {
-        label: 'Pending',
-        icon: '⏳',
-        bg: 'bg-amber-100',
-        text: 'text-amber-700',
-        border: 'border-amber-300'
-      };
-    case InvoiceStatus.PAID:
-      return {
-        label: 'Paid',
-        icon: '✅',
-        bg: 'bg-green-100',
-        text: 'text-green-700',
-        border: 'border-green-300'
-      };
-    case InvoiceStatus.CANCELLED:
-      return {
-        label: 'Cancelled',
-        icon: '❌',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-    case InvoiceStatus.EXPIRED:
-      return {
-        label: 'Expired',
-        icon: '⚠️',
-        bg: 'bg-red-100',
-        text: 'text-red-700',
-        border: 'border-red-300'
-      };
-    default:
-      return {
-        label: 'Unknown',
-        icon: '❓',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-  }
-}
+import {
+  Send,
+  Inbox,
+  Clock,
+  CheckCircle,
+  FilePlus,
+  CreditCard,
+  Receipt,
+  Search,
+  ArrowRight,
+  Wallet,
+} from 'lucide-react';
 
 export default function DashboardPage() {
   const { sentInvoices, receivedInvoices, fetchInvoices } = useInvoiceStore();
@@ -64,7 +31,6 @@ export default function DashboardPage() {
     }
   }, [connected, fetchInvoices]);
 
-  // Calculate statistics
   const totalSent = sentInvoices.length;
   const totalReceived = receivedInvoices.length;
   const pendingSent = sentInvoices.filter(inv => inv.status === InvoiceStatus.PENDING).length;
@@ -74,213 +40,238 @@ export default function DashboardPage() {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
-        <div className="text-center space-y-3">
-          <div className="text-6xl">🔐</div>
-          <h2 className="text-2xl font-bold text-slate-900">Connect Wallet to Get Started</h2>
-          <p className="text-slate-600 max-w-md">
-            Please connect your Aleo wallet to view and manage your invoices
+      <div className="flex min-h-[60vh] flex-col items-center justify-center">
+        <div className="rounded-2xl border border-primary-200 bg-white p-10 text-center shadow-sm">
+          <div className="relative mx-auto mb-6 h-32 w-32">
+            <Image
+              src="/images/mascot/mascot-waiting.png"
+              alt="Connect wallet"
+              fill
+              className="object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+          <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100 mb-4">
+            <Wallet className="h-6 w-6 text-accent-600" />
+          </div>
+          <h2 className="text-xl font-bold text-primary-900">Connect Wallet</h2>
+          <p className="mt-2 text-sm text-primary-500 max-w-xs">
+            Connect your Aleo wallet to view and manage your invoices
           </p>
         </div>
-        <WalletConnectButton />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Address: <code className="text-xs bg-amber-50 px-2 py-1 rounded">{address?.slice(0, 12)}...{address?.slice(-8)}</code>
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-primary-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-info-100">
+              <Send className="h-6 w-6 text-info-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-primary-900">{totalSent}</p>
+              <p className="text-sm text-primary-500">Sent</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-primary-400">
+            Pending: {pendingSent} · Paid: {paidSent}
           </p>
         </div>
-        <WalletConnectButton />
+
+        <div className="rounded-xl border border-primary-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-100">
+              <Inbox className="h-6 w-6 text-accent-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-primary-900">{totalReceived}</p>
+              <p className="text-sm text-primary-500">Received</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-primary-400">
+            Pending: {pendingReceived} · Paid: {paidReceived}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-warning-200 bg-warning-50 p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning-100">
+              <Clock className="h-6 w-6 text-warning-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-warning-900">{pendingSent + pendingReceived}</p>
+              <p className="text-sm text-warning-700">Pending</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-warning-600">Requires action</p>
+        </div>
+
+        <div className="rounded-xl border border-success-200 bg-success-50 p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success-100">
+              <CheckCircle className="h-6 w-6 text-success-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-success-900">{paidSent + paidReceived}</p>
+              <p className="text-sm text-success-700">Completed</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-success-600">Paid invoices</p>
+        </div>
       </div>
 
-      {/* Statistics Cards */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl bg-white border-2 border-amber-200 p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-slate-600">Sent</span>
-            <span className="text-2xl">📤</span>
-          </div>
-          <div className="text-3xl font-bold text-slate-900">{totalSent}</div>
-          <div className="text-xs text-slate-500 mt-1">
-            Pending: {pendingSent} | Paid: {paidSent}
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-white border-2 border-amber-200 p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-slate-600">Received</span>
-            <span className="text-2xl">📥</span>
-          </div>
-          <div className="text-3xl font-bold text-slate-900">{totalReceived}</div>
-          <div className="text-xs text-slate-500 mt-1">
-            Pending: {pendingReceived} | Paid: {paidReceived}
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 border-2 border-amber-300 p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-amber-800">Pending</span>
-            <span className="text-2xl">⏳</span>
-          </div>
-          <div className="text-3xl font-bold text-amber-900">{pendingSent + pendingReceived}</div>
-          <div className="text-xs text-amber-700 mt-1">
-            Requires action
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-gradient-to-br from-green-100 to-green-50 border-2 border-green-300 p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-green-800">Completed</span>
-            <span className="text-2xl">✅</span>
-          </div>
-          <div className="text-3xl font-bold text-green-900">{paidSent + paidReceived}</div>
-          <div className="text-xs text-green-700 mt-1">
-            All paid invoices
-          </div>
-        </div>
-      </section>
-
       {/* Quick Actions */}
-      <section className="rounded-2xl bg-white border border-amber-200 p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Quick Actions</h2>
+      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold text-primary-900">Quick Actions</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/invoices/create"
-            className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 hover:border-amber-400 transition-colors"
+            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-accent-300 hover:shadow-sm"
           >
-            <div className="text-2xl">✏️</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-100">
+              <FilePlus className="h-5 w-5 text-accent-600" />
+            </div>
             <div>
-              <div className="font-semibold text-slate-900 text-sm">Create Invoice</div>
-              <div className="text-xs text-slate-600">Issue new invoice</div>
+              <div className="text-sm font-semibold text-primary-900">Create Invoice</div>
+              <div className="text-xs text-primary-500">Issue new invoice</div>
             </div>
           </Link>
 
           <Link
             href="/invoices?filter=pending"
-            className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 hover:border-amber-400 transition-colors"
+            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-warning-300 hover:shadow-sm"
           >
-            <div className="text-2xl">💰</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning-100">
+              <CreditCard className="h-5 w-5 text-warning-600" />
+            </div>
             <div>
-              <div className="font-semibold text-slate-900 text-sm">Pending Payments</div>
-              <div className="text-xs text-slate-600">View unpaid invoices</div>
+              <div className="text-sm font-semibold text-primary-900">Pending</div>
+              <div className="text-xs text-primary-500">View pending invoices</div>
             </div>
           </Link>
 
           <Link
             href="/receipts"
-            className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 hover:border-amber-400 transition-colors"
+            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-success-300 hover:shadow-sm"
           >
-            <div className="text-2xl">🧾</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-100">
+              <Receipt className="h-5 w-5 text-success-600" />
+            </div>
             <div>
-              <div className="font-semibold text-slate-900 text-sm">View Receipts</div>
-              <div className="text-xs text-slate-600">All payment receipts</div>
+              <div className="text-sm font-semibold text-primary-900">Receipts</div>
+              <div className="text-xs text-primary-500">View payment receipts</div>
             </div>
           </Link>
 
           <Link
             href="/audit"
-            className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 hover:border-amber-400 transition-colors"
+            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-info-300 hover:shadow-sm"
           >
-            <div className="text-2xl">🔍</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-info-100">
+              <Search className="h-5 w-5 text-info-600" />
+            </div>
             <div>
-              <div className="font-semibold text-slate-900 text-sm">Audit Center</div>
-              <div className="text-xs text-slate-600">Generate audit keys</div>
+              <div className="text-sm font-semibold text-primary-900">Audit</div>
+              <div className="text-xs text-primary-500">Generate audit keys</div>
             </div>
           </Link>
         </div>
-      </section>
+      </div>
 
       {/* Sent Invoices */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900">Sent Invoices</h2>
+      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-primary-900">Sent Invoices</h2>
           <Link
             href="/invoices/create"
-            className="text-sm font-medium text-amber-600 hover:text-amber-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
-            Create New Invoice →
+            Create New
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
         {sentInvoices.length === 0 ? (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-8 text-center">
-            <div className="text-4xl mb-3">📄</div>
-            <p className="text-sm text-slate-600 mb-4">No sent invoices yet</p>
-            <Link
-              href="/invoices/create"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
-            >
-              Create First Invoice
-            </Link>
-          </div>
+          <EmptyState
+            mascot="sleeping"
+            title="No sent invoices"
+            description="Create your first invoice to get started"
+            action={
+              <Link
+                href="/invoices/create"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent-600"
+              >
+                <FilePlus className="h-4 w-4" />
+                Create Invoice
+              </Link>
+            }
+          />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {sentInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} statusConfig={getStatusConfig(inv.status)} />
+              <InvoiceCard key={inv.id} invoice={inv} role="SELLER" />
             ))}
           </div>
         )}
 
         {sentInvoices.length > 4 && (
-          <div className="text-center">
+          <div className="mt-4 text-center">
             <Link
               href="/invoices?filter=sent"
-              className="text-sm text-amber-600 hover:text-amber-700"
+              className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
-              View All {sentInvoices.length} Invoices →
+              View All {sentInvoices.length} Invoices
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         )}
-      </section>
+      </div>
 
       {/* Received Invoices */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900">Received Invoices</h2>
+      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-primary-900">Received Invoices</h2>
           <Link
             href="/invoices?filter=received"
-            className="text-sm font-medium text-amber-600 hover:text-amber-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
-            View All →
+            View All
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
         {receivedInvoices.length === 0 ? (
-          <div className="rounded-xl bg-white border border-amber-200 p-8 text-center">
-            <div className="text-4xl mb-3">📭</div>
-            <p className="text-sm text-slate-600">No received invoices yet</p>
-          </div>
+          <EmptyState
+            mascot="sleeping"
+            title="No received invoices"
+            description="Invoices sent to you will appear here"
+          />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {receivedInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} statusConfig={getStatusConfig(inv.status)} />
+              <InvoiceCard key={inv.id} invoice={inv} role="BUYER" />
             ))}
           </div>
         )}
 
         {receivedInvoices.length > 4 && (
-          <div className="text-center">
+          <div className="mt-4 text-center">
             <Link
               href="/invoices?filter=received"
-              className="text-sm text-amber-600 hover:text-amber-700"
+              className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
-              View All {receivedInvoices.length} Invoices →
+              View All {receivedInvoices.length} Invoices
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         )}
-      </section>
-
-      {/* Function Guide */}
-      <section className="mt-12">
-        <FunctionGuide />
-      </section>
+      </div>
     </div>
   );
 }

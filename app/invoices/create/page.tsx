@@ -1,17 +1,42 @@
 'use client';
 
+import Image from 'next/image';
 import InvoiceForm from '@/components/invoice-form';
+import { FilePlus } from 'lucide-react';
 
 export default function CreateInvoicePage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">Create invoice</h2>
-        <p className="text-sm text-slate-600">
-          Enter buyer address, amount, and details; encrypt locally and produce on-chain hash.
-        </p>
+      <div className="flex items-start gap-6">
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-100">
+              <FilePlus className="h-5 w-5 text-accent-600" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-primary-900">Create Invoice</h1>
+              <p className="text-sm text-primary-500">
+                Data is encrypted locally before on-chain commitment
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="relative hidden h-20 w-20 md:block">
+          <Image
+            src="/images/mascot/mascot-writing.png"
+            alt="Creating invoice"
+            fill
+            className="object-contain"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
       </div>
-      <InvoiceForm />
+
+      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm md:p-8">
+        <InvoiceForm />
+      </div>
     </div>
   );
 }

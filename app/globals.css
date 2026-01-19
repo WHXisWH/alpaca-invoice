@@ -2,86 +2,163 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-}
-
-body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at 10% 20%, #e0f7ff 0, transparent 25%), radial-gradient(circle at 80% 0%, #f5e8ff 0, transparent 30%), #f8fafc;
-  color: #0f172a;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    /* Light Mode - Alpaca Theme */
+    --background: 48 100% 99%;
+    --foreground: 30 16% 25%;
+
+    --card: 35 60% 97%;
+    --card-foreground: 30 16% 25%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+    --popover-foreground: 30 16% 25%;
+
+    --primary: 38 75% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 35 35% 90%;
+    --secondary-foreground: 30 16% 35%;
+
+    --muted: 35 35% 90%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 38 92% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 35 35% 82%;
+    --input: 35 35% 82%;
+    --ring: 38 92% 50%;
+
+    --chart-1: 38 92% 50%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 221 83% 53%;
+    --chart-4: 0 84% 60%;
+    --chart-5: 262 83% 58%;
+
+    --radius: 0.75rem;
   }
+
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Dark Mode - Alpaca Theme */
+    --background: 30 20% 8%;
+    --foreground: 35 60% 97%;
+
+    --card: 30 18% 12%;
+    --card-foreground: 35 60% 97%;
+
+    --popover: 30 18% 12%;
+    --popover-foreground: 35 60% 97%;
+
+    --primary: 38 75% 55%;
+    --primary-foreground: 30 20% 8%;
+
+    --secondary: 30 16% 20%;
+    --secondary-foreground: 35 60% 97%;
+
+    --muted: 30 16% 20%;
+    --muted-foreground: 35 35% 70%;
+
+    --accent: 38 92% 50%;
+    --accent-foreground: 30 20% 8%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 16% 25%;
+    --input: 30 16% 25%;
+    --ring: 38 92% 50%;
+
+    --chart-1: 38 92% 50%;
+    --chart-2: 142 70% 45%;
+    --chart-3: 221 83% 58%;
+    --chart-4: 0 84% 60%;
+    --chart-5: 262 83% 58%;
   }
 }
-
-
 
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5 shadow-lg;
+  }
+
+  /* Button base styles */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200;
+  }
+  .btn-primary:hover {
+    @apply bg-amber-600 -translate-y-0.5 shadow-md;
+  }
+  .btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed translate-y-0 shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-xl border-2 border-alpaca-300 bg-alpaca-100 px-6 py-3 text-sm font-semibold text-alpaca-800 transition-all duration-200;
+  }
+  .btn-secondary:hover {
+    @apply border-alpaca-400 bg-alpaca-200;
+  }
+
+  /* Input styles */
+  .input-field {
+    @apply w-full rounded-xl border-2 border-alpaca-300 bg-alpaca-50 px-4 py-3 text-sm transition-all duration-200 placeholder:text-alpaca-400;
+  }
+  .input-field:focus {
+    @apply border-accent outline-none ring-2 ring-accent/20;
+  }
+
+  /* Status badges */
+  .badge-pending {
+    @apply inline-flex items-center gap-1.5 rounded-lg border-2 border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700;
+  }
+  .badge-paid {
+    @apply inline-flex items-center gap-1.5 rounded-lg border-2 border-green-300 bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700;
+  }
+  .badge-cancelled {
+    @apply inline-flex items-center gap-1.5 rounded-lg border-2 border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700;
+  }
+  .badge-expired {
+    @apply inline-flex items-center gap-1.5 rounded-lg border-2 border-red-300 bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700;
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-alpaca-600 to-amber-500 bg-clip-text text-transparent;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/80 backdrop-blur-md;
+  }
+
+  /* Skeleton loading */
+  .skeleton {
+    @apply animate-pulse bg-alpaca-200 rounded;
   }
 }
