@@ -7,7 +7,7 @@ import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { AleoField } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';
-import { cleanAleoField } from '@/lib/invoice';
+import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
 
 const PROGRAM_ID = 'zk_invoice.aleo';
@@ -33,16 +33,28 @@ export function useInvoiceChainScan() {
    * 扫描所有链上 InvoiceRecord
    * 返回 Map<invoiceHash, AleoInvoiceRecord & { originalInvoiceId?: string }>
    * ✅ 改进：正确处理多个相同 invoice_hash 的 records，优先选择 unspent 和更高 status 的
+   * ✅ 同时返回按 invoice_id 去重后的 Map（通过 deduplicateInvoiceRecordsByInvoiceId）
    */
-  const scanAllInvoiceRecords = useCallback(async (): Promise<Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>> => {
+  const scanAllInvoiceRecords = useCallback(async (): Promise<{
+    byHash: Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>;
+    byInvoiceId: Map<string, {
+      record: AleoInvoiceRecord & { originalInvoiceId?: string };
+      invoiceHash: string;
+    }>;
+  }> => {
     const recordsMap = new Map<string, {
       record: AleoInvoiceRecord & { originalInvoiceId?: string };
       spent: boolean;
       statusNum: number;
     }>();
+    const rawRecords: Array<{ 
+      data: any; 
+      spent: boolean;
+      invoiceHash: string;
+    }> = [];
     
     if (!walletService || !publicKey) {
-      return new Map();
+      return { byHash: new Map(), byInvoiceId: new Map() };
     }
 
     try {
@@ -58,8 +70,9 @@ export function useInvoiceChainScan() {
           
           // ✅ 在解析之前，从原始 record.data 中提取 invoice_id（保留 .private 后缀）
           let originalInvoiceId: string | undefined;
+          let recordData: any;
           if (record && typeof record === 'object' && record.data) {
-            const recordData = typeof record.data === 'string' ? JSON.parse(record.data) : record.data;
+            recordData = typeof record.data === 'string' ? JSON.parse(record.data) : record.data;
             originalInvoiceId = recordData.invoice_id; // 原始的 invoice_id（带 .private）
           }
           
@@ -90,6 +103,12 @@ export function useInvoiceChainScan() {
               
               if (shouldReplace) {
                 recordsMap.set(cleanChainHash, candidate);
+                // 保存原始 record 信息用于去重
+                rawRecords.push({
+                  data: recordData || record.data,
+                  spent: isSpent,
+                  invoiceHash: cleanChainHash
+                });
                 console.log(`✅ [scanAllInvoiceRecords] Selected record for ${cleanChainHash}: spent=${isSpent}, status=${statusNum}`);
               }
             }
@@ -100,17 +119,20 @@ export function useInvoiceChainScan() {
         }
       }
 
-      // ✅ 转换为最终格式（只返回 record，不包含内部字段）
-      const result = new Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>();
+      // ✅ 转换为按 invoice_hash 索引的 Map
+      const byHash = new Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>();
       for (const [hash, data] of recordsMap.entries()) {
-        result.set(hash, data.record);
+        byHash.set(hash, data.record);
       }
 
-      console.log(`✅ [scanAllInvoiceRecords] Successfully parsed ${result.size} invoice records`);
-      return result;
+      // ✅ 使用去重函数按 invoice_id 去重
+      const byInvoiceId = deduplicateInvoiceRecordsByInvoiceId(byHash, rawRecords);
+
+      console.log(`✅ [scanAllInvoiceRecords] Successfully parsed ${byHash.size} invoice records (by hash), ${byInvoiceId.size} unique invoice_ids`);
+      return { byHash, byInvoiceId };
     } catch (error) {
       console.error('Failed to scan chain records:', error);
-      return new Map();
+      return { byHash: new Map(), byInvoiceId: new Map() };
     }
   }, [walletService, publicKey, cryptoService]);
 
@@ -272,7 +294,10 @@ export function useInvoiceChainScan() {
    * 扫描所有链上 InvoiceRecord（向后兼容）
    * @deprecated 使用 scanAllInvoiceRecords 代替
    */
-  const scanAllRecords = scanAllInvoiceRecords;
+  const scanAllRecords = useCallback(async () => {
+    const result = await scanAllInvoiceRecords();
+    return result.byHash; // 返回按 hash 索引的 Map（向后兼容）
+  }, [scanAllInvoiceRecords]);
 
   return {
     scanAllInvoiceRecords,

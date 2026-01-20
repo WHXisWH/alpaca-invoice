@@ -119,7 +119,9 @@ graph TB
 | Hook 名 | 职责描述 | 接口定义 |
 |---------|---------|---------|
 | `useWalletController` | 处理钱包连接、余额轮询及身份授权 | [IWalletController.ts](../controller/Wallet/IWalletController.ts) |
+| `useAuthCheck` | 独立的授权检查和处理逻辑，可在多个页面复用（列表页、详情页等） | [useAuthCheck.ts](../controller/Auth/useAuthCheck.ts) |
 | `useInvoiceController` | 处理发票列表的显示逻辑、解密触发 | [IInvoiceController.ts](../controller/Invoice/IInvoiceController.ts) |
+| `useInvoiceDetail` | 发票详情页的组合器，组合数据加载、角色判断、链上同步、操作处理等子 hooks | [IInvoiceDetail.ts](../controller/Invoice/IInvoiceDetail.ts) |
 | `useTransactionController` | 管理交易流程（创建/支付/撤销），通过钱包服务处理链上交互 | [ITxController.ts](../controller/Transaction/ITxController.ts) |
 | `useAuditController` | 负责隐私数据的打包、签名与导出 | [IAuditController.ts](../controller/Audit/IAuditController.ts) |
 
@@ -139,11 +141,22 @@ graph TB
 | **IWalletService** | 连接钱包、获取 ViewKey、获取余额、签名、请求交易 | [IWalletService.ts](../services/WalletService/IWalletService.ts) | ✅ 完全实现 |
 | **ICryptoService** | 计算发票哈希、本地加解密、Record 解析、完整性验证 | [ICryptoService.ts](../services/CryptoService/ICryptoService.ts) | ✅ 完全实现 |
 | **IStorageService** | IndexedDB 的 CRUD，用于持久化数据 | [IStorageService.ts](../services/StorageService/IStorageService.ts) | ✅ 完全实现 |
+| **IPollingService** | 通用轮询服务，管理任意类型的轮询任务生命周期（发票状态轮询、交易确认轮询等） | [IPollingService.ts](../services/PollingService/IPollingService.ts) | ✅ 完全实现 |
 | **IAleoProtocolService** | 节点 RPC 交互（广播交易、查询 Mapping、扫描高度） | [IAleoProtocolService.ts](../services/AleoProtocolService/IAleoProtocolService.ts) | ⚠️ 部分实现 |
 
 > **说明**: 零知识证明（ZKP）的生成由 Leo Wallet 内部处理，应用层通过 `WalletService.requestTransaction` 调用钱包功能，钱包会自动生成证明并广播交易。
 
-> ***ICryptoService 说明**:  
+> **IPollingService 说明**:  
+> - ✅ 已使用：通用轮询服务，用于管理发票状态轮询任务
+> - ✅ 已使用：支持配置轮询间隔（默认 15 秒）和超时时间（默认 10 分钟）
+> - ✅ 已使用：提供 `scan`、`validate`、`onSuccess`、`onTimeout`、`onError` 回调机制
+> - ✅ 已使用：自动管理轮询生命周期（启动、停止、超时处理）
+> - ✅ 已使用：通过 `InvoiceStatusValidatorAdapter` 适配器与 `InvoiceStatusValidator` 集成
+> - **使用场景**：
+>   - 详情页：`useInvoiceChainSync` 使用 PollingService 轮询单张发票的链上确认状态
+>   - 列表页：`useInvoiceListPolling` 使用 PollingService 批量轮询多张 SENDING 状态的发票
+
+> **ICryptoService 说明**:  
 > - ✅ 已使用：`computeInvoiceHash` - 发票哈希计算（SHA-256 + 模运算）  
 > - ✅ 已使用：`encryptInvoiceDetails` / `decryptInvoiceDetails` - 本地加密存储（PBKDF2 + AES-GCM）  
 > - ✅ 已使用：`parseAleoRecord` - Record 数据解析（处理钱包已解密的数据）  
@@ -383,165 +396,308 @@ sequenceDiagram
 ### 4.3 查看发票(View Invoice)
 
 #### 4.3.1 查看发票详情页
+
+**路由说明**：
+- `/invoice/[id]` → 重定向到 `/invoices/[id]`（保持向后兼容）
+- `/invoices/[id]` → 实际详情页实现
+
+**架构特点**：
+- View 层直接使用 `useAuthCheck` 进行授权检查（独立于列表页初始化逻辑）
+- `useInvoiceDetail` 作为组合器，内部组合多个子 hooks：
+  - `useInvoiceData`: 发票数据加载（支持从 IndexedDB 回退加载）
+  - `useInvoiceRole`: 用户角色判断（buyer/seller/unknown）
+  - `useInvoiceChainSync`: 链上同步逻辑（自动轮询 + 手动同步）
+  - `useInvoiceActions`: 支付/取消操作
+
+**UI 特性**：
+- 授权遮罩：未授权时显示 "Unlock Private Data" 按钮
+- 链上确认状态：显示 "✓ Confirmed (Found on Chain)" 或 "⏳ Sending"
+- 手动同步按钮：已确认发票可手动触发状态同步
+- 角色权限控制：根据用户角色（buyer/seller）显示对应操作按钮
+
 ```mermaid
 sequenceDiagram
     autonumber
     participant V as View (Invoice Detail Page)
-    participant UI as useInvoiceInitialize
+    participant AC as useAuthCheck
     participant UD as useInvoiceDetail
+    participant ID as useInvoiceData (子 Hook)
+    participant ICS as useInvoiceChainSync (子 Hook)
+    participant IA as useInvoiceActions (子 Hook)
+    participant PS as PollingService
+    participant IV as InvoiceStatusValidator
     participant S as Store (InvoiceStore / UserStore)
     participant DB as IndexedDB (Storage)
     participant CS as CryptoService
     participant WS as WalletService
 
-    Note over V,S: --- 场景 A: 初始化加载 (冷启动) ---
+    Note over V,S: --- 场景 A: 授权检查 (独立处理) ---
     
-    V->>UI: 页面加载 (useInvoiceInitialize)
-    UI->>S: 检查 masterKey 是否存在
+    V->>V: 页面加载，从 URL 获取 invoiceHash
+    V->>AC: useAuthCheck()
+    AC->>S: 检查 masterKey 是否存在
     
     alt MasterKey 不存在
-        UI->>S: setInitStatus('AUTH_REQUIRED')
-        V->>V: 显示 "解锁隐私数据" 遮罩
-        V->>UI: handleUnlock()
-        UI->>WS: signMessage("Authorize Access")
-        WS-->>UI: 返回 Signature
-        UI->>CS: deriveMasterKey(Signature)
-        CS-->>UI: 返回 masterKey
-        UI->>S: setMasterKey(masterKey)
+        AC-->>V: 返回 isAuthRequired=true
+        V->>V: 显示 "Unlock Private Data" 遮罩
+        V->>AC: handleUnlock() (用户点击解锁)
+        AC->>WS: signMessage("Authorize Access")
+        WS-->>AC: 返回 Signature
+        AC->>CS: deriveMasterKey(Signature)
+        CS-->>AC: 返回 masterKey
+        AC->>S: setMasterKey(masterKey)
+        AC-->>V: 授权完成，继续加载详情
     end
 
     Note over V,WS: --- 场景 B & C: 查看详情与 Record 自动对账 ---
     
-    V->>V: 识别当前 URL 中的 /invoices/:hash
     V->>UD: useInvoiceDetail(invoiceHash)
-    UD->>S: getInvoiceByHash(hash)
-    S-->>UD: 返回 Invoice 对象 (可能 status: 'SENDING')
-    UD->>V: 立即渲染本地数据 (避免白屏)
+    
+    Note over UD,ID: useInvoiceDetail 内部组合子 hooks
+    UD->>ID: useInvoiceData(invoiceHash)
+    ID->>S: getInvoiceByHash(hash)
+    alt 内存中不存在
+        ID->>DB: 从 IndexedDB 回退加载
+        DB-->>ID: 返回完整发票数据
+    end
+    S-->>ID: 返回 Invoice 对象 (可能 confirmationStatus: 'SENDING')
+    ID-->>UD: 返回 invoice, isLoading, confirmationStatus
+    
+    UD->>ICS: useInvoiceChainSync(invoice, invoiceHash, confirmationStatus)
+    ICS-->>UD: 返回 isSyncing, isSyncingStatus, handleSyncStatus, startPolling, stopPolling
+    
+    UD->>IA: useInvoiceActions(invoice, handleSyncStatus)
+    IA-->>UD: 返回 isProcessing, handlePay, handleCancel
+    
+    UD-->>V: 返回完整接口 (invoice, isSyncing, isConfirmed, userRole, statusConfig, ...)
+    V->>V: 立即渲染本地数据 (避免白屏)
 
-    alt 发票状态不是 "CONFIRMED"
-        Note over UD,WS: 开始基于 Record 的自动对账轮询
-        UD->>V: UI 显示 "正在同步链上记录..." (isSyncing=true)
+    alt confirmationStatus !== 'CONFIRMED'
+        Note over ICS,PS: 自动开始基于 PollingService 的对账轮询
+        ICS->>V: isSyncing=true (UI 显示 "Syncing chain records...")
         
-        UD->>UD: startPolling() (立即执行一次 + 每15s轮询)
+        ICS->>ICS: startPolling() (创建并启动 PollingService)
         
-        loop 轮询扫描 (每 15s)
-            UD->>WS: requestRecords("zk_invoice.aleo")
+        Note over ICS,PS: 创建 PollingService 实例
+        ICS->>PS: new PollingService(config, callbacks)
+        Note right of PS: 配置：pollInterval=15s, pollTimeout=10min
+        PS-->>ICS: 返回 PollingService 实例
+        ICS->>PS: start() (立即执行一次 + 每15s轮询)
+        
+        loop PollingService 自动轮询 (每 15s)
+            PS->>ICS: 调用 scan() 回调
+            ICS->>ICS: scanInvoiceRecord(invoiceHash, invoiceId)
+            ICS->>WS: requestRecords("zk_invoice.aleo")
             Note right of WS: 钱包自动使用 ViewKey 解密
-            WS-->>UD: 返回解密后的 Record 列表
+            WS-->>ICS: 返回解密后的 Record 列表
+            ICS->>CS: parseAleoRecord() (解析所有 Records)
+            CS-->>ICS: 返回 InvoiceScanResult (invoiceRecord, paymentRecord)
+            ICS-->>PS: 返回扫描结果
             
-            loop 遍历所有 Records
-                UD->>CS: parseAleoRecord(record)
-                CS-->>UD: 返回 parsedRecord
-                UD->>UD: 清理 invoice_hash: replace(/field\.(private|public)$/, 'field')
-                
-                alt Record.invoice_hash === invoiceHash (匹配)
-                    UD->>UD: 找到匹配的 Record
-                end
-            end
+            PS->>ICS: 调用 validate() 回调
+            ICS->>IV: InvoiceStatusValidator.validateRecord()
+            Note right of IV: 使用 InvoiceStatusValidatorAdapter 适配
+            IV-->>ICS: 返回 ValidationResult (shouldStop, reason)
+            ICS-->>PS: 返回验证结果
             
-            alt 发现匹配 Record (Found)
-                UD->>CS: cleanAleoNumber() (清理数字字段类型后缀)
-                UD->>S: setConfirmationStatus(hash, 'CONFIRMED')
-                UD->>S: updateInvoice(invoice.id, updatedInvoice)
+            alt shouldStop === true (找到匹配且符合预期)
+                PS->>ICS: 调用 onSuccess() 回调
+                ICS->>CS: cleanAleoNumber() (清理数字字段类型后缀)
+                ICS->>S: setConfirmationStatus(hash, 'CONFIRMED')
+                ICS->>S: updateInvoice(invoice.id, updatedInvoice)
                 
-                Note over UD,DB: 同步更新本地持久化存档
-                UD->>CS: encryptInvoiceDetails(details, masterKey)
-                CS-->>UD: 返回 EncryptedPayload
-                UD->>DB: saveEncryptedInvoice(hash, payload)
+                Note over ICS,DB: 同步更新本地持久化存档
+                ICS->>CS: encryptInvoiceDetails(details, masterKey)
+                CS-->>ICS: 返回 EncryptedPayload
+                ICS->>DB: saveEncryptedInvoice(hash, payload)
                 
-                UD->>V: UI 状态切换为 "已确认 (Found on Chain)"
-                UD->>UD: stopPolling() (停止轮询)
-            else 尚未发现或同步中
-                Note right of UD: 继续等待，15s后重试
+                ICS->>V: UI 状态切换为 "✓ Confirmed (Found on Chain)"
+                PS->>PS: stop() (PollingService 自动停止)
+            else shouldStop === false (尚未发现或不符合预期)
+                Note right of PS: 继续等待，15s后重试
             end
         end
-    else 状态已经是 "CONFIRMED"
-        UD->>V: UI 直接显示 "已确认" 勋章
+        
+        alt 轮询超时 (10分钟)
+            PS->>ICS: 调用 onTimeout() 回调
+            ICS->>ICS: rollbackStatus() (回退状态)
+            PS->>PS: stop() (PollingService 自动停止)
+        end
+    else confirmationStatus === 'CONFIRMED'
+        ICS-->>V: UI 直接显示 "✓ Confirmed" 勋章
     end
 
-    Note over V,UD: --- 手动同步状态 ---
+    Note over V,ICS: --- 手动同步状态 ---
     
-    V->>UD: 用户点击 "Sync Status" 按钮
-    UD->>UD: handleSyncStatus()
-    UD->>WS: requestRecords("zk_invoice.aleo")
-    WS-->>UD: 返回最新 Record 列表
-    UD->>UD: 查找匹配的 InvoiceRecord 或 PaymentRecord
+    V->>ICS: 用户点击 "Sync Status" 按钮
+    ICS->>ICS: handleSyncStatus() (设置 isSyncingStatus=true)
+    ICS->>WS: requestRecords("zk_invoice.aleo")
+    WS-->>ICS: 返回最新 Record 列表
+    ICS->>CS: parseAleoRecord() (解析所有 Records)
+    ICS->>ICS: 查找匹配的 InvoiceRecord 或 PaymentRecord
+    
     alt 找到 PaymentRecord
-        UD->>S: updateInvoice(..., { status: PAID })
+        ICS->>S: updateInvoice(..., { status: PAID })
     else 找到 InvoiceRecord
-        UD->>S: updateInvoice(..., { status: record.status })
+        ICS->>S: updateInvoice(..., { status: record.status })
     end
-    UD->>DB: 同步更新 IndexedDB
-    UD->>V: 显示同步成功提示
+    ICS->>DB: 同步更新 IndexedDB
+    ICS->>ICS: isSyncingStatus=false
+    ICS-->>V: 显示同步成功提示
+
+    Note over V,IA: --- 支付/取消操作 ---
+    
+    alt 用户角色为 buyer 且状态为 PENDING
+        V->>IA: 用户点击 "Pay Invoice" 按钮
+        IA->>IA: handlePay() (设置 isProcessing=true)
+        Note right of IA: 调用 useTransactionController.executePay()
+        IA-->>V: 支付完成后自动触发 handleSyncStatus()
+    else 用户角色为 seller 且状态为 PENDING
+        V->>IA: 用户点击 "Cancel Invoice" 按钮
+        IA->>IA: handleCancel() (设置 isProcessing=true)
+        Note right of IA: 调用 useTransactionController.executeCancel()
+        IA-->>V: 取消完成后自动触发 handleSyncStatus()
+    end
 ```
 
 #### 4.3.2 发票列表页查看
+
+**架构特点**：
+- `useInvoices` 作为组合器，内部组合多个子 hooks：
+  - `useInvoiceListInitialize`: 初始化逻辑（从链上/IndexedDB 加载）
+  - `useInvoiceListPolling`: 批量轮询逻辑（使用 PollingService）
+  - `useInvoiceListRole`: 用户角色判断
+  - `useInvoiceListFilter`: 过滤和搜索逻辑
+- 使用 `PollingService` 批量轮询多张 SENDING 状态的发票
+- 每张发票创建独立的 PollingService 实例，独立管理轮询生命周期
+
 ```mermaid
 sequenceDiagram
     autonumber
     participant V as View (Invoice List Page)
+    participant AC as useAuthCheck
     participant C as useInvoices
-    participant CI as useInvoiceInitialize (内部)
+    participant CI as useInvoiceListInitialize
+    participant CLP as useInvoiceListPolling
+    participant PS as PollingService (批量实例)
+    participant IV as InvoiceStatusValidator
     participant S as Store (InvoiceStore / UserStore)
     participant DB as IndexedDB (Storage)
     participant CS as CryptoService
     participant WS as WalletService
 
-    Note over V,S: --- 场景 A: 初始化加载 (冷启动) ---
+    Note over V,S: --- 场景 A: 授权检查 (独立处理) ---
     
-    V->>C: 进入列表页 (useInvoices)
-    C->>CI: 调用 useInvoiceInitialize()
-    CI->>S: 检查 masterKey 是否存在
+    V->>V: 页面加载
+    V->>AC: useAuthCheck() (独立调用，与详情页一致)
+    AC->>S: 检查 masterKey 是否存在
     
-    alt masterKey 不存在
-        CI->>S: setInitStatus('AUTH_REQUIRED')
-        CI-->>C: 返回 isAuthRequired=true
-        C-->>V: 返回 showAuthModal=true
+    alt MasterKey 不存在
+        AC-->>V: 返回 isAuthRequired=true
         V->>V: 显示 "解锁隐私数据" 遮罩
-        V->>C: handleUnlock()
-        C->>CI: handleUnlock()
-        CI->>WS: signMessage("Authorize Access")
-        WS-->>CI: 返回 Signature
-        CI->>CS: deriveMasterKey(Signature)
-        CS-->>CI: 返回 masterKey
-        CI->>S: setMasterKey(masterKey)
+        V->>AC: handleUnlock() (用户点击解锁)
+        AC->>WS: signMessage("Authorize Access")
+        WS-->>AC: 返回 Signature
+        AC->>CS: deriveMasterKey(Signature)
+        CS-->>AC: 返回 masterKey
+        AC->>S: setMasterKey(masterKey)
+        AC-->>V: 授权完成，继续加载列表
     end
 
-    CI->>S: setInitStatus('LOADING_DB')
+    Note over V,S: --- 场景 B: 初始化加载 (冷启动) ---
     
-    Note over CI,WS: --- 步骤 1: 从链上扫描所有 Records ---
-    CI->>CI: syncInvoices(masterKey)
-    CI->>WS: requestRecords("zk_invoice.aleo")
-    WS-->>CI: 返回所有 Records
-    CI->>CS: parseAleoRecord() (批量解析)
-    CS-->>CI: 返回 Map<invoiceHash, AleoInvoiceRecord>
+    V->>C: 进入列表页 (useInvoices)
+    C->>CI: 调用 useInvoiceListInitialize()
+    CI->>CI: initialize() (自动触发，当 publicKey && masterKey 存在时)
     
-    Note over CI,DB: --- 步骤 2: 从 IndexedDB 加载加密明细 ---
-    CI->>DB: getAllEncryptedInvoices()
-    DB-->>CI: 返回 EncryptedPayload[] (invoiceHash, payload)
+    Note over CI,DB: --- 步骤 1: 从 IndexedDB 加载所有发票 ---
+    CI->>DB: getAllInvoices({ masterKey, refreshMemory: true })
+    DB-->>CI: 返回 Invoice[] (从 IndexedDB 加载到内存)
     
-    loop 批量解密每个发票明细
-        CI->>CS: decryptInvoiceDetails(payload, masterKey)
-        CS-->>CI: 返回明文 InvoiceDetails
-        CI->>CS: computeInvoiceHash(details) (验证完整性)
-        alt 哈希匹配
-            CI->>CI: 保存到 detailsMap
-        else 哈希不匹配
-            Note right of CI: 警告：数据可能被篡改，跳过
+    Note over CI,S: --- 步骤 2: 加载所有发票的 metadata ---
+    loop 遍历每个发票
+        CI->>DB: getInvoiceMetadata(invoiceHash)
+        DB-->>CI: 返回 metadata (包含 confirmationStatus)
+        CI->>CI: 构建 chainStatusMap (hash -> confirmationStatus)
+    end
+    CI->>CI: setChainStatusMap(statusMap)
+    
+    alt IndexedDB 为空 (情况1)
+        Note over CI,WS: 从链上同步所有发票
+        CI->>CI: syncFromChain()
+        CI->>WS: requestRecords("zk_invoice.aleo")
+        WS-->>CI: 返回所有 Records
+        CI->>CS: parseAleoRecord() (批量解析)
+        CS-->>CI: 返回 Map<invoiceHash, AleoInvoiceRecord>
+        
+        loop 遍历链上所有 Records
+            CI->>CS: buildInvoiceFromRecord(record, invoiceHash)
+            CS-->>CI: 返回 Invoice 对象
+            CI->>S: setInvoices(invoices, { masterKey, persistFull: true, metadata: { confirmationStatus: 'CONFIRMED' } })
+            Note right of S: 批量存入 IndexedDB，状态设为 CONFIRMED
+        end
+    else IndexedDB 有数据 (情况2 & 3)
+        Note right of CI: 数据已从 IndexedDB 加载到内存
+    end
+    
+    CI->>CI: 检测 SENDING 状态的发票
+    loop 遍历 chainStatusMap
+        alt confirmationStatus === 'SENDING'
+            CI->>CI: 添加到 sendingHashes[]
+        end
+    end
+    CI-->>C: 返回 sendingHashes[] (SENDING 状态的发票哈希列表)
+    
+    Note over C,CLP: --- 场景 C: 批量轮询 SENDING 状态的发票 ---
+    
+    C->>CLP: useInvoiceListPolling(invoices, chainStatusMap, onStatusUpdate)
+    C->>CLP: startPolling(sendingHashes)
+    
+    loop 为每张 SENDING 发票创建独立的 PollingService
+        CLP->>PS: new PollingService(config, callbacks)
+        Note right of PS: 配置：pollInterval=15s, pollTimeout=10min<br/>taskName="Invoice polling (hash...)"
+        PS-->>CLP: 返回 PollingService 实例
+        CLP->>PS: start() (立即执行一次 + 每15s轮询)
+        CLP->>CLP: 保存到 pollingServicesRef Map
+    end
+    
+    loop PollingService 自动轮询 (每 15s，每张发票独立)
+        PS->>CLP: 调用 scan() 回调
+        CLP->>CLP: scanInvoiceRecord(invoiceHash, invoiceId)
+        CLP->>WS: requestRecords("zk_invoice.aleo")
+        Note right of WS: 钱包自动使用 ViewKey 解密
+        WS-->>CLP: 返回解密后的 Record 列表
+        CLP->>CS: parseAleoRecord() (解析所有 Records)
+        CS-->>CLP: 返回 InvoiceScanResult (invoiceRecord, paymentRecord)
+        CLP-->>PS: 返回扫描结果
+        
+        PS->>CLP: 调用 validate() 回调
+        CLP->>IV: InvoiceStatusValidator.validateRecord()
+        Note right of IV: 使用 InvoiceStatusValidatorAdapter 适配
+        IV-->>CLP: 返回 ValidationResult (shouldStop, reason)
+        CLP-->>PS: 返回验证结果
+        
+        alt shouldStop === true (找到匹配且符合预期)
+            PS->>CLP: 调用 onSuccess() 回调
+            CLP->>CLP: confirmInvoice(invoiceHash, record)
+            CLP->>CS: cleanAleoNumber() (清理数字字段类型后缀)
+            CLP->>S: setConfirmationStatus(hash, 'CONFIRMED')
+            CLP->>S: updateInvoice(invoice.id, updatedInvoice)
+            CLP->>DB: 同步更新 IndexedDB
+            CLP->>CLP: onStatusUpdate(hash, 'CONFIRMED')
+            CLP->>CLP: 从 pollingServicesRef 移除该实例
+            PS->>PS: stop() (PollingService 自动停止)
+        else shouldStop === false (尚未发现或不符合预期)
+            Note right of PS: 继续等待，15s后重试
         end
     end
     
-    Note over CI,S: --- 步骤 3: 合并链上数据和本地明细 ---
-    loop 遍历链上所有 Records
-        CI->>CS: cleanAleoNumber() (清理数字字段类型后缀)
-        CI->>CI: 从 detailsMap 获取对应的本地明细
-        CI->>CI: 构建完整 Invoice 对象<br/>(链上基本信息 + 本地明细)
-        CI->>S: addInvoice(invoice)
-        CI->>S: setConfirmationStatus(hash, 'CONFIRMED')
+    alt 轮询超时 (10分钟)
+        PS->>CLP: 调用 onTimeout() 回调
+        CLP->>CLP: rollbackStatus(invoiceHash) (回退状态)
+        CLP->>CLP: 从 pollingServicesRef 移除该实例
+        PS->>PS: stop() (PollingService 自动停止)
     end
-    
-    CI->>S: setInitStatus('READY')
-    Note right of S: Store 已填满，包含所有链上发票
     
     C->>S: 订阅 invoices 状态
     S-->>C: 返回发票列表
@@ -550,7 +706,7 @@ sequenceDiagram
     C-->>V: 返回 filteredInvoices (已处理角色和过滤)
     V->>V: 渲染发票卡片列表
     
-    Note over V,S: --- 场景 B: 列表交互 (过滤/搜索/刷新) ---
+    Note over V,S: --- 场景 D: 列表交互 (过滤/搜索/刷新) ---
     
     V->>V: 用户切换过滤标签 (All/Pending/Paid/Cancelled)
     V->>C: setFilter(filter)
@@ -563,7 +719,7 @@ sequenceDiagram
     C-->>V: 返回更新后的 filteredInvoices
     V->>V: 更新显示列表
     
-    Note over V,S: --- 场景 C: 同步所有发票状态 ---
+    Note over V,S: --- 场景 E: 同步所有发票状态 ---
     
     V->>V: 用户点击 "Sync All" 按钮
     V->>C: handleSyncAll()
@@ -587,11 +743,11 @@ sequenceDiagram
     C-->>V: 返回更新后的 filteredInvoices
     V->>V: 触发重新渲染
     
-    Note over V,S: --- 场景 D: 跳转到详情页 ---
+    Note over V,S: --- 场景 F: 跳转到详情页 ---
     
     V->>V: 用户点击某条发票卡片
     V->>V: 路由跳转到 /invoices/:hash
-    Note right of V: 详情页将使用 useInvoiceDetail Hook<br/>进行链上 Record 自动对账
+    Note right of V: 详情页将使用 useInvoiceDetail Hook<br/>进行链上 Record 自动对账（使用 PollingService）
 ```
 
 ### 4.4 支付发票 (Pay Invoice)
@@ -602,35 +758,32 @@ sequenceDiagram
     participant V as View (InvoiceCard / Invoice Detail)
     participant CID as useInvoiceDetail / useInvoices
     participant TC as useTransactionController
+    participant ICS as useInvoiceChainScan
     participant TS as TransactionStore
+    participant S as InvoiceStore
     participant WS as WalletService
     participant CS as CryptoService
     participant BC as Blockchain
     
-    V->>CID: 点击 "Pay" 按钮 (invoice.id)
-    CID->>CID: handlePay(invoice.id)
+    V->>CID: 点击 "Pay" 按钮 (invoice)
+    CID->>CID: handlePay(invoice)
     CID->>V: Toast: "Processing payment..."
     
-    CID->>TC: executePay(invoiceId)
+    CID->>TC: executePay(invoice)
     
     Note over TC,TS: --- 阶段 1: 权限检查与准备 ---
     TC->>TC: 检查 publicKey 和 walletService
     TC->>TS: startTx('REQUESTING')
     TC->>TS: updateProgress(10, 'Fetching invoice record from chain...')
     
-    Note over TC,BC: --- 阶段 2: 从链上获取 InvoiceRecord ---
-    TC->>WS: requestRecords("zk_invoice.aleo")
-    WS-->>TC: 返回所有 Records 列表
-    
-    loop 遍历所有 Records
-        TC->>CS: parseAleoRecord(record)
-        CS-->>TC: 返回 parsedRecord
-        TC->>TC: 清理 invoice_id: replace(/field\.(private|public)$/, 'field')
-        
-        alt parsedRecord.invoice_id === invoiceId (匹配)
-            TC->>TC: 找到匹配的 InvoiceRecord
-        end
-    end
+    Note over TC,ICS: --- 阶段 2: 从链上获取 InvoiceRecord ---
+    TC->>ICS: scanInvoiceRecord(invoiceHash, invoiceId)
+    ICS->>WS: requestRecords("zk_invoice.aleo")
+    WS-->>ICS: 返回所有 Records 列表
+    ICS->>CS: parseAleoRecord() (解析所有 Records)
+    CS-->>ICS: 返回 InvoiceScanResult (invoiceRecord, paymentRecord)
+    ICS->>ICS: 查找匹配的 InvoiceRecord (根据 invoiceHash 和 invoiceId)
+    ICS-->>TC: 返回 { rawRecord, invoiceRecord, paymentRecord }
     
     alt InvoiceRecord 未找到
         TC-->>CID: 抛出错误: "Invoice record not found on chain"
@@ -645,10 +798,14 @@ sequenceDiagram
         TC->>TS: updateProgress(50, 'Submitting payment transaction...')
         
         Note over TC,BC: --- 阶段 4: 调用 mark_as_paid transition ---
-        TC->>WS: requestTransaction({<br/>  functionName: 'mark_as_paid',<br/>  inputs: [invoiceRecord, paymentNonce],<br/>  programId: 'zk_invoice.aleo',<br/>  fee: 1000000<br/>})
+        TC->>WS: requestTransaction({<br/>  functionName: 'mark_as_paid',<br/>  inputs: [rawRecord, paymentNonce],<br/>  programId: 'zk_invoice.aleo',<br/>  fee: 1000000<br/>})
         WS-->>BC: 广播交易 (钱包后台生成证明)
         BC-->>WS: 返回 requestId (UUID)
         WS-->>TC: 返回 requestId
+        
+        Note over TC,S: --- 阶段 5: 更新本地状态 ---
+        TC->>S: updateInvoice(invoice.id, {<br/>  metadata: {<br/>    confirmationStatus: 'SENDING',<br/>    action: 'pay'<br/>  }<br/>}, { masterKey, persistFull: true })
+        Note right of S: 将状态设为 SENDING，标识为支付操作<br/>后续轮询会检测 PaymentRecord
         
         TC->>TS: updateProgress(90, 'Payment transaction submitted successfully')
         TC->>TS: updateProgress(100, '✓ Payment completed!')
@@ -657,11 +814,11 @@ sequenceDiagram
         TC-->>CID: 返回 transactionId (requestId)
         CID->>V: Toast: "Payment successful!" + transactionId
         
-        Note over CID: --- 阶段 5: 同步状态更新 ---
+        Note over CID: --- 阶段 6: 同步状态更新 ---
         alt 在详情页
-            CID->>CID: handleSyncStatus() (自动同步最新状态)
+            CID->>CID: handleSyncStatus() (自动同步最新状态，轮询检测 PaymentRecord)
         else 在列表页
-            CID->>CID: refresh() (重新初始化列表)
+            CID->>CID: refresh() (重新初始化列表，启动轮询)
         end
     end
 ```
@@ -673,35 +830,32 @@ sequenceDiagram
     participant V as View (InvoiceCard / Invoice Detail)
     participant CID as useInvoiceDetail / useInvoices
     participant TC as useTransactionController
+    participant ICS as useInvoiceChainScan
     participant TS as TransactionStore
+    participant S as InvoiceStore
     participant WS as WalletService
     participant CS as CryptoService
     participant BC as Blockchain
     
-    V->>CID: 点击 "Cancel" 按钮 (invoice.id)
-    CID->>CID: handleCancel(invoice.id)
+    V->>CID: 点击 "Cancel" 按钮 (invoice)
+    CID->>CID: handleCancel(invoice)
     CID->>V: Toast: "Cancelling invoice..."
     
-    CID->>TC: executeCancel(invoiceId)
+    CID->>TC: executeCancel(invoice)
     
     Note over TC,TS: --- 阶段 1: 权限检查与准备 ---
     TC->>TC: 检查 publicKey 和 walletService
     TC->>TS: startTx('REQUESTING')
     TC->>TS: updateProgress(10, 'Fetching invoice record from chain...')
     
-    Note over TC,BC: --- 阶段 2: 从链上获取 InvoiceRecord ---
-    TC->>WS: requestRecords("zk_invoice.aleo")
-    WS-->>TC: 返回所有 Records 列表
-    
-    loop 遍历所有 Records
-        TC->>CS: parseAleoRecord(record)
-        CS-->>TC: 返回 parsedRecord
-        TC->>TC: 清理 invoice_id: replace(/field\.(private|public)$/, 'field')
-        
-        alt parsedRecord.invoice_id === invoiceId (匹配)
-            TC->>TC: 找到匹配的 InvoiceRecord
-        end
-    end
+    Note over TC,ICS: --- 阶段 2: 从链上获取 InvoiceRecord ---
+    TC->>ICS: scanInvoiceRecord(invoiceHash, invoiceId)
+    ICS->>WS: requestRecords("zk_invoice.aleo")
+    WS-->>ICS: 返回所有 Records 列表
+    ICS->>CS: parseAleoRecord() (解析所有 Records)
+    CS-->>ICS: 返回 InvoiceScanResult (invoiceRecord, paymentRecord)
+    ICS->>ICS: 查找匹配的 InvoiceRecord (根据 invoiceHash 和 invoiceId)
+    ICS-->>TC: 返回 { rawRecord, invoiceRecord, paymentRecord }
     
     alt InvoiceRecord 未找到
         TC-->>CID: 抛出错误: "Invoice record not found on chain"
@@ -710,10 +864,14 @@ sequenceDiagram
         TC->>TS: updateProgress(40, 'Invoice record found. Preparing cancellation...')
         
         Note over TC,BC: --- 阶段 3: 调用 cancel_invoice transition ---
-        TC->>WS: requestTransaction({<br/>  functionName: 'cancel_invoice',<br/>  inputs: [invoiceRecord],<br/>  programId: 'zk_invoice.aleo',<br/>  fee: 1000000<br/>})
+        TC->>WS: requestTransaction({<br/>  functionName: 'cancel_invoice',<br/>  inputs: [rawRecord],<br/>  programId: 'zk_invoice.aleo',<br/>  fee: 1000000<br/>})
         WS-->>BC: 广播交易 (钱包后台生成证明)
         BC-->>WS: 返回 requestId (UUID)
         WS-->>TC: 返回 requestId
+        
+        Note over TC,S: --- 阶段 4: 更新本地状态 ---
+        TC->>S: updateInvoice(invoice.id, {<br/>  metadata: {<br/>    confirmationStatus: 'SENDING',<br/>    action: 'cancel'<br/>  }<br/>}, { masterKey, persistFull: true })
+        Note right of S: 将状态设为 SENDING，标识为取消操作<br/>后续轮询会检测更新后的 InvoiceRecord
         
         TC->>TS: updateProgress(90, 'Cancellation transaction submitted successfully')
         TC->>TS: updateProgress(100, '✓ Invoice cancelled!')
@@ -722,11 +880,11 @@ sequenceDiagram
         TC-->>CID: 返回 transactionId (requestId)
         CID->>V: Toast: "Invoice cancelled successfully" + transactionId
         
-        Note over CID: --- 阶段 4: 同步状态更新 ---
+        Note over CID: --- 阶段 5: 同步状态更新 ---
         alt 在详情页
-            CID->>CID: handleSyncStatus() (自动同步最新状态)
+            CID->>CID: handleSyncStatus() (自动同步最新状态，轮询检测更新后的 InvoiceRecord)
         else 在列表页
-            CID->>CID: refresh() (重新初始化列表)
+            CID->>CID: refresh() (重新初始化列表，启动轮询)
         end
     end
 ```
@@ -1009,10 +1167,22 @@ UI → Controller → Store → [IndexedDB 自动持久化]
 
 ## 8. 版本信息
 
-- **文档版本**: v1.5
+- **文档版本**: v1.8
 - **代码版本**: v1.2
 - **最后更新**: 2026-01-13
 - **更新内容**: 
+  - ✅ v1.8: 更新列表页时序图，反映使用 useAuthCheck 独立授权检查的实现
+  - ✅ v1.8: 更新列表页初始化流程，反映从 IndexedDB 加载和三种情况的处理逻辑
+  - ✅ v1.8: 更新支付发票时序图，反映使用 scanInvoiceRecord 和更新 metadata (action='pay') 的实现
+  - ✅ v1.8: 更新取消发票时序图，反映使用 scanInvoiceRecord 和更新 metadata (action='cancel') 的实现
+  - ✅ v1.7: 添加 PollingService 服务层说明（通用轮询服务，管理发票状态轮询）
+  - ✅ v1.7: 更新详情页时序图，反映使用 PollingService 的轮询实现
+  - ✅ v1.7: 更新列表页时序图，反映使用 PollingService 批量轮询多张发票的实现
+  - ✅ v1.7: 补充 InvoiceStatusValidatorAdapter 适配器说明
+  - ✅ v1.6: 更新详情页时序图，反映实际实现架构（useAuthCheck + useInvoiceDetail 组合器模式）
+  - ✅ v1.6: 添加路由重定向说明（/invoice/[id] → /invoices/[id]）
+  - ✅ v1.6: 更新 Controller 层模块职责表，添加 useAuthCheck 和 useInvoiceDetail
+  - ✅ v1.6: 补充详情页 UI 特性说明（授权遮罩、链上确认状态、手动同步按钮、角色权限控制）
   - ✅ v1.2: Store 层完整发票持久化（基本信息 + details）
   - ✅ v1.2: 修复 "Not Found" Bug - 支持从 IndexedDB 回退加载
   - ✅ v1.2: `clearInvoices` 保留 SENDING 状态的发票

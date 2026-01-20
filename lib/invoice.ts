@@ -200,3 +200,83 @@ export function updateInvoiceFromInvoiceRecord(
 export function cleanAleoField(field: string): string {
   return field.replace(/field\.(private|public)$/, 'field');
 }
+
+/**
+ * 按 invoice_id 去重 InvoiceRecord Map
+ * 如果有多个相同 invoice_id 的 record，优先选择 spent 为 false 的
+ * 
+ * @param recordsByHash - 按 invoice_hash 索引的 InvoiceRecord Map（已包含 originalInvoiceId）
+ * @param rawRecords - 原始 record 对象数组（用于提取 spent 状态）
+ * @returns 按 invoice_id 索引的去重后的 Map，包含 record 和 invoiceHash
+ */
+export function deduplicateInvoiceRecordsByInvoiceId(
+  recordsByHash: Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>,
+  rawRecords: Array<{ 
+    data: any; 
+    spent: boolean;
+    invoiceHash: string;
+  }>
+): Map<string, {
+  record: AleoInvoiceRecord & { originalInvoiceId?: string };
+  invoiceHash: string;
+}> {
+  const recordsMap = new Map<string, {
+    record: AleoInvoiceRecord & { originalInvoiceId?: string };
+    invoiceHash: string;
+    spent: boolean;
+    statusNum: number;
+  }>();
+
+  // 构建 rawRecords 的索引（按 invoiceHash，用于获取 spent 状态）
+  const rawRecordsByHash = new Map<string, boolean>();
+  for (const rawRecord of rawRecords) {
+    rawRecordsByHash.set(rawRecord.invoiceHash, rawRecord.spent);
+  }
+
+  // 遍历所有 InvoiceRecord，按 invoice_id 去重
+  for (const [invoiceHash, record] of recordsByHash.entries()) {
+    const cleanInvoiceId = cleanAleoField(record.invoice_id || '');
+    if (!cleanInvoiceId) {
+      continue; // 跳过没有 invoice_id 的 record
+    }
+
+    const isSpent = rawRecordsByHash.get(invoiceHash) || false;
+    const statusNum = Number(cleanAleoNumber(record.status));
+
+    const candidate = {
+      record: record, // record 已经包含 originalInvoiceId
+      invoiceHash: invoiceHash,
+      spent: isSpent,
+      statusNum: statusNum
+    };
+
+    const existing = recordsMap.get(cleanInvoiceId);
+
+    // ✅ 选择策略：
+    // 1. 优先选择 unspent 的 record（spent === false）
+    // 2. 如果 spent 状态相同，优先选择 status 更大的（cancelled=2 > pending=0）
+    const shouldReplace = !existing || 
+      (existing.spent && !isSpent) || // 现有的是 spent，候选的是 unspent
+      (existing.spent === isSpent && statusNum > existing.statusNum); // spent 相同，选择 status 更大的
+
+    if (shouldReplace) {
+      recordsMap.set(cleanInvoiceId, candidate);
+      console.log(`✅ [deduplicateInvoiceRecordsByInvoiceId] Selected record for invoice_id ${cleanInvoiceId}: spent=${isSpent}, status=${statusNum}, hash=${invoiceHash}`);
+    }
+  }
+
+  // 转换为最终格式
+  const result = new Map<string, {
+    record: AleoInvoiceRecord & { originalInvoiceId?: string };
+    invoiceHash: string;
+  }>();
+  for (const [invoiceId, data] of recordsMap.entries()) {
+    result.set(invoiceId, {
+      record: data.record,
+      invoiceHash: data.invoiceHash
+    });
+  }
+
+  console.log(`✅ [deduplicateInvoiceRecordsByInvoiceId] Deduplicated ${recordsByHash.size} records to ${result.size} unique invoice_ids`);
+  return result;
+}

@@ -376,7 +376,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 批量设置发票：接收数组 → 保存到 IndexedDB → 更新内存
+   * ✅ 批量设置发票：接收数组 → 清空 IndexedDB → 保存新数据 → 更新内存
+   * 实现真正的重置：确保 IndexedDB 和内存状态完全一致
    */
   setInvoices: async (invoices, options = {}) => {
     const { masterKey, persistFull = true, metadata } = options; // ✅ 添加 metadata 参数
@@ -384,6 +385,18 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     // 1. ✅ 批量保存到 IndexedDB（如果启用）
     if (persistFull && masterKey) {
       try {
+        const storageService = getStorageService();
+        
+        // ✅ 先清空整个表（实现真正的重置）
+        // 获取所有现有数据，然后删除它们
+        const allExistingData = await storageService.getAllData<InvoiceStorageData>(INVOICE_TABLE);
+        console.log('allExistingData', allExistingData)
+        if (allExistingData.length > 0) {
+          const allKeys = allExistingData.map(item => item.id);
+          await storageService.deleteData(INVOICE_TABLE, allKeys);
+          console.log(`✅ [Store.setInvoices] Cleared ${allKeys.length} existing invoices from IndexedDB`);
+        }
+        
         // 准备批量数据
         const dataList: Array<{ key: string; data: InvoiceStorageData }> = [];
         
@@ -425,10 +438,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           }
         }
 
-        // ✅ 使用批量添加接口
+        // ✅ 添加新数据
         if (dataList.length > 0) {
-          await getStorageService().addData(INVOICE_TABLE, dataList);
+          await storageService.addData(INVOICE_TABLE, dataList);
           console.log(`✅ [Store.setInvoices] Saved ${dataList.length} invoices to IndexedDB`);
+        } else {
+          console.log(`✅ [Store.setInvoices] No new invoices to save (IndexedDB already cleared)`);
         }
       } catch (error) {
         console.error('❌ [Store.setInvoices] Failed to persist to IndexedDB:', error);

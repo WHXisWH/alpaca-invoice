@@ -5,7 +5,8 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { Invoice, AleoField } from '@/lib/types';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
-import { buildInvoiceFromRecord } from '@/lib/invoice';
+import { buildInvoiceFromRecord, updateInvoiceFromPaymentRecord, cleanAleoField } from '@/lib/invoice';
+import { cleanAleoNumber } from '@/lib/utils';
 import { toast } from 'sonner';
 
 /**
@@ -27,13 +28,14 @@ export function useInvoiceListInitialize(
     setInvoices,
     updateInvoice
   } = useInvoiceStore();
-  const { scanAllRecords } = useInvoiceChainScan();
+  const { scanAllInvoiceRecords, scanAllPaymentRecords } = useInvoiceChainScan();
   
   const [isLoading, setIsLoading] = useState(false);
   const [chainStatusMap, setChainStatusMap] = useState<Map<AleoField, ChainConfirmationStatus>>(new Map());
 
   /**
    * 情况1：从链上同步所有发票并存入 IndexedDB
+   * ✅ 优化：使用按 invoice_id 去重的扫描函数，优先选择 spent=false 的 record
    */
   const syncFromChain = useCallback(async () => {
     if (!masterKey || !publicKey) return;
@@ -42,37 +44,86 @@ export function useInvoiceListInitialize(
     try {
       console.log('📋 [syncFromChain] Case 1: IndexedDB is empty, syncing from chain...');
       
-      // 1. 扫描链上所有 records
-      const chainRecords = await scanAllRecords();
+      // ✅ 使用按 invoice_id 去重的扫描函数
+      const { byInvoiceId: invoiceRecordsByInvoiceId } = await scanAllInvoiceRecords();
+      const paymentRecords = await scanAllPaymentRecords();
       
-      if (chainRecords.size === 0) {
+      if (invoiceRecordsByInvoiceId.size === 0 && paymentRecords.size === 0) {
         console.log('📋 [syncFromChain] No records found on chain');
         return;
       }
       
-      // 2. 构建发票列表（✅ 使用公共函数）
+      // ✅ 构建发票列表（优先使用 PaymentRecord，否则使用 InvoiceRecord）
       const invoices: Invoice[] = [];
-      for (const [invoiceHash, record] of chainRecords.entries()) {
+      const processedInvoiceIds = new Set<string>();
+      
+      // 1. 先处理 PaymentRecord（优先级更高）
+      for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
         try {
-          // ✅ 使用公共函数构建发票
-          const invoice = buildInvoiceFromRecord(record, invoiceHash as AleoField);
+          // 从 PaymentRecord 构建发票（需要找到对应的 invoice_hash）
+          const invoiceRecordData = invoiceRecordsByInvoiceId.get(invoiceId);
+          const invoiceHash = invoiceRecordData?.invoiceHash || invoiceId; // fallback to invoiceId
           
-          // ✅ 如果 record 有原始的 invoice_id（带 .private 后缀），使用它作为 invoice.id（用于 IndexedDB key）
-          // 这样存储到 IndexedDB 时就能正确使用原始的 invoice_id 作为 key
-          if ((record as any).originalInvoiceId) {
-            invoice.id = (record as any).originalInvoiceId as AleoField; // 保留原始格式（带 .private）
+          // 构建基础发票对象（使用 InvoiceRecord 数据，如果没有则使用 PaymentRecord 数据）
+          const baseInvoice = invoiceRecordData 
+            ? buildInvoiceFromRecord(invoiceRecordData.record, invoiceHash as AleoField)
+            : {
+                id: invoiceId as AleoField,
+                invoiceHash: invoiceHash as AleoField,
+                seller: paymentRecord.payee as any,
+                buyer: paymentRecord.payer as any,
+                amount: BigInt(cleanAleoNumber(paymentRecord.amount)) as any,
+                dueDate: new Date(),
+                createdAt: new Date(),
+                status: 1 as any, // PAID
+                details: undefined
+              } as Invoice;
+          
+          // 使用 PaymentRecord 更新状态为 PAID
+          const updatedInvoice = updateInvoiceFromPaymentRecord(baseInvoice, paymentRecord);
+          const finalInvoice: Invoice = {
+            ...baseInvoice,
+            ...updatedInvoice,
+            id: invoiceRecordData?.record?.originalInvoiceId 
+              ? (invoiceRecordData.record.originalInvoiceId as AleoField)
+              : (invoiceId as AleoField),
+            status: 1, // PAID
+            invoiceHash: invoiceHash as AleoField
+          };
+          
+          invoices.push(finalInvoice);
+          processedInvoiceIds.add(invoiceId);
+        } catch (error) {
+          console.error(`Failed to process payment record ${invoiceId}:`, error);
+          continue;
+        }
+      }
+      
+      // 2. 处理剩余的 InvoiceRecord（没有 PaymentRecord 的）
+      for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
+        if (processedInvoiceIds.has(invoiceId)) {
+          continue; // 已经处理过了（有 PaymentRecord）
+        }
+        
+        try {
+          const invoice = buildInvoiceFromRecord(
+            invoiceRecordData.record,
+            invoiceRecordData.invoiceHash as AleoField
+          );
+          
+          if (invoiceRecordData.record.originalInvoiceId) {
+            invoice.id = invoiceRecordData.record.originalInvoiceId as AleoField;
           }
           
           invoices.push(invoice);
         } catch (error) {
-          console.error(`Failed to process invoice ${invoiceHash}:`, error);
+          console.error(`Failed to process invoice ${invoiceId}:`, error);
           continue;
         }
       }
       
       // 3. 批量存入 IndexedDB（metadata 设置为 CONFIRMED）
       if (invoices.length > 0) {
-        // ✅ 直接传入正确的 metadata，避免后续再调用 updateInvoice
         await setInvoices(invoices, { 
           masterKey, 
           persistFull: true,
@@ -83,7 +134,7 @@ export function useInvoiceListInitialize(
           }
         });
         
-        // ✅ 更新状态映射（不再需要逐个调用 updateInvoice）
+        // ✅ 更新状态映射
         const newStatusMap = new Map<AleoField, ChainConfirmationStatus>();
         for (const invoice of invoices) {
           newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
@@ -98,7 +149,7 @@ export function useInvoiceListInitialize(
     } finally {
       setIsLoading(false);
     }
-  }, [masterKey, publicKey, scanAllRecords, setInvoices, updateInvoice]);
+  }, [masterKey, publicKey, scanAllInvoiceRecords, scanAllPaymentRecords, setInvoices]);
 
   /**
    * 初始化流程：处理三种情况
