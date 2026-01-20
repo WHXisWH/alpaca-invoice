@@ -1,4 +1,3 @@
-
 /** * Storage 异常枚举 */
 export enum StorageError {
   WRITE_FAILED = 'WRITE_FAILED',   // 磁盘满或存储权限被拒绝

@@ -82,8 +82,18 @@ export class StorageService implements IStorageService {
    * 初始化数据库连接
    */
   private async getDB(): Promise<IDBDatabase> {
+    // ✅ 如果连接已存在，检查是否有效（未关闭）
     if (this.db) {
-      return this.db;
+      try {
+        // 尝试访问 objectStoreNames 来检查连接是否有效
+        // 如果连接已关闭，访问会抛出异常
+        this.db.objectStoreNames.length;
+        return this.db;
+      } catch (error) {
+        // 连接已关闭，重置为 null 并重新打开
+        console.warn('⚠️ [StorageService.getDB] Database connection is closed, reopening...');
+        this.db = null;
+      }
     }
 
     return new Promise((resolve, reject) => {
@@ -92,32 +102,50 @@ export class StorageService implements IStorageService {
         return;
       }
 
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      // ✅ 先获取当前数据库版本，然后打开
+      const versionRequest = indexedDB.open(DB_NAME);
+      versionRequest.onsuccess = () => {
+        const currentVersion = versionRequest.result.version;
+        versionRequest.result.close();
 
-      request.onerror = () => {
+        // ✅ 使用当前版本或 DB_VERSION 中的较大值
+        const targetVersion = Math.max(currentVersion, DB_VERSION);
+        const request = indexedDB.open(DB_NAME, targetVersion);
+
+        request.onerror = () => {
+          reject(
+            new StorageServiceError(
+              StorageError.READ_FAILED,
+              'Failed to open IndexedDB'
+            )
+          );
+        };
+
+        request.onsuccess = () => {
+          this.db = request.result;
+          // 记录已存在的表
+          for (let i = 0; i < this.db.objectStoreNames.length; i++) {
+            this.tableNames.add(this.db.objectStoreNames[i]);
+          }
+          resolve(this.db);
+        };
+
+        request.onupgradeneeded = (event) => {
+          const db = (event.target as IDBOpenDBRequest).result;
+          // 在升级时，记录所有已存在的表
+          for (let i = 0; i < db.objectStoreNames.length; i++) {
+            this.tableNames.add(db.objectStoreNames[i]);
+          }
+        };
+      };
+
+      versionRequest.onerror = () => {
         reject(
           new StorageServiceError(
             StorageError.READ_FAILED,
-            'Failed to open IndexedDB'
+            'Failed to get database version'
           )
         );
-      };
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        // 记录已存在的表
-        for (let i = 0; i < this.db.objectStoreNames.length; i++) {
-          this.tableNames.add(this.db.objectStoreNames[i]);
-        }
-        resolve(this.db);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        // 在升级时，记录所有已存在的表
-        for (let i = 0; i < db.objectStoreNames.length; i++) {
-          this.tableNames.add(db.objectStoreNames[i]);
-        }
       };
     });
   }
@@ -126,21 +154,77 @@ export class StorageService implements IStorageService {
    * 确保表存在（如果不存在则创建）
    * 注意：IndexedDB 只能在 onupgradeneeded 中创建表
    * 这里使用动态版本升级的方式来实现动态表创建
+   * ✅ 如果表已存在但 keyPath 不正确，先备份数据，删除并重新创建表，然后恢复数据
    */
   private async ensureTable(tableName: string): Promise<void> {
-    if (this.tableNames.has(tableName)) {
-      return;
-    }
-
+    // ✅ 先获取数据库连接，检查表是否真的存在
     const db = await this.getDB();
+    const tableExists = db.objectStoreNames.contains(tableName);
     
-    // 如果表已存在，直接返回
-    if (db.objectStoreNames.contains(tableName)) {
-      this.tableNames.add(tableName);
+    // ✅ 如果表已存在且在 tableNames 中，直接返回（不需要升级）
+    if (tableExists && this.tableNames.has(tableName)) {
       return;
     }
 
-    // 表不存在，需要升级数据库
+    // ✅ 如果表已存在但不在 tableNames 中，尝试读取数据来验证表是否可用
+    // 如果表可用，只需要添加到 tableNames，不需要升级
+    if (tableExists && !this.tableNames.has(tableName)) {
+      try {
+        // 尝试读取一条数据来验证表是否可用（keyPath 是否正确）
+        const testTransaction = db.transaction([tableName], 'readonly');
+        const testStore = testTransaction.objectStore(tableName);
+        const testRequest = testStore.getAll();
+        
+        await new Promise<void>((resolve, reject) => {
+          testRequest.onsuccess = () => {
+            // 表可用，只需要添加到 tableNames
+            this.tableNames.add(tableName);
+            resolve();
+          };
+          testRequest.onerror = () => {
+            // 表不可用（可能是 keyPath 不正确），需要升级
+            reject(testRequest.error);
+          };
+        });
+        
+        // 如果成功，表可用，直接返回
+        return;
+      } catch (error) {
+        // 表不可用，需要备份数据并重新创建
+        console.warn(`⚠️ [StorageService.ensureTable] Table ${tableName} exists but may have incorrect keyPath. Will backup data and recreate...`);
+      }
+    }
+    
+    // ✅ 如果需要创建新表或重新创建表，先备份数据
+    let backupData: any[] = [];
+    if (tableExists) {
+      try {
+        // 尝试读取所有数据作为备份
+        const backupTransaction = db.transaction([tableName], 'readonly');
+        const backupStore = backupTransaction.objectStore(tableName);
+        const backupRequest = backupStore.getAll();
+        
+        backupData = await new Promise<any[]>((resolve, reject) => {
+          backupRequest.onsuccess = () => {
+            resolve(backupRequest.result || []);
+          };
+          backupRequest.onerror = () => {
+            // 如果读取失败，说明表确实有问题，备份为空数组
+            console.warn(`⚠️ [StorageService.ensureTable] Failed to backup data from ${tableName}, will create empty table`);
+            resolve([]);
+          };
+        });
+        
+        if (backupData.length > 0) {
+          console.log(`📦 [StorageService.ensureTable] Backed up ${backupData.length} records from ${tableName}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ [StorageService.ensureTable] Failed to backup data from ${tableName}:`, error);
+        backupData = [];
+      }
+    }
+    
+    // 表不存在或需要重新创建，触发升级
     return new Promise((resolve, reject) => {
       // 关闭当前连接
       if (this.db) {
@@ -161,7 +245,7 @@ export class StorageService implements IStorageService {
           reject(
             new StorageServiceError(
               StorageError.WRITE_FAILED,
-              `Failed to create table: ${tableName}`
+              `Failed to ${tableExists ? 'upgrade' : 'create'} table: ${tableName}`
             )
           );
         };
@@ -169,14 +253,74 @@ export class StorageService implements IStorageService {
         upgradeRequest.onsuccess = () => {
           this.db = upgradeRequest.result;
           this.tableNames.add(tableName);
-          resolve();
+          
+          // ✅ 如果有备份数据，恢复数据
+          if (backupData.length > 0) {
+            const restoreTransaction = this.db.transaction([tableName], 'readwrite');
+            const restoreStore = restoreTransaction.objectStore(tableName);
+            
+            let restoredCount = 0;
+            let failedCount = 0;
+            
+            for (const record of backupData) {
+              try {
+                // ✅ 确保记录有 'key' 字段（因为新的 keyPath 是 'key'）
+                if (record && typeof record === 'object') {
+                  // 如果记录没有 'key' 字段，尝试从其他字段推断
+                  if (!record.key) {
+                    // 尝试从 id 字段推断（对于发票数据）
+                    if (record.data && record.data.id) {
+                      record.key = record.data.id;
+                    } else if (record.id) {
+                      record.key = record.id;
+                    } else {
+                      console.warn('⚠️ [StorageService.ensureTable] Record missing key field, skipping:', record);
+                      failedCount++;
+                      continue;
+                    }
+                  }
+                  
+                  restoreStore.put(record);
+                  restoredCount++;
+                }
+              } catch (error) {
+                console.warn('⚠️ [StorageService.ensureTable] Failed to restore record:', error);
+                failedCount++;
+              }
+            }
+            
+            restoreTransaction.oncomplete = () => {
+              if (restoredCount > 0) {
+                console.log(`✅ [StorageService.ensureTable] Restored ${restoredCount} records to ${tableName}`);
+              }
+              if (failedCount > 0) {
+                console.warn(`⚠️ [StorageService.ensureTable] Failed to restore ${failedCount} records`);
+              }
+              resolve();
+            };
+            
+            restoreTransaction.onerror = () => {
+              console.error('❌ [StorageService.ensureTable] Failed to restore data:', restoreTransaction.error);
+              resolve(); // 即使恢复失败，也继续（表已创建）
+            };
+          } else {
+            resolve();
+          }
         };
 
         upgradeRequest.onupgradeneeded = (event) => {
           const upgradeDB = (event.target as IDBOpenDBRequest).result;
-          if (!upgradeDB.objectStoreNames.contains(tableName)) {
-            upgradeDB.createObjectStore(tableName, { keyPath: 'key' });
+          
+          // ✅ 如果表已存在，删除它（因为无法修改 keyPath）
+          if (upgradeDB.objectStoreNames.contains(tableName)) {
+            console.warn(`⚠️ [StorageService.ensureTable] Deleting and recreating table ${tableName}...`);
+            upgradeDB.deleteObjectStore(tableName);
           }
+          
+          // ✅ 重新创建表，确保 keyPath 正确
+          upgradeDB.createObjectStore(tableName, { keyPath: 'key' });
+          console.log(`✅ [StorageService.ensureTable] Created table ${tableName} with keyPath: 'key'`);
+          
           // 记录所有表
           for (let i = 0; i < upgradeDB.objectStoreNames.length; i++) {
             this.tableNames.add(upgradeDB.objectStoreNames[i]);

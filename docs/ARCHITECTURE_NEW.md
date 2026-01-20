@@ -898,15 +898,129 @@ sequenceDiagram
 
 ---
 
-## 7. 版本信息
+## 7. 架构演进与重构
 
-- **文档版本**: v1.3
-- **代码版本**: v1.0
+### 7.1 Store 层与 IndexedDB 交互优化（v1.1）
+
+**重构目标**：简化数据同步逻辑，将持久化责任统一到 Store 层。
+
+**改进内容**：
+- ✅ Store 层新增 `syncAllFromChain` 方法，统一管理批量同步逻辑
+- ✅ Controller 层简化，`handleSyncAll` 直接调用 Store 方法
+- ✅ 消除 Controller 层对 IndexedDB 的直接操作
+- ✅ 统一数据流向：Controller → Store → IndexedDB
+
+**架构对比**：
+
+**重构前：**
+```
+UI → Controller → [Store + IndexedDB 手动同步]
+                  ↑
+                  需要多处维护同步逻辑
+```
+
+**重构后：**
+```
+UI → Controller → Store → [IndexedDB 自动持久化]
+                        ↑
+                        统一在 Store 内管理
+```
+
+### 7.2 列表页重构（v1.1）
+
+**重构目标**：统一列表页与详情页的架构模式，提升代码一致性。
+
+**改进内容**：
+- ✅ 将 `getStatusConfig` 移到 Controller 层，UI 层只负责展示
+- ✅ 列表页添加链上确认状态显示（与详情页一致）
+- ✅ 统一状态判断逻辑，简化条件渲染
+- ✅ Controller 返回完整的状态配置，UI 层无需计算
+
+**架构优势**：
+- 📦 代码复用：`getStatusConfig` 可在多个页面复用
+- 🎯 职责清晰：UI 层纯展示，Controller 层处理业务逻辑
+- 🔄 一致性：列表页与详情页使用相同的架构模式
+- 🐛 易于维护：状态展示逻辑集中管理
+
+### 7.3 Store 层完整发票持久化（v1.2）
+
+**重构目标**：Store 层统一管理完整发票持久化，修复新创建发票的显示问题。
+
+**核心改进**：
+- ✅ **完整发票持久化**：Store 操作自动同步基本信息和 details 到 IndexedDB
+- ✅ **数据分离策略**：
+  - 基本信息（id, seller, buyer 等）：持久化到 IndexedDB（未确认时必需）
+  - 加密明细（details）：持久化到 IndexedDB（加密存储）
+  - 确认状态（confirmationStatus）：仅内存状态，不持久化
+- ✅ **回退加载机制**：`getInvoiceByHash` 支持从 IndexedDB 回退加载完整发票
+- ✅ **保留未确认发票**：`clearInvoices` 保留 SENDING 状态的发票，避免丢失
+- ✅ **初始化优化**：从 IndexedDB 恢复所有发票（包括未确认的）
+
+**数据持久化策略**：
+
+| 数据类型 | 是否持久化 | 存储位置 | 原因 |
+|---------|----------|---------|------|
+| **基本信息** (id, seller, buyer, amount) | ✅ 是 | IndexedDB | 未确认发票的唯一数据源 |
+| **加密明细** (details) | ✅ 是 | IndexedDB | 敏感数据，需要加密保护 |
+| **确认状态** (confirmationStatus) | ❌ 否 | 内存 | 运行时状态，从链上获取 |
+| **链上数据** | ❌ 否 | 链上 | 已确认发票从链上获取更可靠 |
+
+**修复的问题**：
+- 🐛 **Not Found Bug**：新创建发票跳转详情页时显示 "Not Found"
+  - 原因：`clearInvoices()` 清空了未确认发票，且 `getInvoiceByHash` 不支持回退加载
+  - 解决：保留 SENDING 发票 + 支持 IndexedDB 回退加载
+
+**架构对比**：
+
+**重构前：**
+```
+创建发票 → Store (内存) → IndexedDB (仅 details)
+                ↓
+          syncInvoices() 执行
+                ↓
+        clearInvoices() 清空所有
+                ↓
+        只加载链上已确认的
+                ↓
+        新发票丢失 → Not Found ❌
+```
+
+**重构后：**
+```
+创建发票 → Store (内存) → IndexedDB (完整发票)
+                ↓
+          syncInvoices() 执行
+                ↓
+        clearInvoices({ keepSending: true })
+                ↓
+        保留 SENDING + 加载链上 + 恢复 IndexedDB
+                ↓
+        完整发票列表 ✅
+```
+
+**技术实现**：
+- `addInvoice`: 自动持久化完整发票（basicInfo + encryptedDetails）
+- `updateInvoice`: 同步更新 IndexedDB
+- `getInvoiceByHash`: 支持从 IndexedDB 回退加载
+- `clearInvoices`: 保留 SENDING 状态的发票
+- `syncInvoices`: 合并链上数据 + IndexedDB 数据
+
+---
+
+## 8. 版本信息
+
+- **文档版本**: v1.5
+- **代码版本**: v1.2
 - **最后更新**: 2026-01-13
 - **更新内容**: 
-  - 更新数据存储策略：v1.0 使用 IndexedDB + 加密存储
-  - 添加发票验证流程（完整性验证）
-  - 更新开票流程时序图（包含加密归档）
-  - 修正实现状态表（数据加密和存储已完全实现）
-  - 更新技术架构决策（反映实际实现）
+  - ✅ v1.2: Store 层完整发票持久化（基本信息 + details）
+  - ✅ v1.2: 修复 "Not Found" Bug - 支持从 IndexedDB 回退加载
+  - ✅ v1.2: `clearInvoices` 保留 SENDING 状态的发票
+  - ✅ v1.2: `syncInvoices` 从 IndexedDB 恢复未确认发票
+  - ✅ v1.1: Store 层统一管理 IndexedDB 同步（`syncAllFromChain`）
+  - ✅ v1.1: 列表页重构，统一架构模式，添加链上确认状态显示
+  - ✅ v1.1: Controller 层简化，`getStatusConfig` 移到业务逻辑层
+  - ✅ v1.0: 更新数据存储策略：使用 IndexedDB + 加密存储
+  - ✅ v1.0: 添加发票验证流程（完整性验证）
+  - ✅ v1.0: 更新开票流程时序图（包含加密归档）
 - **维护团队**: Aleo Privacy Invoice System Team

@@ -1,315 +1,179 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { useInvoiceInitialize } from './useInvoiceInitialize';
-import { useTransactionController } from '@/controller/Transaction/useTransactionController';
-import { InvoiceStatus, type Invoice, AleoField } from '@/lib/types';
-import { IInvoices } from './IInvoices';
-import { WalletService } from '@/services/WalletService/WalletServiceImpl';
-import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { StorageService } from '@/services/StorageService/StorageServiceImpl';
-import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
-import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
+import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
+import { AleoField, Invoice } from '@/lib/types';
 import { cleanAleoNumber } from '@/lib/utils';
+import { IInvoices } from './IInvoices';
+import { useInvoiceChainScan } from './useInvoiceChainScan';
+import { useInvoiceListRole } from './useInvoiceListRole';
+import { useInvoiceListFilter } from './useInvoiceListFilter';
+import { useInvoiceListPolling } from './useInvoiceListPolling';
+import { useInvoiceListInitialize } from './useInvoiceListInitialize';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
+import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 
 /**
- * useInvoices Hook
- * 发票列表页的业务逻辑控制器
- * 
- * 职责：
- * 1. 管理初始化状态（通过 useInvoiceInitialize）
- * 2. 管理过滤和搜索状态
- * 3. 根据当前用户地址判断发票角色
- * 4. 提供过滤后的发票列表
+ * StatusConfig 类型定义（导出供 UI 使用）
  */
-const PROGRAM_ID = 'zk_invoice.aleo';
+export type { StatusConfig } from './IInvoices';
 
+/**
+ * useInvoices Hook（重构后）
+ * 作为组合器，组合各个子 hooks
+ * 
+ * 处理三种情况：
+ * 1. 情况1：IndexedDB 为空 → 从链上扫描并存入 IndexedDB
+ * 2. 情况2：IndexedDB 有数据 → 从 IndexedDB 加载到内存
+ * 3. 情况3：发现 SENDING 状态的发票 → 启动轮询同步直到 CONFIRMED
+ */
 export function useInvoices(): IInvoices {
   const wallet = useWallet();
-  
-  // 使用初始化 hook
-  const { initialize, handleUnlock, isAuthRequired, isLoading, isReady } = useInvoiceInitialize();
-  
-  // 从 Store 获取数据
-  const { invoices, updateInvoice, setConfirmationStatus } = useInvoiceStore();
   const { publicKey, masterKey } = useUserStore();
-  
-  // 使用 Transaction Controller
-  const { executePay, executeCancel } = useTransactionController();
-  
-  // 本地状态：过滤和搜索
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled'>('all');
-  const [search, setSearch] = useState('');
+  const { invoices, updateInvoice } = useInvoiceStore();
+  const { scanAllRecords } = useInvoiceChainScan();
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // 创建服务实例
-  const walletService = useMemo(() => new WalletService(createWalletAdapter(wallet)), [wallet]);
-  const cryptoService = useMemo(() => new CryptoService(), []);
-  const storageService = useMemo(() => new StorageService(), []);
+  // 1. 初始化逻辑
+  const [sendingHashes, setSendingHashes] = useState<AleoField[]>([]);
+  const { isLoading, chainStatusMap, setChainStatusMap, initialize } = useInvoiceListInitialize(
+    useCallback((hashes: AleoField[]) => {
+      // 当发现 SENDING 状态的发票时，保存到状态
+      setSendingHashes(hashes);
+    }, [])
+  );
 
-  /**
-   * 根据当前用户地址判断发票角色（SELLER/BUYER/BOTH）
-   */
-  const invoicesWithRole = useMemo(() => {
-    if (!publicKey) return [];
-    
-    return invoices.map((invoice) => {
-      const isSeller = invoice.seller === publicKey;
-      const isBuyer = invoice.buyer === publicKey;
-      
-      let role: 'SELLER' | 'BUYER' | 'BOTH' = 'SELLER';
-      if (isSeller && isBuyer) {
-        role = 'BOTH';
-      } else if (isBuyer) {
-        role = 'BUYER';
-      } else if (isSeller) {
-        role = 'SELLER';
-      }
-      
-      return { invoice, role };
+  // 状态更新回调
+  const handleStatusUpdate = useCallback((hash: AleoField, status: ChainConfirmationStatus) => {
+    setChainStatusMap(prev => {
+      const newMap = new Map(prev);
+      newMap.set(hash, status);
+      return newMap;
     });
-  }, [invoices, publicKey]);
+  }, [setChainStatusMap]);
 
-  /**
-   * 前端过滤和搜索（基于 Store 数据）
-   */
-  const filteredInvoices = useMemo(() => {
-    return invoicesWithRole.filter(({ invoice }) => {
-      // 状态过滤
-      const matchStatus =
-        filter === 'all'
-          ? true
-          : filter === 'pending'
-            ? invoice.status === InvoiceStatus.PENDING
-            : filter === 'paid'
-              ? invoice.status === InvoiceStatus.PAID
-              : invoice.status === InvoiceStatus.CANCELLED;
-      
-      // 搜索过滤
-      const searchLower = search.trim().toLowerCase();
-      const matchSearch =
-        searchLower === '' ||
-        invoice.id.toLowerCase().includes(searchLower) ||
-        invoice.invoiceHash.toLowerCase().includes(searchLower) ||
-        invoice.buyer.toLowerCase().includes(searchLower) ||
-        invoice.seller.toLowerCase().includes(searchLower);
-      
-      return matchStatus && matchSearch;
-    });
-  }, [invoicesWithRole, filter, search]);
+  // 2. 批量轮询
+  const { startPolling, stopPolling } = useInvoiceListPolling(
+    invoices,
+    chainStatusMap,
+    handleStatusUpdate
+  );
 
-  /**
-   * 刷新发票列表
-   */
-  const refresh = useCallback(async () => {
-    await initialize();
-  }, [initialize]);
+  // 当发现 SENDING 状态的发票时，启动轮询
+  useEffect(() => {
+    if (sendingHashes.length > 0) {
+      startPolling(sendingHashes);
+      setSendingHashes([]); // 清空，避免重复启动
+    }
+  }, [sendingHashes, startPolling]);
 
-  /**
-   * 处理支付发票（买家操作）
-   * 使用 TransactionController 的 executePay
-   */
-  const handlePay = useCallback(async (invoiceId: AleoField) => {
+  // 3. 角色判断（复用）
+  const { invoicesWithRole } = useInvoiceListRole(invoices, chainStatusMap);
+
+  // 4. 过滤和搜索
+  const { filteredInvoices, filter, search, setFilter, setSearch } = useInvoiceListFilter(invoicesWithRole);
+
+  // 5. 操作（列表页模式：需要为每个 invoice 创建处理函数）
+  // 由于列表页有多个 invoice，不能使用单个 useInvoiceActions
+  // 所以直接使用 useTransactionController 和 useErrorHandler
+  const { executePay, executeCancel } = useTransactionController();
+  const { handleError } = useErrorHandler();
+  
+  const handlePay = useCallback(async (invoice: Invoice) => {
     try {
-      toast.loading('Processing payment...', { id: `pay-${invoiceId}` });
-      const transactionId = await executePay(invoiceId);
+      toast.loading('Processing payment...', { id: `pay-${invoice.id}` });
+      const transactionId = await executePay(invoice);
       toast.success('Payment successful!', {
-        id: `pay-${invoiceId}`,
+        id: `pay-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      // Refresh invoice list to show updated status
-      await refresh();
+      await initialize();
     } catch (error) {
       toast.error('Payment failed', {
-        id: `pay-${invoiceId}`,
+        id: `pay-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
-      throw error;
+      handleError(error as Error);
     }
-  }, [executePay, refresh]);
+  }, [executePay, initialize, handleError]);
 
-  /**
-   * 处理取消发票（卖家操作）
-   * 使用 TransactionController 的 executeCancel
-   */
-  const handleCancel = useCallback(async (invoiceId: AleoField) => {
+  const handleCancel = useCallback(async (invoice: Invoice) => {
     try {
-      toast.loading('Cancelling invoice...', { id: `cancel-${invoiceId}` });
-      const transactionId = await executeCancel(invoiceId);
+      toast.loading('Cancelling invoice...', { id: `cancel-${invoice.id}` });
+      const transactionId = await executeCancel(invoice);
       toast.success('Invoice cancelled successfully', { 
-        id: `cancel-${invoiceId}`,
+        id: `cancel-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      // Refresh invoice list to show updated status
-      await refresh();
+      await initialize();
     } catch (error) {
       toast.error('Failed to cancel invoice', {
-        id: `cancel-${invoiceId}`,
+        id: `cancel-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
-      throw error;
+      handleError(error as Error);
     }
-  }, [executeCancel, refresh]);
+  }, [executeCancel, initialize, handleError]);
 
-  /**
-   * 从链上同步所有发票的最新状态
-   */
+  // 6. 批量同步
   const handleSyncAll = useCallback(async () => {
-    if (!publicKey || !masterKey || invoices.length === 0) {
+    if (!publicKey || !masterKey) {
       toast.error('Unable to sync', {
-        description: 'Missing required data or no invoices found'
+        description: 'Missing required data'
       });
       return;
     }
 
     setIsSyncing(true);
     try {
-      console.log('🔄 [handleSyncAll] Starting batch sync for all invoices');
       toast.loading('Syncing all invoices...', { id: 'sync-all' });
-
-      // Scan all records from chain
-      const response = await walletService.requestRecords(PROGRAM_ID);
-      const records: any[] = response.records || [];
-      console.log(`📋 [handleSyncAll] Found ${records.length} records on chain`);
-
-      // Build a map of invoice_id -> latest record (prefer PaymentRecord)
-      const recordMap = new Map<string, { record: AleoInvoiceRecord | AleoPaymentRecord; type: 'invoice' | 'payment' }>();
-
-      for (const record of records) {
-        try {
-          // Parse Record data
-          let recordData: any;
-          
-          if (typeof record === 'string') {
-            recordData = JSON.parse(record);
-          } else if (record && typeof record === 'object') {
-            if (record.data) {
-              recordData = typeof record.data === 'string' 
-                ? JSON.parse(record.data) 
-                : record.data;
-            } else {
-              recordData = record;
-            }
-          } else {
-            continue;
-          }
-          
-          if (!recordData) continue;
-
-          // Parse to common format
-          const recordJsonString = typeof recordData === 'string' 
-            ? recordData 
-            : JSON.stringify(recordData);
-          
-          const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
-          
-          // Determine if it's InvoiceRecord or PaymentRecord
-          const isPaymentRecord = 'payment_id' in parsedRecord && parsedRecord.payment_id;
-          const isInvoiceRecord = 'invoice_hash' in parsedRecord && parsedRecord.invoice_hash;
-          
-          if (isPaymentRecord || isInvoiceRecord) {
-            const cleanInvoiceId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
-            
-            if (cleanInvoiceId) {
-              const recordType = isPaymentRecord ? 'payment' : 'invoice';
-              const existing = recordMap.get(cleanInvoiceId);
-              
-              // PaymentRecord takes priority over InvoiceRecord
-              if (!existing || (recordType === 'payment' && existing.type === 'invoice')) {
-                recordMap.set(cleanInvoiceId, {
-                  record: parsedRecord,
-                  type: recordType
-                });
-              }
-            }
-          }
-        } catch (error) {
-          console.warn('Failed to parse record:', error);
-          continue;
-        }
-      }
-
-      console.log(`✅ [handleSyncAll] Built record map with ${recordMap.size} unique invoices`);
-
-      // Update each invoice based on chain records
+      
+      // 扫描链上 records
+      const chainRecords = await scanAllRecords();
+      
       let updatedCount = 0;
+      const newStatusMap = new Map(chainStatusMap);
+      
       for (const invoice of invoices) {
-        try {
-          const cleanInvoiceId = invoice.id?.replace(/field\.(private|public)$/, 'field');
-          const recordData = recordMap.get(cleanInvoiceId);
+        const chainRecord = chainRecords.get(invoice.invoiceHash);
+        if (chainRecord) {
+          const cleanInvoiceId = chainRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
+          const cleanAmount = cleanAleoNumber(chainRecord.amount);
+          const cleanDueDate = cleanAleoNumber(chainRecord.due_date);
+          const cleanCreatedAt = cleanAleoNumber(chainRecord.created_at);
+          const cleanStatus = cleanAleoNumber(chainRecord.status);
+
+          await updateInvoice(invoice.id, {
+            id: cleanInvoiceId,
+            invoiceHash: invoice.invoiceHash,
+            seller: chainRecord.seller as any,
+            buyer: chainRecord.buyer as any,
+            amount: BigInt(cleanAmount) as any,
+            dueDate: new Date(Number(cleanDueDate) * 1000),
+            createdAt: new Date(Number(cleanCreatedAt) * 1000),
+            status: Number(cleanStatus) as any,
+            metadata: {
+              confirmationStatus: 'CONFIRMED',
+              dataSource: 'chain'
+            }
+          } as any, {
+            masterKey,
+            persistFull: true
+          });
           
-          if (!recordData) {
-            console.log(`⚠️ [handleSyncAll] No chain record found for invoice: ${cleanInvoiceId}`);
-            continue;
-          }
-
-          const { record, type } = recordData;
-          console.log(`🔄 [handleSyncAll] Updating invoice ${cleanInvoiceId} with ${type} record`);
-
-          // Build update data based on record type
-          let updatedInvoice: Partial<Invoice>;
-
-          if (type === 'payment') {
-            const paymentRecord = record as AleoPaymentRecord;
-            const cleanAmount = cleanAleoNumber(paymentRecord.amount);
-
-            updatedInvoice = {
-              id: cleanInvoiceId as AleoField,
-              invoiceHash: invoice.invoiceHash, // Keep original hash - DO NOT UPDATE
-              seller: paymentRecord.payee as any,
-              buyer: paymentRecord.payer as any,
-              amount: BigInt(cleanAmount) as any,
-              dueDate: invoice.dueDate,
-              createdAt: invoice.createdAt,
-              status: 1 as any // PaymentRecord indicates PAID
-            };
-          } else {
-            const invoiceRecord = record as AleoInvoiceRecord;
-            const cleanAmount = cleanAleoNumber(invoiceRecord.amount);
-            const cleanDueDate = cleanAleoNumber(invoiceRecord.due_date);
-            const cleanCreatedAt = cleanAleoNumber(invoiceRecord.created_at);
-            const cleanStatus = cleanAleoNumber(invoiceRecord.status);
-
-            updatedInvoice = {
-              id: cleanInvoiceId as AleoField,
-              invoiceHash: invoice.invoiceHash, // Keep original hash - DO NOT UPDATE
-              seller: invoiceRecord.seller as any,
-              buyer: invoiceRecord.buyer as any,
-              amount: BigInt(cleanAmount) as any,
-              dueDate: new Date(Number(cleanDueDate) * 1000),
-              createdAt: new Date(Number(cleanCreatedAt) * 1000),
-              status: Number(cleanStatus) as any
-            };
-          }
-
-          // Update Store
-          updateInvoice(invoice.id, updatedInvoice);
-          setConfirmationStatus(invoice.invoiceHash, 'CONFIRMED');
-
-          // Sync update IndexedDB (keep details unchanged)
-          if (invoice.details) {
-            const encryptedPayload = await cryptoService.encryptInvoiceDetails(
-              invoice.details,
-              masterKey
-            );
-            await storageService.saveEncryptedInvoice(invoice.invoiceHash, encryptedPayload);
-          }
-
+          newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
           updatedCount++;
-        } catch (error) {
-          console.error(`Failed to update invoice ${invoice.id}:`, error);
-          continue;
         }
       }
-
+      
+      setChainStatusMap(newStatusMap as Map<AleoField, ChainConfirmationStatus>);
+      
       toast.success('Batch sync successful', {
         id: 'sync-all',
         description: `Updated ${updatedCount} invoice(s) from chain`
       });
-
-      console.log(`✅ [handleSyncAll] Sync completed - Updated ${updatedCount}/${invoices.length} invoices`);
     } catch (error) {
       console.error('Failed to sync all invoices:', error);
       toast.error('Sync failed', {
@@ -319,55 +183,44 @@ export function useInvoices(): IInvoices {
     } finally {
       setIsSyncing(false);
     }
-  }, [publicKey, masterKey, invoices, walletService, cryptoService, storageService, updateInvoice, setConfirmationStatus]);
+  }, [publicKey, masterKey, invoices, scanAllRecords, updateInvoice, chainStatusMap, setChainStatusMap]);
+
+  // 自动初始化
+  useEffect(() => {
+    if (publicKey && wallet?.connected && masterKey) {
+      initialize();
+    }
+    
+    return () => {
+      stopPolling();
+    };
+  }, [publicKey, wallet?.connected, masterKey, initialize, stopPolling]);
 
   /**
-   * 业务逻辑判断：是否显示授权遮罩
+   * ✅ 统一的状态判断逻辑（与详情页一致）
    */
-  const showAuthModal = useMemo(() => {
-    return isAuthRequired;
-  }, [isAuthRequired]);
-
-  /**
-   * 业务逻辑判断：是否显示加载状态
-   */
-  const showLoading = useMemo(() => {
-    return isLoading;
-  }, [isLoading]);
-
-  /**
-   * 业务逻辑判断：是否显示钱包连接提示
-   */
+  const showLoading = useMemo(() => isLoading, [isLoading]);
   const showWalletPrompt = useMemo(() => {
-    return !isReady && !isAuthRequired;
-  }, [isReady, isAuthRequired]);
-
-  /**
-   * 业务逻辑判断：是否显示主内容
-   */
+    return !isLoading && !publicKey;
+  }, [isLoading, publicKey]);
   const showMainContent = useMemo(() => {
-    return isReady && !isAuthRequired && !isLoading;
-  }, [isReady, isAuthRequired, isLoading]);
+    return !isLoading && invoices.length >= 0;
+  }, [isLoading, invoices.length]);
 
   return {
     filteredInvoices,
     filter,
     search,
-    isAuthRequired,
     isLoading,
-    isReady,
     isSyncing,
-    showAuthModal,
     showLoading,
     showWalletPrompt,
     showMainContent,
     setFilter,
     setSearch,
-    handleUnlock,
-    refresh,
+    refresh: initialize,
     handleSyncAll,
     handlePay,
     handleCancel
   };
 }
-

@@ -1,85 +1,40 @@
 'use client';
 
 import Link from 'next/link';
-import { InvoiceStatus } from '@/lib/types';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
-import InvoiceCard, { type StatusConfig } from '@/components/invoice-card';
-
-const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string; status?: InvoiceStatus }> = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending', status: InvoiceStatus.PENDING },
-  { key: 'paid', label: 'Paid', status: InvoiceStatus.PAID },
-  { key: 'cancelled', label: 'Cancelled', status: InvoiceStatus.CANCELLED }
-];
-
-function getStatusConfig(status: InvoiceStatus): StatusConfig {
-  switch (status) {
-    case InvoiceStatus.PENDING:
-      return {
-        label: 'Pending',
-        icon: '⏳',
-        bg: 'bg-amber-100',
-        text: 'text-amber-700',
-        border: 'border-amber-300'
-      };
-    case InvoiceStatus.PAID:
-      return {
-        label: 'Paid',
-        icon: '✅',
-        bg: 'bg-green-100',
-        text: 'text-green-700',
-        border: 'border-green-300'
-      };
-    case InvoiceStatus.CANCELLED:
-      return {
-        label: 'Cancelled',
-        icon: '❌',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-    case InvoiceStatus.EXPIRED:
-      return {
-        label: 'Expired',
-        icon: '⚠️',
-        bg: 'bg-red-100',
-        text: 'text-red-700',
-        border: 'border-red-300'
-      };
-    default:
-      return {
-        label: 'Unknown',
-        icon: '❓',
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-300'
-      };
-  }
-}
+import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
+import InvoiceCard from '@/components/invoice-card';
 
 export default function InvoicesPage() {
-  // Use new architecture: useInvoices hook (contains all business logic)
+  // ✅ 授权检查（独立调用，与详情页一致）
+  const { isAuthRequired, handleUnlock } = useAuthCheck();
+
+  // ✅ 列表页业务逻辑（处理三种情况的初始化）
   const {
     filteredInvoices,
     filter,
     search,
     isLoading,
     isSyncing,
-    showAuthModal,
     showLoading,
     showWalletPrompt,
     showMainContent,
     setFilter,
     setSearch,
-    handleUnlock,
-    refresh,
     handleSyncAll,
     handlePay,
     handleCancel
   } = useInvoices();
 
-  // Authorization modal UI (business logic in Controller)
-  if (showAuthModal) {
+  const tabs = [
+    { key: 'all' as const, label: 'All' },
+    { key: 'pending' as const, label: 'Pending' },
+    { key: 'paid' as const, label: 'Paid' },
+    { key: 'cancelled' as const, label: 'Cancelled' }
+  ];
+
+  // ✅ 授权遮罩（与详情页一致）
+  if (isAuthRequired) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
@@ -103,7 +58,7 @@ export default function InvoicesPage() {
     );
   }
 
-  // Loading state (business logic in Controller)
+  // ✅ 加载状态（与详情页一致）
   if (showLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -115,7 +70,7 @@ export default function InvoicesPage() {
     );
   }
 
-  // Wallet connection prompt (business logic in Controller)
+  // ✅ 钱包连接提示
   if (showWalletPrompt) {
     return (
       <div className="space-y-6">
@@ -132,13 +87,14 @@ export default function InvoicesPage() {
     );
   }
 
-  // Main content (business logic in Controller)
+  // ✅ 主内容
   if (!showMainContent) {
     return null;
   }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Invoice manager</h2>
@@ -165,6 +121,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
+      {/* Tabs */}
       <div className="flex flex-wrap gap-2">
         {tabs.map((tab) => (
           <button
@@ -179,6 +136,7 @@ export default function InvoicesPage() {
         ))}
       </div>
 
+      {/* Search */}
       <div className="flex flex-wrap items-center gap-3">
         <input
           value={search}
@@ -188,22 +146,34 @@ export default function InvoicesPage() {
         />
       </div>
 
+      {/* Results */}
       {filteredInvoices.length === 0 && (
         <p className="text-sm text-slate-500">No matching invoices.</p>
       )}
 
+      {/* Invoice Cards */}
       <div className="grid gap-3 md:grid-cols-2">
-        {filteredInvoices.map(({ invoice, role }) => (
-          <div key={invoice.id} className="space-y-2">
-            <div className="flex items-center justify-start text-xs text-slate-500">
-              <span>
+        {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }, index) => (
+          <div key={`${invoice.invoiceHash}-${index}`} className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">
                 {role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}
               </span>
+              {/* ✅ 显示链上确认状态（与详情页一致） */}
+              {chainStatus === 'CONFIRMED' ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                  ✓ Confirmed
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                  ⏳ Sending
+                </span>
+              )}
             </div>
             <InvoiceCard 
               invoice={invoice}
               role={role}
-              statusConfig={getStatusConfig(invoice.status)}
+              statusConfig={statusConfig}
               isLoading={isLoading}
               onPay={handlePay}
               onCancel={handleCancel}

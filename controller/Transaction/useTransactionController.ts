@@ -3,18 +3,17 @@ import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { ITxController } from './ITxController';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInoviceStore';
+import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
-import { CreateInvoiceParams, AleoTransactionId, AleoField } from '@/lib/types';
+import { CreateInvoiceParams, AleoTransactionId, AleoField, Invoice } from '@/lib/types';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
-import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
+import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
 
 // 初始化服务实例（在 hook 内部使用）
 const cryptoService = new CryptoService();
-const storageService = new StorageService();
 
 const PROGRAM_ID = 'zk_invoice.aleo';
 
@@ -26,7 +25,8 @@ export function useTransactionController(): ITxController {
   const wallet = useWallet();
   const { isProcessing, progress, logs, startTx, updateProgress, completeTx } = useTransactionStore();
   const { publicKey, masterKey, setMasterKey } = useUserStore();
-  const newInvoiceStore = useNewInvoiceStore();
+  const invoiceStore = useInvoiceStore();
+  const { scanInvoiceRecord } = useInvoiceChainScan(); // ✅ 使用 useInvoiceChainScan 获取 record
 
   // 创建 WalletService 实例（通过适配器，与 useWalletController 保持一致）
   const walletService = useMemo(() => {
@@ -210,19 +210,16 @@ export function useTransactionController(): ITxController {
             hasIv: !!encryptedPayload.iv
           });
 
-          // 保存到 IndexedDB（初始状态设为 'SENDING'）
-          await storageService.saveEncryptedInvoice(invoiceHash, encryptedPayload);
-          updateProgress(95, '✓ 已保存到本地存储 (状态: SENDING)');
-          console.log('✅ [TransactionController] 发票已保存到 IndexedDB:', invoiceHash);
+          // ✅ 不再单独保存到 IndexedDB，addInvoice 会处理完整持久化
+          updateProgress(95, '✓ 发票明细已加密');
+          console.log('✅ [TransactionController] 发票明细加密成功');
         } catch (error: any) {
           // 记录详细的错误信息
-          console.error('❌ [TransactionController] 加密或存储失败:', {
+          console.error('❌ [TransactionController] 加密失败:', {
             error,
             errorType: error?.constructor?.name,
             errorMessage: error?.message,
-            errorStack: error?.stack,
             masterKeyExists: !!currentMasterKey,
-            masterKeyLength: currentMasterKey?.length,
             invoiceHash,
             hasDetails: !!params.details
           });
@@ -241,27 +238,13 @@ export function useTransactionController(): ITxController {
             );
           }
           
-          // 如果是存储失败
-          if (error?.message?.includes('save') || 
-              error?.message?.includes('IndexedDB') ||
-              error?.message?.includes('Failed to save')) {
-            throw new WalletServiceError(
-              WalletError.UNAUTHORIZED,
-              'Failed to save encrypted invoice to local storage',
-              { 
-                originalError: error,
-                hint: 'Please check browser IndexedDB permissions or try again'
-              }
-            );
-          }
-          
           // 其他错误直接抛出
           throw error;
         }
 
-        // 更新 Invoice Store（如果新架构的 store 已实现）
-        if (newInvoiceStore?.addInvoice) {
-          newInvoiceStore.addInvoice({
+        // ✅ 更新 Invoice Store（使用新的持久化方法，会自动保存完整发票到 IndexedDB）
+        if (invoiceStore?.addInvoice) {
+          await invoiceStore.addInvoice({
             id: invoiceId,
             seller: publicKey,
             buyer: params.buyer,
@@ -270,8 +253,19 @@ export function useTransactionController(): ITxController {
             dueDate: params.dueDate,
             createdAt: new Date(),
             status: 0, // PENDING
-            details: params.details
+            details: params.details,
+            metadata: { // ✅ 添加 metadata，设置 action 为 'create'
+              confirmationStatus: 'SENDING',
+              lastUpdated: new Date(),
+              dataSource: 'local',
+              action: 'create'
+            }
+          }, {
+            masterKey: currentMasterKey,
+            persistFull: true  // ✅ 持久化完整发票信息（包括基本信息）
           });
+          updateProgress(97, '✓ 已保存到本地存储 (状态: SENDING)');
+          console.log('✅ [TransactionController] 发票已保存到 Store 和 IndexedDB:', invoiceHash);
         }
 
         updateProgress(98, '✓ 状态已同步');
@@ -290,14 +284,14 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, masterKey, setMasterKey, startTx, updateProgress, completeTx, newInvoiceStore, logs, walletService]
+    [publicKey, masterKey, setMasterKey, startTx, updateProgress, completeTx, invoiceStore, logs, walletService]
   );
 
   /**
    * 执行支付发票（mark_as_paid）
    */
   const executePay = useCallback(
-    async (invoiceId: AleoField): Promise<AleoTransactionId> => {
+    async (invoice: Invoice): Promise<AleoTransactionId> => {
       try {
         // 检查钱包连接
         if (!publicKey) {
@@ -317,43 +311,15 @@ export function useTransactionController(): ITxController {
         startTx('REQUESTING');
         updateProgress(10, 'Fetching invoice record from chain...');
 
-        // 1. 从链上获取 InvoiceRecord
-        const response = await walletService.requestRecords(PROGRAM_ID);
-        const records: any[] = response.records || [];
+        // ✅ 从链上扫描获取 invoice record
+        const { rawRecord } = await scanInvoiceRecord(invoice.invoiceHash, invoice.id);
         
-        let invoiceRecord: any = null;
-        for (const record of records) {
-          try {
-            let recordData: any;
-            if (typeof record === 'string') {
-              recordData = JSON.parse(record);
-            } else if (record && typeof record === 'object') {
-              recordData = record.data ? (typeof record.data === 'string' ? JSON.parse(record.data) : record.data) : record;
-            } else {
-              continue;
-            }
-            
-            if (!recordData) continue;
-            
-            const recordJsonString = typeof recordData === 'string' ? recordData : JSON.stringify(recordData);
-            const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
-            
-            // 查找匹配的 invoice_id
-            const cleanRecordId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
-            const cleanInvoiceId = invoiceId?.replace(/field\.(private|public)$/, 'field');
-            
-            if (cleanRecordId === cleanInvoiceId) {
-              invoiceRecord = recordJsonString;
-              break;
-            }
-          } catch (error) {
-            continue;
-          }
-        }
-
-        if (!invoiceRecord) {
+        if (!rawRecord) {
           throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
         }
+
+        // ✅ 使用原始 record 对象（钱包会处理加密和签名）
+        const invoiceRecord = rawRecord;
 
         updateProgress(30, 'Invoice record found. Preparing payment...');
 
@@ -391,6 +357,26 @@ export function useTransactionController(): ITxController {
           );
         }
 
+        // ✅ 更新 invoice 的 metadata，将 confirmationStatus 更改为 SENDING，并设置 action 为 'pay'
+        if (invoiceStore?.updateInvoice && masterKey) {
+          try {
+            await invoiceStore.updateInvoice(invoice.id, {
+              metadata: {
+                confirmationStatus: 'SENDING',
+                dataSource: 'local',
+                action: 'pay' // ✅ 标识这是支付操作
+              }
+            } as any, {
+              masterKey: masterKey,
+              persistFull: true
+            });
+            console.log('✅ [executePay] Updated invoice metadata to SENDING with action=pay:', invoice.id);
+          } catch (error) {
+            console.error('❌ [executePay] Failed to update invoice metadata:', error);
+            // 不抛出错误，因为交易已经提交成功
+          }
+        }
+
         updateProgress(90, 'Payment transaction submitted successfully');
         updateProgress(100, '✓ Payment completed!');
         
@@ -403,14 +389,14 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, walletService, startTx, updateProgress, completeTx]
+    [publicKey, walletService, scanInvoiceRecord, cryptoService, startTx, updateProgress, completeTx]
   );
 
   /**
    * 执行取消发票（cancel_invoice）
    */
   const executeCancel = useCallback(
-    async (invoiceId: AleoField): Promise<AleoTransactionId> => {
+    async (invoice: Invoice): Promise<AleoTransactionId> => {
       try {
         // 检查钱包连接
         if (!publicKey) {
@@ -430,43 +416,15 @@ export function useTransactionController(): ITxController {
         startTx('REQUESTING');
         updateProgress(10, 'Fetching invoice record from chain...');
 
-        // 1. 从链上获取 InvoiceRecord
-        const response = await walletService.requestRecords(PROGRAM_ID);
-        const records: any[] = response.records || [];
+        // ✅ 从链上扫描获取 invoice record
+        const { rawRecord } = await scanInvoiceRecord(invoice.invoiceHash, invoice.id);
         
-        let invoiceRecord: any = null;
-        for (const record of records) {
-          try {
-            let recordData: any;
-            if (typeof record === 'string') {
-              recordData = JSON.parse(record);
-            } else if (record && typeof record === 'object') {
-              recordData = record.data ? (typeof record.data === 'string' ? JSON.parse(record.data) : record.data) : record;
-            } else {
-              continue;
-            }
-            
-            if (!recordData) continue;
-            
-            const recordJsonString = typeof recordData === 'string' ? recordData : JSON.stringify(recordData);
-            const parsedRecord = await cryptoService.parseAleoRecord<any>(recordJsonString);
-            
-            // 查找匹配的 invoice_id
-            const cleanRecordId = parsedRecord.invoice_id?.replace(/field\.(private|public)$/, 'field');
-            const cleanInvoiceId = invoiceId?.replace(/field\.(private|public)$/, 'field');
-            
-            if (cleanRecordId === cleanInvoiceId) {
-              invoiceRecord = recordJsonString;
-              break;
-            }
-          } catch (error) {
-            continue;
-          }
-        }
-
-        if (!invoiceRecord) {
+        if (!rawRecord) {
           throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
         }
+
+        // ✅ 使用原始 record 对象（钱包会处理加密和签名）
+        const invoiceRecord = rawRecord;
 
         updateProgress(40, 'Invoice record found. Preparing cancellation...');
 
@@ -482,12 +440,31 @@ export function useTransactionController(): ITxController {
           fee: 1000000,
           chainId: chainId
         });
-
         if (!requestId) {
           throw new WalletServiceError(
             WalletError.UNAUTHORIZED,
             'Cancellation transaction failed - no response from wallet'
           );
+        }
+
+        // ✅ 更新 invoice 的 metadata，将 confirmationStatus 更改为 SENDING，并设置 action 为 'cancel'
+        if (invoiceStore?.updateInvoice && masterKey) {
+          try {
+            await invoiceStore.updateInvoice(invoice.id, {
+              metadata: {
+                confirmationStatus: 'SENDING',
+                dataSource: 'local',
+                action: 'cancel' // ✅ 标识这是取消操作
+              }
+            } as any, {
+              masterKey: masterKey,
+              persistFull: true
+            });
+            console.log('✅ [executeCancel] Updated invoice metadata to SENDING with action=cancel:', invoice.id);
+          } catch (error) {
+            console.error('❌ [executeCancel] Failed to update invoice metadata:', error);
+            // 不抛出错误，因为交易已经提交成功
+          }
         }
 
         updateProgress(90, 'Cancellation transaction submitted successfully');
@@ -502,7 +479,7 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, walletService, startTx, updateProgress, completeTx]
+    [publicKey, walletService, scanInvoiceRecord, startTx, updateProgress, completeTx, invoiceStore, masterKey]
   );
 
   return {

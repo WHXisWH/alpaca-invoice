@@ -259,8 +259,8 @@ export class CryptoService implements ICryptoService {
         };
         
         const cleaned = cleanRecord(parsed);
-        console.log('🧹 [parseAleoRecord] Original record:', parsed);
-        console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
+        // console.log('🧹 [parseAleoRecord] Original record:', parsed);
+        // console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
         return cleaned as T;
       }
       

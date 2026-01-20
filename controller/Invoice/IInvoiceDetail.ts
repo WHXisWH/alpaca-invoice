@@ -1,21 +1,14 @@
-import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
+import { Invoice, AleoField } from '@/lib/types';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
+import { StatusConfig } from '@/lib/invoice';
 
 /**
  * 用户在发票中的角色
  */
 export type UserRole = 'seller' | 'buyer' | 'unknown';
 
-/**
- * 发票状态配置
- */
-export interface StatusConfig {
-  label: string;
-  icon: string;
-  bg: string;
-  text: string;
-  border: string;
-}
+// 重新导出 StatusConfig（保持向后兼容）
+export type { StatusConfig };
 
 /**
  * IInvoiceDetail Controller 接口
@@ -25,8 +18,11 @@ export interface IInvoiceDetail {
   /** 发票对象 */
   invoice: Invoice | null;
   
-  /** 当前链上确认状态 */
-  currentStatus: ChainConfirmationStatus;
+  /** 是否正在加载发票（从 IndexedDB） */
+  isLoadingInvoice: boolean;
+  
+  /** 当前链上确认状态（null 表示尚未加载） */
+  currentStatus: ChainConfirmationStatus | null;
   
   /** 是否正在同步链上记录 */
   isSyncing: boolean;
@@ -46,10 +42,10 @@ export interface IInvoiceDetail {
   /** 是否正在手动同步状态 */
   isSyncingStatus: boolean;
   
-  /** 处理支付 */
+  /** 处理支付（直接使用 hook 的 invoice） */
   handlePay: () => Promise<void>;
   
-  /** 处理取消 */
+  /** 处理取消（直接使用 hook 的 invoice） */
   handleCancel: () => Promise<void>;
   
   /** 手动同步发票状态（从链上获取最新 record） */

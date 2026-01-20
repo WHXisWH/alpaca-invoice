@@ -25,8 +25,8 @@ interface InvoiceCardProps {
   statusConfig: StatusConfig;
   showFullAddresses?: boolean;
   isLoading?: boolean;
-  onPay?: (invoiceId: AleoField) => void;
-  onCancel?: (invoiceId: AleoField) => void;
+  onPay?: (invoice: Invoice) => void;
+  onCancel?: (invoice: Invoice) => void;
 }
 
 export default function InvoiceCard({ 
@@ -111,7 +111,7 @@ export default function InvoiceCard({
           <>
             {role === 'BUYER' && onPay && (
               <button
-                onClick={() => onPay(invoice.id)}
+                onClick={() => onPay(invoice)}
                 disabled={isLoading}
                 className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -120,7 +120,7 @@ export default function InvoiceCard({
             )}
             {role === 'SELLER' && onCancel && (
               <button
-                onClick={() => onCancel(invoice.id)}
+                onClick={() => onCancel(invoice)}
                 disabled={isLoading}
                 className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -131,7 +131,7 @@ export default function InvoiceCard({
               <>
                 {onPay && (
                   <button
-                    onClick={() => onPay(invoice.id)}
+                    onClick={() => onPay(invoice)}
                     disabled={isLoading}
                     className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -140,7 +140,7 @@ export default function InvoiceCard({
                 )}
                 {onCancel && (
                   <button
-                    onClick={() => onCancel(invoice.id)}
+                    onClick={() => onCancel(invoice)}
                     disabled={isLoading}
                     className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >

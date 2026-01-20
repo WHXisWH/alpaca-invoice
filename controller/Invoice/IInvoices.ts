@@ -1,38 +1,45 @@
 import { AleoField, Invoice } from "@/lib/types";
+import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
+
+/**
+ * 发票状态配置
+ */
+export interface StatusConfig {
+  label: string;
+  icon: string;
+  bg: string;
+  text: string;
+  border: string;
+}
 
 /**
  * IInvoices Controller 接口
  * 发票列表页的业务逻辑控制器
  */
 export interface IInvoices {
-  // --- 状态暴露 ---
-  /** 过滤后的发票列表（包含角色信息） */
+  // --- 数据 ---
+  /** 过滤后的发票列表（包含角色、链上状态、状态配置） */
   filteredInvoices: Array<{
     invoice: Invoice;
     role: 'SELLER' | 'BUYER' | 'BOTH';
+    chainStatus: ChainConfirmationStatus;  // ✅ 新增：链上确认状态
+    statusConfig: StatusConfig;            // ✅ 新增：状态配置
   }>;
   
+  // --- 状态 ---
   /** 当前过滤状态 */
   filter: 'all' | 'pending' | 'paid' | 'cancelled';
   
   /** 搜索关键词 */
   search: string;
   
-  /** 是否需要授权（masterKey不存在） */
-  isAuthRequired: boolean;
-  
   /** 是否正在加载 */
   isLoading: boolean;
-  
-  /** 是否已就绪（初始化完成） */
-  isReady: boolean;
 
   /** 是否正在同步状态 */
   isSyncing: boolean;
 
-  /** 是否显示授权遮罩（业务逻辑判断） */
-  showAuthModal: boolean;
-  
+  // --- UI 状态判断 ---
   /** 是否显示加载状态（业务逻辑判断） */
   showLoading: boolean;
   
@@ -49,9 +56,6 @@ export interface IInvoices {
   /** 设置搜索关键词 */
   setSearch: (search: string) => void;
   
-  /** 处理用户点击解锁 */
-  handleUnlock: () => Promise<void>;
-  
   /** 刷新发票列表（重新初始化） */
   refresh: () => Promise<void>;
 
@@ -59,8 +63,8 @@ export interface IInvoices {
   handleSyncAll: () => Promise<void>;
 
   /** 处理支付发票（买家操作） */
-  handlePay: (invoiceId: AleoField) => Promise<void>;
+  handlePay: (invoice: Invoice) => Promise<void>;
 
   /** 处理取消发票（卖家操作） */
-  handleCancel: (invoiceId: AleoField) => Promise<void>;
+  handleCancel: (invoice: Invoice) => Promise<void>;
 }
