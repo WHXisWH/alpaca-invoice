@@ -67,4 +67,10 @@ export interface IInvoices {
 
   /** 处理取消发票（卖家操作） */
   handleCancel: (invoice: Invoice) => Promise<void>;
+
+  /** 检查发票是否正在处理（支付/取消中） */
+  isInvoiceProcessing: (invoiceId: string) => boolean;
+
+  /** 检查发票是否正在同步（轮询中） */
+  isInvoiceSyncing: (invoice: Invoice) => boolean;
 }

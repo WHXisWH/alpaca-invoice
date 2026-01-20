@@ -25,6 +25,8 @@ interface InvoiceCardProps {
   statusConfig: StatusConfig;
   showFullAddresses?: boolean;
   isLoading?: boolean;
+  isProcessing?: boolean;
+  isSyncing?: boolean;
   onPay?: (invoice: Invoice) => void;
   onCancel?: (invoice: Invoice) => void;
 }
@@ -35,6 +37,8 @@ export default function InvoiceCard({
   statusConfig,
   showFullAddresses = false,
   isLoading = false,
+  isProcessing = false,
+  isSyncing = false,
   onPay,
   onCancel
 }: InvoiceCardProps) {
@@ -64,6 +68,20 @@ export default function InvoiceCard({
           <span>{statusConfig.label}</span>
         </span>
       </div>
+
+      {/* ✅ 添加：显示处理状态 */}
+      {(isProcessing || isSyncing) && (
+        <div className="mb-4 pb-4 border-b border-amber-100">
+          <div className="flex items-center gap-2 text-xs text-amber-600">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>
+              {isProcessing ? 'Processing transaction...' : 'Syncing chain records...'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Amount */}
       <div className="mb-4 pb-4 border-b border-amber-100">
@@ -112,19 +130,19 @@ export default function InvoiceCard({
             {role === 'BUYER' && onPay && (
               <button
                 onClick={() => onPay(invoice)}
-                disabled={isLoading}
+                disabled={isLoading || isProcessing || isSyncing}
                 className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                💳 Pay
+                {isProcessing ? 'Processing...' : '💳 Pay'}
               </button>
             )}
             {role === 'SELLER' && onCancel && (
               <button
                 onClick={() => onCancel(invoice)}
-                disabled={isLoading}
+                disabled={isLoading || isProcessing || isSyncing}
                 className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                ❌ Cancel
+                {isProcessing ? 'Cancelling...' : '❌ Cancel'}
               </button>
             )}
             {role === 'BOTH' && (
@@ -132,19 +150,19 @@ export default function InvoiceCard({
                 {onPay && (
                   <button
                     onClick={() => onPay(invoice)}
-                    disabled={isLoading}
+                    disabled={isLoading || isProcessing || isSyncing}
                     className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    💳 Pay
+                    {isProcessing ? 'Processing...' : '💳 Pay'}
                   </button>
                 )}
                 {onCancel && (
                   <button
                     onClick={() => onCancel(invoice)}
-                    disabled={isLoading}
+                    disabled={isLoading || isProcessing || isSyncing}
                     className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    ❌ Cancel
+                    {isProcessing ? 'Cancelling...' : '❌ Cancel'}
                   </button>
                 )}
               </>

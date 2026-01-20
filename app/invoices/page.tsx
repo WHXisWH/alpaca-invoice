@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import InvoiceCard from '@/components/invoice-card';
+import { toast } from 'sonner';
 
 export default function InvoicesPage() {
   // ✅ 授权检查（独立调用，与详情页一致）
@@ -23,8 +24,30 @@ export default function InvoicesPage() {
     setSearch,
     handleSyncAll,
     handlePay,
-    handleCancel
+    handleCancel,
+    isInvoiceProcessing
   } = useInvoices();
+
+  /**
+   * ✅ 列表页操作对齐详情页逻辑：
+   * - 仅在链上确认（CONFIRMED）后才允许 Pay / Cancel
+   * - SENDING 状态时按钮禁用，并提示用户先等待/Sync
+   */
+  const guardActionByChainStatus = (
+    chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined,
+    actionName: 'pay' | 'cancel'
+  ) => {
+    if (chainStatus !== 'CONFIRMED') {
+      toast.warning('Not ready yet', {
+        description:
+          actionName === 'pay'
+            ? 'This invoice is still sending. Please wait for chain confirmation (or click Sync All) before paying.'
+            : 'This invoice is still sending. Please wait for chain confirmation (or click Sync All) before cancelling.'
+      });
+      return false;
+    }
+    return true;
+  };
 
   const tabs = [
     { key: 'all' as const, label: 'All' },
@@ -153,33 +176,49 @@ export default function InvoicesPage() {
 
       {/* Invoice Cards */}
       <div className="grid gap-3 md:grid-cols-2">
-        {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }, index) => (
-          <div key={`${invoice.invoiceHash}-${index}`} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">
-                {role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}
-              </span>
-              {/* ✅ 显示链上确认状态（与详情页一致） */}
-              {chainStatus === 'CONFIRMED' ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                  ✓ Confirmed
+        {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }, index) => {
+          // ✅ 添加：检查每张发票的处理状态
+          const isProcessing = isInvoiceProcessing(invoice.id);
+          // ✅ 直接使用 chainStatus 判断是否在同步（更可靠，因为已通过 handleStatusUpdate 更新）
+          const isSyncingInvoice = chainStatus === 'SENDING';
+          
+          return (
+            <div key={`${invoice.invoiceHash}-${index}`} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  {role === 'BOTH' ? 'Buyer & seller' : role === 'SELLER' ? 'Seller view' : 'Buyer view'}
                 </span>
-              ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                  ⏳ Sending
-                </span>
-              )}
+                {/* ✅ 显示链上确认状态（与详情页一致） */}
+                {chainStatus === 'CONFIRMED' ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                    ✓ Confirmed
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                    ⏳ Sending
+                  </span>
+                )}
+              </div>
+              <InvoiceCard 
+                invoice={invoice}
+                role={role}
+                statusConfig={statusConfig}
+                isLoading={isLoading}
+                // ✅ 添加：传递处理状态
+                isProcessing={isProcessing}
+                isSyncing={isSyncingInvoice}
+                onPay={(inv) => {
+                  if (!guardActionByChainStatus(chainStatus, 'pay')) return;
+                  handlePay(inv);
+                }}
+                onCancel={(inv) => {
+                  if (!guardActionByChainStatus(chainStatus, 'cancel')) return;
+                  handleCancel(inv);
+                }}
+              />
             </div>
-            <InvoiceCard 
-              invoice={invoice}
-              role={role}
-              statusConfig={statusConfig}
-              isLoading={isLoading}
-              onPay={handlePay}
-              onCancel={handleCancel}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

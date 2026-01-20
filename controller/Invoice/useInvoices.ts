@@ -4,9 +4,10 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { AleoField, Invoice } from '@/lib/types';
-import { cleanAleoNumber } from '@/lib/utils';
 import { IInvoices } from './IInvoices';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
+import { updateInvoiceFromPaymentRecord, updateInvoiceFromInvoiceRecord } from '@/lib/invoice';
+import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
 import { useInvoiceListRole } from './useInvoiceListRole';
 import { useInvoiceListFilter } from './useInvoiceListFilter';
 import { useInvoiceListPolling } from './useInvoiceListPolling';
@@ -33,7 +34,7 @@ export function useInvoices(): IInvoices {
   const wallet = useWallet();
   const { publicKey, masterKey } = useUserStore();
   const { invoices, updateInvoice } = useInvoiceStore();
-  const { scanAllRecords } = useInvoiceChainScan();
+  const { scanAllRecords, scanAllInvoiceRecords, scanAllPaymentRecords } = useInvoiceChainScan();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // 1. 初始化逻辑
@@ -81,43 +82,102 @@ export function useInvoices(): IInvoices {
   const { executePay, executeCancel } = useTransactionController();
   const { handleError } = useErrorHandler();
   
+  // ✅ 添加：跟踪每张发票的处理状态
+  const [processingInvoiceIds, setProcessingInvoiceIds] = useState<Set<string>>(new Set());
+  
   const handlePay = useCallback(async (invoice: Invoice) => {
+    // ✅ 设置处理状态
+    setProcessingInvoiceIds(prev => new Set(prev).add(invoice.id));
+    
     try {
       toast.loading('Processing payment...', { id: `pay-${invoice.id}` });
       const transactionId = await executePay(invoice);
+      
+      // ✅ 清除处理状态（executePay 已完成，现在进入轮询阶段）
+      setProcessingInvoiceIds(prev => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
+      
       toast.success('Payment successful!', {
         id: `pay-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      await initialize();
+      
+      // 1. 更新 chainStatusMap 为 SENDING（因为 executePay 已经更新了 invoice metadata）
+      handleStatusUpdate(invoice.invoiceHash, 'SENDING');
+      
+      // 2. 启动轮询（如果还没有启动）
+      startPolling([invoice.invoiceHash]);
     } catch (error) {
       toast.error('Payment failed', {
         id: `pay-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
+      // ✅ 错误时清除处理状态
+      setProcessingInvoiceIds(prev => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
     }
-  }, [executePay, initialize, handleError]);
+  }, [executePay, handleError, handleStatusUpdate, startPolling]);
 
   const handleCancel = useCallback(async (invoice: Invoice) => {
+    // ✅ 设置处理状态
+    setProcessingInvoiceIds(prev => new Set(prev).add(invoice.id));
+    
     try {
       toast.loading('Cancelling invoice...', { id: `cancel-${invoice.id}` });
       const transactionId = await executeCancel(invoice);
+      // ✅ executeCancel 已经通过 updateInvoice 更新了 invoice metadata 为 SENDING
+      
+      // ✅ 清除处理状态（executeCancel 已完成，现在进入轮询阶段）
+      setProcessingInvoiceIds(prev => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
+      
       toast.success('Invoice cancelled successfully', { 
         id: `cancel-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      await initialize();
+      
+      // ✅ 不调用 initialize()，而是：
+      // 1. 更新 chainStatusMap 为 SENDING（因为 executeCancel 已经更新了 invoice metadata）
+      handleStatusUpdate(invoice.invoiceHash, 'SENDING');
+      
+      // 2. 启动轮询（如果还没有启动）
+      startPolling([invoice.invoiceHash]);
     } catch (error) {
       toast.error('Failed to cancel invoice', {
         id: `cancel-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
+      // ✅ 错误时清除处理状态
+      setProcessingInvoiceIds(prev => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
     }
-  }, [executeCancel, initialize, handleError]);
+  }, [executeCancel, handleError, handleStatusUpdate, startPolling]);
 
-  // 6. 批量同步
+  // ✅ 添加：检查发票是否正在处理
+  const isInvoiceProcessing = useCallback((invoiceId: string) => {
+    return processingInvoiceIds.has(invoiceId);
+  }, [processingInvoiceIds]);
+
+  // ✅ 添加：检查发票是否正在同步（通过检查 metadata.confirmationStatus）
+  const isInvoiceSyncing = useCallback((invoice: Invoice) => {
+    return invoice.metadata?.confirmationStatus === 'SENDING';
+  }, []);
+
+  // 6. 批量同步（改进版：同时处理 PaymentRecord 和 InvoiceRecord）
   const handleSyncAll = useCallback(async () => {
     if (!publicKey || !masterKey) {
       toast.error('Unable to sync', {
@@ -130,41 +190,87 @@ export function useInvoices(): IInvoices {
     try {
       toast.loading('Syncing all invoices...', { id: 'sync-all' });
       
-      // 扫描链上 records
-      const chainRecords = await scanAllRecords();
+      // ✅ 同时扫描 InvoiceRecord 和 PaymentRecord
+      const invoiceRecords = await scanAllInvoiceRecords();
+      const paymentRecords = await scanAllPaymentRecords();
+      
+      // ✅ 使用 InvoiceStatusValidator 进行状态验证
+      const statusValidator = new InvoiceStatusValidator();
       
       let updatedCount = 0;
       const newStatusMap = new Map(chainStatusMap);
       
       for (const invoice of invoices) {
-        const chainRecord = chainRecords.get(invoice.invoiceHash);
-        if (chainRecord) {
-          const cleanInvoiceId = chainRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') as AleoField;
-          const cleanAmount = cleanAleoNumber(chainRecord.amount);
-          const cleanDueDate = cleanAleoNumber(chainRecord.due_date);
-          const cleanCreatedAt = cleanAleoNumber(chainRecord.created_at);
-          const cleanStatus = cleanAleoNumber(chainRecord.status);
-
-          await updateInvoice(invoice.id, {
-            id: cleanInvoiceId,
-            invoiceHash: invoice.invoiceHash,
-            seller: chainRecord.seller as any,
-            buyer: chainRecord.buyer as any,
-            amount: BigInt(cleanAmount) as any,
-            dueDate: new Date(Number(cleanDueDate) * 1000),
-            createdAt: new Date(Number(cleanCreatedAt) * 1000),
-            status: Number(cleanStatus) as any,
-            metadata: {
-              confirmationStatus: 'CONFIRMED',
-              dataSource: 'chain'
+        try {
+          // ✅ 优先检查 PaymentRecord（支付记录优先级更高）
+          const paymentRecord = paymentRecords.get(invoice.id);
+          if (paymentRecord) {
+            // ✅ 使用验证服务检查是否符合预期
+            const validation = statusValidator.validateRecord(
+              paymentRecord,
+              invoice.metadata?.action,
+              invoice.status
+            );
+            
+            if (validation.shouldConfirm) {
+              // ✅ 使用公共函数从 PaymentRecord 更新
+              const updatedInvoice = updateInvoiceFromPaymentRecord(invoice, paymentRecord);
+              
+              await updateInvoice(invoice.id, {
+                ...updatedInvoice,
+                metadata: {
+                  confirmationStatus: 'CONFIRMED',
+                  dataSource: 'chain',
+                  action: invoice.metadata?.action
+                }
+              } as any, {
+                masterKey,
+                persistFull: true
+              });
+              
+              newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
+              updatedCount++;
+              console.log(`✅ [handleSyncAll] Updated invoice from PaymentRecord: ${invoice.invoiceHash}`);
+              continue;
             }
-          } as any, {
-            masterKey,
-            persistFull: true
-          });
+          }
           
-          newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
-          updatedCount++;
+          // ✅ 如果没有 PaymentRecord 或不符合预期，检查 InvoiceRecord
+          const invoiceRecord = invoiceRecords.get(invoice.invoiceHash);
+          if (invoiceRecord) {
+            // ✅ 使用验证服务检查是否符合预期
+            const validation = statusValidator.validateRecord(
+              invoiceRecord,
+              invoice.metadata?.action,
+              invoice.status
+            );
+            
+            if (validation.shouldConfirm) {
+              // ✅ 使用公共函数从 InvoiceRecord 更新
+              const updatedInvoice = updateInvoiceFromInvoiceRecord(invoice, invoiceRecord);
+              
+              await updateInvoice(invoice.id, {
+                ...updatedInvoice,
+                metadata: {
+                  confirmationStatus: 'CONFIRMED',
+                  dataSource: 'chain',
+                  action: invoice.metadata?.action
+                }
+              } as any, {
+                masterKey,
+                persistFull: true
+              });
+              
+              newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
+              updatedCount++;
+              console.log(`✅ [handleSyncAll] Updated invoice from InvoiceRecord: ${invoice.invoiceHash}`);
+            } else {
+              console.log(`⏭️ [handleSyncAll] Skipped invoice ${invoice.invoiceHash}: ${validation.reason}`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ [handleSyncAll] Failed to sync invoice ${invoice.invoiceHash}:`, error);
+          // 继续处理其他发票，不中断整个流程
         }
       }
       
@@ -183,7 +289,7 @@ export function useInvoices(): IInvoices {
     } finally {
       setIsSyncing(false);
     }
-  }, [publicKey, masterKey, invoices, scanAllRecords, updateInvoice, chainStatusMap, setChainStatusMap]);
+  }, [publicKey, masterKey, invoices, chainStatusMap, setChainStatusMap, updateInvoice, scanAllInvoiceRecords, scanAllPaymentRecords]);
 
   // 自动初始化
   useEffect(() => {
@@ -221,6 +327,9 @@ export function useInvoices(): IInvoices {
     refresh: initialize,
     handleSyncAll,
     handlePay,
-    handleCancel
+    handleCancel,
+    // ✅ 添加：导出状态检查函数
+    isInvoiceProcessing,
+    isInvoiceSyncing
   };
 }

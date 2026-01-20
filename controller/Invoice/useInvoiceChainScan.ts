@@ -8,6 +8,7 @@ import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/I
 import { AleoField } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';
 import { cleanAleoField } from '@/lib/invoice';
+import { cleanAleoNumber } from '@/lib/utils';
 
 const PROGRAM_ID = 'zk_invoice.aleo';
 
@@ -31,13 +32,17 @@ export function useInvoiceChainScan() {
   /**
    * 扫描所有链上 InvoiceRecord
    * 返回 Map<invoiceHash, AleoInvoiceRecord & { originalInvoiceId?: string }>
-   * ✅ 保留原始的 invoice_id（带 .private 后缀）用于 IndexedDB key
+   * ✅ 改进：正确处理多个相同 invoice_hash 的 records，优先选择 unspent 和更高 status 的
    */
   const scanAllInvoiceRecords = useCallback(async (): Promise<Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>> => {
-    const recordsMap = new Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>();
+    const recordsMap = new Map<string, {
+      record: AleoInvoiceRecord & { originalInvoiceId?: string };
+      spent: boolean;
+      statusNum: number;
+    }>();
     
     if (!walletService || !publicKey) {
-      return recordsMap;
+      return new Map();
     }
 
     try {
@@ -48,6 +53,9 @@ export function useInvoiceChainScan() {
 
       for (const record of records) {
         try {
+          // ✅ 检查 record 的 spent 状态（与 scanInvoiceRecord 保持一致）
+          const isSpent = record?.spent === true || record?.spent === 'true';
+          
           // ✅ 在解析之前，从原始 record.data 中提取 invoice_id（保留 .private 后缀）
           let originalInvoiceId: string | undefined;
           if (record && typeof record === 'object' && record.data) {
@@ -59,11 +67,31 @@ export function useInvoiceChainScan() {
           if (parsed?.invoiceRecord) {
             const cleanChainHash = cleanAleoField(parsed.invoiceRecord.invoice_hash || '');
             if (cleanChainHash) {
-              // ✅ 将原始的 invoice_id 附加到解析后的 record 上
-              recordsMap.set(cleanChainHash, {
-                ...parsed.invoiceRecord,
-                originalInvoiceId // 保留原始格式（带 .private）
-              });
+              // ✅ 计算 status 数值（用于择优：CANCELLED=2 > PENDING=0）
+              const statusNum = Number(cleanAleoNumber(parsed.invoiceRecord.status));
+              
+              const candidate = {
+                record: {
+                  ...parsed.invoiceRecord,
+                  originalInvoiceId // 保留原始格式（带 .private）
+                },
+                spent: isSpent,
+                statusNum: statusNum
+              };
+              
+              const existing = recordsMap.get(cleanChainHash);
+              
+              // ✅ 选择策略：
+              // 1. 优先选择 unspent 的 record（spent === false）
+              // 2. 如果 spent 状态相同，优先选择 status 更大的（cancelled=2 > pending=0）
+              const shouldReplace = !existing || 
+                (existing.spent && !isSpent) || // 现有的是 spent，候选的是 unspent
+                (existing.spent === isSpent && statusNum > existing.statusNum); // spent 相同，选择 status 更大的
+              
+              if (shouldReplace) {
+                recordsMap.set(cleanChainHash, candidate);
+                console.log(`✅ [scanAllInvoiceRecords] Selected record for ${cleanChainHash}: spent=${isSpent}, status=${statusNum}`);
+              }
             }
           }
         } catch (error) {
@@ -72,11 +100,17 @@ export function useInvoiceChainScan() {
         }
       }
 
-      console.log(`✅ [scanAllInvoiceRecords] Successfully parsed ${recordsMap.size} invoice records`);
-      return recordsMap;
+      // ✅ 转换为最终格式（只返回 record，不包含内部字段）
+      const result = new Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>();
+      for (const [hash, data] of recordsMap.entries()) {
+        result.set(hash, data.record);
+      }
+
+      console.log(`✅ [scanAllInvoiceRecords] Successfully parsed ${result.size} invoice records`);
+      return result;
     } catch (error) {
       console.error('Failed to scan chain records:', error);
-      return recordsMap;
+      return new Map();
     }
   }, [walletService, publicKey, cryptoService]);
 
