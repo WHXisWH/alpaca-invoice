@@ -7,7 +7,7 @@ import { cleanAleoNumber } from '@/lib/utils';
  * 发票状态验证服务实现
  * 职责：根据 action 类型验证链上 record 是否符合预期状态
  */
-export class InvoiceStatusValidatorImpl implements IInvoiceStatusValidator {
+export class InvoiceStatusValidator implements IInvoiceStatusValidator {
   validateRecord(
     record: AleoInvoiceRecord | AleoPaymentRecord | null,
     action: 'create' | 'cancel' | 'pay' | undefined,

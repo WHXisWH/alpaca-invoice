@@ -17,13 +17,14 @@ describe('InvoiceStatusValidatorAdapter', () => {
       id: 'invoice123field' as any,
       seller: 'aleo1seller',
       buyer: 'aleo1buyer',
-      amount: '1000000',
+      amount: BigInt('1000000'),
       invoiceHash: 'hash123field' as any,
       dueDate: new Date(),
       createdAt: new Date(),
       status: InvoiceStatus.PENDING,
       metadata: {
         confirmationStatus: 'SENDING',
+        lastUpdated: new Date(),
         dataSource: 'local',
         action: 'create'
       }
@@ -273,6 +274,7 @@ describe('InvoiceStatusValidatorAdapter', () => {
         ...mockInvoice,
         metadata: {
           confirmationStatus: 'SENDING',
+          lastUpdated: new Date(),
           dataSource: 'local'
           // 没有 action
         }

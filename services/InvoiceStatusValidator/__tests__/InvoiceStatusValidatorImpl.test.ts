@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { InvoiceStatusValidatorImpl } from '../InvoiceStatusValidatorImpl';
+import { InvoiceStatusValidator } from '../InvoiceStatusValidatorImpl';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { InvoiceStatus } from '@/lib/types';
 
@@ -14,11 +14,11 @@ vi.mock('@/lib/utils', () => ({
   }
 }));
 
-describe('InvoiceStatusValidatorImpl', () => {
-  let validator: InvoiceStatusValidatorImpl;
+describe('InvoiceStatusValidator', () => {
+  let validator: InvoiceStatusValidator;
 
   beforeEach(() => {
-    validator = new InvoiceStatusValidatorImpl();
+    validator = new InvoiceStatusValidator();
   });
 
   describe('validateRecord - null 记录', () => {
