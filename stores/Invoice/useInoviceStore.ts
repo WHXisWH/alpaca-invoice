@@ -228,6 +228,117 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
+   * ✅ 迁移发票 key：删除旧记录，创建新记录（用于 create action 的 key 迁移）
+   */
+  migrateInvoiceKey: async (oldId: AleoField, newId: AleoField, updatedInvoice: Partial<Invoice>, options: {
+    masterKey?: string;
+    persistFull?: boolean;
+  } = {}) => {
+    const { masterKey, persistFull = true } = options;
+    const state = get();
+    
+    // ✅ 查找当前发票
+    let currentInvoice = state.currentInvoice?.id === oldId 
+      ? state.currentInvoice 
+      : state.invoices.find(inv => inv.id === oldId);
+    
+    if (!currentInvoice) {
+      console.warn('⚠️ [Store.migrateInvoiceKey] Invoice not found:', oldId);
+      return;
+    }
+
+    if (!persistFull || !masterKey) {
+      console.warn('⚠️ [Store.migrateInvoiceKey] Missing masterKey or persistFull is false');
+      return;
+    }
+
+    try {
+      // 1. 获取旧记录数据（从 IndexedDB）
+      const oldRecordData = await getStorageService().getData<InvoiceStorageData>(
+        INVOICE_TABLE,
+        oldId
+      );
+
+      if (!oldRecordData) {
+        console.warn('⚠️ [Store.migrateInvoiceKey] Old record not found in IndexedDB:', oldId);
+        return;
+      }
+
+      // 2. 构建完整的新发票对象
+      const finalMetadata = updatedInvoice.metadata || {
+        confirmationStatus: 'CONFIRMED' as ChainConfirmationStatus,
+        dataSource: 'chain' as const,
+        action: (currentInvoice.metadata?.action || 'create') as 'create' | 'cancel' | 'pay',
+        lastUpdated: new Date()
+      };
+      
+      const updatedInvoiceFull: Invoice = {
+        ...currentInvoice,
+        ...updatedInvoice,
+        id: newId,
+        metadata: finalMetadata
+      };
+
+      // 3. 加密 details（如果存在）
+      const encryptedDetails = updatedInvoiceFull.details
+        ? await getCryptoService().encryptInvoiceDetails(updatedInvoiceFull.details, masterKey)
+        : oldRecordData.encryptedDetails;
+
+      // 4. 构建存储数据
+      const storageData: InvoiceStorageData = {
+        id: newId,
+        invoiceHash: updatedInvoiceFull.invoiceHash,
+        seller: updatedInvoiceFull.seller,
+        buyer: updatedInvoiceFull.buyer,
+        amount: updatedInvoiceFull.amount,
+        dueDate: updatedInvoiceFull.dueDate,
+        createdAt: updatedInvoiceFull.createdAt,
+        status: updatedInvoiceFull.status,
+        encryptedDetails: encryptedDetails,
+        metadata: {
+          confirmationStatus: finalMetadata.confirmationStatus,
+          lastUpdated: new Date(),
+          dataSource: finalMetadata.dataSource,
+          action: finalMetadata.action
+        }
+      };
+
+      // 5. 删除旧记录
+      await getStorageService().deleteData(INVOICE_TABLE, [oldId]);
+      console.log(`✅ [Store.migrateInvoiceKey] Deleted old record with key: ${oldId}`);
+
+      // 6. 创建新记录
+      await getStorageService().addData(INVOICE_TABLE, newId, storageData);
+      console.log(`✅ [Store.migrateInvoiceKey] Created new record with key: ${newId}`);
+
+      // 7. 更新内存状态
+      set((state) => {
+        const updatedInvoices = state.invoices
+          .filter(inv => inv.id !== oldId)
+          .concat(updatedInvoiceFull);
+
+        const newCurrentInvoice = (state.currentInvoice?.id === oldId || state.currentInvoice?.invoiceHash === updatedInvoiceFull.invoiceHash)
+          ? updatedInvoiceFull
+          : state.currentInvoice;
+
+        return {
+          invoices: updatedInvoices,
+          currentInvoice: newCurrentInvoice
+        };
+      });
+
+      console.log('✅ [Store.migrateInvoiceKey] Key migration completed', {
+        oldId,
+        newId,
+        invoiceHash: updatedInvoiceFull.invoiceHash
+      });
+    } catch (error) {
+      console.error('❌ [Store.migrateInvoiceKey] Failed to migrate key:', error);
+      throw error;
+    }
+  },
+
+  /**
    * ✅ 根据 hash 获取发票的 metadata（confirmationStatus）
    */
   getInvoiceMetadata: async (hash: AleoField): Promise<{ confirmationStatus: ChainConfirmationStatus } | null> => {

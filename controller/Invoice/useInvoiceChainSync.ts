@@ -80,19 +80,53 @@ export function useInvoiceChainSync(
         console.log(`✅ [confirmInvoice] Updated from InvoiceRecord - Status: ${updatedInvoice.status}`);
       }
       
-      // ✅ 更新 Store（会自动同步到 IndexedDB，包括 metadata 更新为 CONFIRMED）
-      // updateInvoice 会自动更新 currentInvoice，useInvoiceData 会通过 zustand 订阅自动响应
-      await updateInvoice(latestInvoice.id, {
-        ...updatedInvoice,
-        metadata: {
-          confirmationStatus: 'CONFIRMED',
-          dataSource: 'chain',
-          action: latestInvoice.metadata?.action // ✅ 保持原有的 action
-        }
-      } as any, {
-        masterKey: masterKey,
-        persistFull: true
-      });
+      // ✅ 检测是否需要 key 迁移（action === 'create' 且 id 发生变化）
+      const oldId = latestInvoice.id;
+      const newId = updatedInvoice.id;
+      const needsKeyMigration = latestInvoice.metadata?.action === 'create' && newId && newId !== oldId;
+      
+      if (needsKeyMigration) {
+        console.log(`🔄 [confirmInvoice] Key migration needed for create action: ${oldId} → ${newId}`);
+        
+        // ✅ 使用 store 的 migrateInvoiceKey 方法
+        await useNewInvoiceStore.getState().migrateInvoiceKey(
+          oldId,
+          newId!,
+          {
+            ...updatedInvoice,
+            metadata: {
+              confirmationStatus: 'CONFIRMED',
+              dataSource: 'chain',
+              action: 'create',
+              lastUpdated: new Date()
+            }
+          } as any,
+          {
+            masterKey: masterKey,
+            persistFull: true
+          }
+        );
+        
+        console.log('✅ [confirmInvoice] Key migration completed', {
+          invoiceHash,
+          oldId,
+          newId,
+          status: updatedInvoice.status
+        });
+      } else {
+        // ✅ 常规更新流程（非 create action 或 id 未变化）
+        await updateInvoice(latestInvoice.id, {
+          ...updatedInvoice,
+          metadata: {
+            confirmationStatus: 'CONFIRMED',
+            dataSource: 'chain',
+            action: latestInvoice.metadata?.action // ✅ 保持原有的 action
+          }
+        } as any, {
+          masterKey: masterKey,
+          persistFull: true
+        });
+      }
 
       console.log('✅ Invoice confirmed and synced to IndexedDB', {
         invoiceHash,

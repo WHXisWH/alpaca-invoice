@@ -68,4 +68,10 @@ export interface InvoiceState {
   setCurrentInvoice: (hash: AleoField | null, options?: {
     masterKey?: string;
   }) => Promise<void>;
+  
+  /** ✅ 迁移发票 key：删除旧记录，创建新记录（用于 create action 的 key 迁移） */
+  migrateInvoiceKey: (oldId: AleoField, newId: AleoField, updatedInvoice: Partial<Invoice>, options?: {
+    masterKey?: string;
+    persistFull?: boolean;
+  }) => Promise<void>;
 }
