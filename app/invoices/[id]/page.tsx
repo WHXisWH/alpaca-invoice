@@ -2,10 +2,9 @@
 
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useInvoiceInitialize } from '@/controller/Invoice/useInvoiceInitialize';
 import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
+import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
-import { InitializationStatus } from '@/stores/Invoice/InvoiceState';
 import { format } from 'date-fns';
 
 export default function InvoiceDetailPage() {
@@ -15,18 +14,14 @@ export default function InvoiceDetailPage() {
     [params]
   );
 
-  // 初始化加载（场景A）
-  const { 
-    initStatus, 
-    handleUnlock, 
-    isAuthRequired, 
-    isLoading: isInitializing 
-  } = useInvoiceInitialize();
+  // ✅ 授权检查（独立调用）
+  const { isAuthRequired, handleUnlock } = useAuthCheck();
 
-  // 详情页对账逻辑（场景B & C）
+  // ✅ 详情页对账逻辑（场景B & C）
+  // 会自动根据 metadata.confirmationStatus === 'SENDING' 开启轮询
   const { 
     invoice, 
-    currentStatus, 
+    isLoadingInvoice,
     isSyncing, 
     isConfirmed,
     userRole,
@@ -63,8 +58,8 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // 显示加载状态
-  if (isInitializing || initStatus === InitializationStatus.LOADING_DB) {
+  // ✅ 显示加载状态（从 IndexedDB 加载）
+  if (isLoadingInvoice) {
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
@@ -75,12 +70,19 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // 发票不存在
+  // ✅ 发票不存在 - 显示更友好的提示（可能是正在上链）
   if (!invoice) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
-        <p className="text-sm text-slate-600">Not found: {invoiceHash}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
+          <p className="text-sm text-slate-600 mb-2">
+            Invoice not found: {invoiceHash}
+          </p>
+          <p className="text-xs text-slate-500">
+            This invoice may still be processing on the blockchain. Please wait a moment and refresh.
+          </p>
+        </div>
       </div>
     );
   }

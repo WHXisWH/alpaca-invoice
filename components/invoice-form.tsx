@@ -67,7 +67,7 @@ export default function InvoiceForm() {
         details
       });
       
-      // 归档成功后，跳转到发票详情页（使用链上的 nonceField
+      // 归档成功后，跳转到发票详情页（发票状态为 SENDING，详情页会自动轮询）
       router.push(`/invoices/${invoiceHash}`);
     } catch (err) {
       // 统一错误处理

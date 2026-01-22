@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { InvoiceStatus } from '@/lib/types';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
+import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
@@ -15,35 +15,54 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
-const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string; status?: InvoiceStatus }> = [
+const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending', status: InvoiceStatus.PENDING },
-  { key: 'paid', label: 'Paid', status: InvoiceStatus.PAID },
-  { key: 'cancelled', label: 'Cancelled', status: InvoiceStatus.CANCELLED }
+  { key: 'pending', label: 'Pending' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'cancelled', label: 'Cancelled' }
 ];
 
 export default function InvoicesPage() {
+  const { isAuthRequired, handleUnlock } = useAuthCheck();
   const {
     filteredInvoices,
     filter,
     search,
     isLoading,
     isSyncing,
-    showAuthModal,
     showLoading,
     showWalletPrompt,
     showMainContent,
     setFilter,
     setSearch,
-    handleUnlock,
     handleSyncAll,
     handlePay,
-    handleCancel
+    handleCancel,
+    isInvoiceProcessing,
+    isInvoiceSyncing
   } = useInvoices();
 
+  // 仅在链上确认后允许操作
+  const guardActionByChainStatus = (
+    chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined,
+    actionName: 'pay' | 'cancel'
+  ) => {
+    if (chainStatus !== 'CONFIRMED') {
+      toast.warning('Not ready yet', {
+        description:
+          actionName === 'pay'
+            ? 'This invoice is still sending. Please wait for chain confirmation (or click Sync) before paying.'
+            : 'This invoice is still sending. Please wait for chain confirmation (or click Sync) before cancelling.'
+      });
+      return false;
+    }
+    return true;
+  };
+
   // Authorization modal
-  if (showAuthModal) {
+  if (isAuthRequired) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="rounded-xl border border-primary-200 bg-white p-8 text-center shadow-sm">
@@ -199,20 +218,46 @@ export default function InvoicesPage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {filteredInvoices.map(({ invoice, role }) => (
-            <div key={invoice.id} className="space-y-2">
-              <div className="text-xs font-medium text-primary-500">
-                {role === 'BOTH' ? 'Buyer & Seller' : role === 'SELLER' ? 'As Seller' : 'As Buyer'}
+          {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }) => {
+            const isProcessing = isInvoiceProcessing(invoice.id);
+            const isSyncingInvoice = isInvoiceSyncing ? isInvoiceSyncing(invoice) : chainStatus === 'SENDING';
+
+            return (
+              <div key={invoice.id} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium text-primary-500">
+                    {role === 'BOTH' ? 'Buyer & Seller' : role === 'SELLER' ? 'As Seller' : 'As Buyer'}
+                  </div>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold',
+                      chainStatus === 'CONFIRMED'
+                        ? 'bg-success-100 text-success-700'
+                        : 'bg-warning-50 text-warning-700'
+                    )}
+                  >
+                    {chainStatus === 'CONFIRMED' ? 'Confirmed' : 'Sending'}
+                  </span>
+                </div>
+                <InvoiceCard
+                  invoice={invoice}
+                  role={role}
+                  statusConfig={statusConfig}
+                  isLoading={isLoading}
+                  isProcessing={isProcessing}
+                  isSyncing={isSyncingInvoice}
+                  onPay={(inv) => {
+                    if (!guardActionByChainStatus(chainStatus, 'pay')) return;
+                    handlePay(inv);
+                  }}
+                  onCancel={(inv) => {
+                    if (!guardActionByChainStatus(chainStatus, 'cancel')) return;
+                    handleCancel(inv);
+                  }}
+                />
               </div>
-              <InvoiceCard
-                invoice={invoice}
-                role={role}
-                isLoading={isLoading}
-                onPay={handlePay}
-                onCancel={handleCancel}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

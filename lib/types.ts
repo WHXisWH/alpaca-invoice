@@ -38,6 +38,12 @@ export interface Invoice {
   createdAt: Date;
   status: InvoiceStatus;
   details?: InvoiceDetails;
+  metadata?: {  // ✅ 新增：可选的 metadata（与 InvoiceStorageData 保持一致）
+    confirmationStatus: 'SENDING' | 'CONFIRMED';
+    lastUpdated: Date;
+    dataSource: 'local' | 'chain';
+    action?: 'create' | 'cancel' | 'pay'; // ✅ 标识当前操作类型
+  };
 }
 
 export interface EncryptedPayload {

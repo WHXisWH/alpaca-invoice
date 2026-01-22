@@ -259,8 +259,8 @@ export class CryptoService implements ICryptoService {
         };
         
         const cleaned = cleanRecord(parsed);
-        console.log('🧹 [parseAleoRecord] Original record:', parsed);
-        console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
+        // console.log('🧹 [parseAleoRecord] Original record:', parsed);
+        // console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
         return cleaned as T;
       }
       
@@ -311,6 +311,14 @@ export class CryptoService implements ICryptoService {
     localDetails: InvoiceDetails, 
     chainInvoiceHash: AleoField
   ): Promise<boolean> {
+    if (!localDetails || typeof localDetails !== 'object') {
+      throw new CryptoServiceError(
+        CryptoError.HASH_MISMATCH,
+        'Invalid invoice details for integrity verification',
+        { localDetails }
+      );
+    }
+
     try {
       // 重新计算本地明细的哈希
       const computedHash = await this.computeInvoiceHash(localDetails);

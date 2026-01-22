@@ -1,26 +1,30 @@
 'use client';
 
-import type { Invoice, AleoField } from '@/lib/types';
+import type { Invoice } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CreditCard, X, Eye, Copy } from 'lucide-react';
+import { CreditCard, X, Eye, Copy, Loader2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import type { StatusConfig } from '@/controller/Invoice/IInvoices';
 
 interface InvoiceCardProps {
   invoice: Invoice;
   role?: 'SELLER' | 'BUYER' | 'BOTH';
+  statusConfig?: StatusConfig;
   showFullAddresses?: boolean;
   isLoading?: boolean;
-  onPay?: (invoiceId: AleoField) => void;
-  onCancel?: (invoiceId: AleoField) => void;
+  isProcessing?: boolean;
+  isSyncing?: boolean;
+  onPay?: (invoice: Invoice) => void;
+  onCancel?: (invoice: Invoice) => void;
 }
 
 const statusBarColors = {
@@ -33,8 +37,11 @@ const statusBarColors = {
 export default function InvoiceCard({
   invoice,
   role,
+  statusConfig: _statusConfig,
   showFullAddresses = false,
   isLoading = false,
+  isProcessing = false,
+  isSyncing = false,
   onPay,
   onCancel,
 }: InvoiceCardProps) {
@@ -78,6 +85,13 @@ export default function InvoiceCard({
             </div>
             <StatusBadge status={invoice.status} />
           </div>
+
+          {(isProcessing || isSyncing) && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-700">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{isProcessing ? 'Processing transaction...' : 'Syncing chain records...'}</span>
+            </div>
+          )}
 
           {/* Amount */}
           <div className="mb-4">
@@ -127,22 +141,40 @@ export default function InvoiceCard({
               <>
                 {(role === 'BUYER' || role === 'BOTH') && onPay && (
                   <button
-                    onClick={() => onPay(invoice.id)}
-                    disabled={isLoading}
+                    onClick={() => onPay(invoice)}
+                    disabled={isLoading || isProcessing || isSyncing}
                     className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-success-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-success-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <CreditCard className="h-4 w-4" />
-                    Pay
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="h-4 w-4" />
+                        Pay
+                      </>
+                    )}
                   </button>
                 )}
                 {(role === 'SELLER' || role === 'BOTH') && onCancel && (
                   <button
-                    onClick={() => onCancel(invoice.id)}
-                    disabled={isLoading}
+                    onClick={() => onCancel(invoice)}
+                    disabled={isLoading || isProcessing || isSyncing}
                     className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-error-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-error-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <X className="h-4 w-4" />
-                    Cancel
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Cancelling...
+                      </>
+                    ) : (
+                      <>
+                        <X className="h-4 w-4" />
+                        Cancel
+                      </>
+                    )}
                   </button>
                 )}
               </>

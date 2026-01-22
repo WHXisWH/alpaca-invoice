@@ -11,20 +11,20 @@ See `/docs/DESIGN_SYSTEM.md` for detailed prompts.
 - [ ] `logo/logo-favicon.ico` - 32x32
 
 ## Mascot - Hero (2 images)
-- [ ] `mascot/mascot-hero-waving.png` - 400x400
+- [x] `mascot/mascot-hero-waving.png` - 400x400
 - [ ] `mascot/mascot-hero-waving@2x.png` - 800x800
 
 ## Mascot - Expressions (10 images)
-- [ ] `mascot/mascot-happy.png` - 200x200
-- [ ] `mascot/mascot-thinking.png` - 200x200
-- [ ] `mascot/mascot-celebrating.png` - 200x200
-- [ ] `mascot/mascot-confused.png` - 200x200
-- [ ] `mascot/mascot-sleeping.png` - 200x200
-- [ ] `mascot/mascot-working.png` - 200x200
-- [ ] `mascot/mascot-rich.png` - 200x200
-- [ ] `mascot/mascot-waiting.png` - 200x200
-- [ ] `mascot/mascot-shield.png` - 200x200
-- [ ] `mascot/mascot-writing.png` - 200x200
+- [x] `mascot/mascot-happy.png` - 200x200
+- [x] `mascot/mascot-thinking.png` - 200x200
+- [x] `mascot/mascot-celebrating.png` - 200x200
+- [x] `mascot/mascot-confused.png` - 200x200
+- [x] `mascot/mascot-sleeping.png` - 200x200
+- [x] `mascot/mascot-working.png` - 200x200
+- [x] `mascot/mascot-rich.png` - 200x200
+- [x] `mascot/mascot-waiting.png` - 200x200
+- [x] `mascot/mascot-shield.png` - 200x200
+- [x] `mascot/mascot-writing.png` - 200x200
 
 ## Illustrations (6 images)
 - [ ] `illustrations/illustration-empty-invoices.svg` - 300x200

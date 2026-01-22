@@ -1,4 +1,4 @@
-import { CreateInvoiceParams, AleoTransactionId, AleoField } from '@/lib/types'
+import { CreateInvoiceParams, AleoTransactionId, AleoField, Invoice } from '@/lib/types'
 
 export interface ITxController {
   // --- 状态暴露 ---
@@ -16,17 +16,17 @@ export interface ITxController {
   executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoField>;
 
   /** * 逻辑：
-   * 1. 从链上获取 InvoiceRecord
+   * 1. 从 Invoice 对象获取所需数据
    * 2. 调用 WalletService.requestTransaction 请求支付交易（钱包内部生成 ZKP 证明）
    * 3. 返回交易 ID
    */
-  executePay(invoiceId: AleoField): Promise<AleoTransactionId>;
+  executePay(invoice: Invoice): Promise<AleoTransactionId>;
 
   /** * 执行取消发票
    * 逻辑：
-   * 1. 从链上获取 InvoiceRecord
+   * 1. 从 Invoice 对象获取所需数据）
    * 2. 调用 cancel_invoice transition
    * 3. 更新本地状态
    */
-  executeCancel(invoiceId: AleoField): Promise<AleoTransactionId>;
+  executeCancel(invoice: Invoice): Promise<AleoTransactionId>;
 }

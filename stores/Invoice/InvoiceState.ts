@@ -1,42 +1,77 @@
 import { Invoice, AleoField } from '@/lib/types';
 
 /**
- * 初始化状态枚举
- */
-export enum InitializationStatus {
-  IDLE = 'IDLE',                    // 初始状态
-  AUTH_REQUIRED = 'AUTH_REQUIRED',  // 需要授权（masterKey不存在）
-  LOADING_DB = 'LOADING_DB',        // 正在从IndexedDB加载
-  READY = 'READY'                   // 已就绪
-}
-
-/**
  * 链上确认状态
  */
 export type ChainConfirmationStatus = 'SENDING' | 'CONFIRMED';
 
 /**
+ * 初始化状态
+ */
+export enum InitializationStatus {
+  IDLE = 'IDLE',
+  AUTH_REQUIRED = 'AUTH_REQUIRED',
+  LOADING_DB = 'LOADING_DB',
+  READY = 'READY'
+}
+
+/**
  * Invoice Store State
  * 管理发票列表和状态
+ * 所有方法都直接与 IndexedDB 交互
  */
 export interface InvoiceState {
   // 数据
-  invoices: Invoice[];           // 所有发票列表
-  selectedInvoiceId: AleoField | null;  // 当前选中的发票ID
-  
-  // 初始化状态
-  initStatus: InitializationStatus;  // 初始化状态
-  
-  // 链上确认状态映射（invoiceHash -> ChainConfirmationStatus）
-  confirmationStatus: Map<AleoField, ChainConfirmationStatus>;
+  invoices: Invoice[];     // 所有发票列表
+  currentInvoice: Invoice | null;        // ✅ 当前选中的 invoice（包含 metadata）
 
-  // Actions
-  addInvoice: (invoice: Invoice) => void;
-  updateInvoice: (id: AleoField, updates: Partial<Invoice>) => void;
-  removeInvoice: (id: AleoField) => void;
-  selectInvoice: (id: AleoField | null) => void;
-  clearInvoices: () => void;
-  setInitStatus: (status: InitializationStatus) => void;
-  setConfirmationStatus: (invoiceHash: AleoField, status: ChainConfirmationStatus) => void;
-  getInvoiceByHash: (hash: AleoField) => Invoice | null;
+  // Actions - 只保留5个核心接口
+  /** ✅ 添加发票：接收发票 → 保存到 IndexedDB → 更新内存 */
+  addInvoice: (invoice: Invoice, options?: {
+    masterKey?: string;
+    persistFull?: boolean;  // 是否持久化完整发票（包括基本信息），默认 true
+  }) => Promise<void>;
+  
+  /** ✅ 更新发票：接收更新 → 保存到 IndexedDB → 更新内存 */
+  updateInvoice: (id: AleoField, updates: Partial<Invoice>, options?: {
+    masterKey?: string;
+    persistFull?: boolean;
+  }) => Promise<void>;
+  
+  /** ✅ 根据 hash 获取发票的 metadata（confirmationStatus） */
+  getInvoiceMetadata: (hash: AleoField) => Promise<{ confirmationStatus: ChainConfirmationStatus } | null>;
+  
+  /** ✅ 根据 hash 获取发票：IndexedDB → 解密 → 更新内存（如需要）→ 返回 */
+  getInvoiceByHash: (hash: AleoField, options?: {
+    masterKey?: string;
+    loadFromDB?: boolean;  // 如果内存中没有，是否从 IndexedDB 加载，默认 true
+  }) => Promise<Invoice | null>;
+  
+  /** ✅ 从 IndexedDB 获取所有发票：IndexedDB → 解密 → 更新内存 → 返回 */
+  getAllInvoices: (options?: {
+    masterKey?: string;
+    refreshMemory?: boolean;  // 是否刷新内存状态，默认 true
+  }) => Promise<Invoice[]>;
+  
+  /** ✅ 批量设置发票：接收数组 → 保存到 IndexedDB → 更新内存 */
+  setInvoices: (invoices: Invoice[], options?: {
+    masterKey?: string;
+    persistFull?: boolean;  // 是否持久化，默认 true
+    metadata?: {  // ✅ 添加可选的 metadata 参数
+      confirmationStatus: ChainConfirmationStatus;
+      lastUpdated: Date;
+      dataSource: 'local' | 'chain';
+    };
+  }) => Promise<void>;
+  
+  /** ✅ 设置当前 invoice */
+  setCurrentInvoice: (hash: AleoField | null, options?: {
+    masterKey?: string;
+  }) => Promise<void>;
+  
+  /** ✅ 迁移发票 key：删除旧记录，创建新记录（用于 create action 的 key 迁移） */
+  migrateInvoiceKey: (oldId: AleoField, newId: AleoField, updatedInvoice: Partial<Invoice>, options?: {
+    masterKey?: string;
+    persistFull?: boolean;
+  }) => Promise<void>;
 }
