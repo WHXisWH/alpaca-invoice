@@ -119,7 +119,7 @@ export default function HomePage() {
           <div className="text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-100">
               <Image
-                src="/images/flow/flow-step1-create.svg"
+                src="/images/flow/flow-step1-create.png"
                 alt="Create"
                 width={40}
                 height={40}
@@ -134,7 +134,7 @@ export default function HomePage() {
           <div className="text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-100">
               <Image
-                src="/images/flow/flow-step2-pay.svg"
+                src="/images/flow/flow-step2-pay.png"
                 alt="Pay"
                 width={40}
                 height={40}

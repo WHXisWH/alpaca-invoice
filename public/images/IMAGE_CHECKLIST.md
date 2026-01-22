@@ -35,8 +35,8 @@ See `/docs/DESIGN_SYSTEM.md` for detailed prompts.
 - [ ] `illustrations/illustration-wallet-connect.svg` - 300x200
 
 ## Flow Icons (3 images)
-- [ ] `flow/flow-step1-create.svg` - 120x120
-- [ ] `flow/flow-step2-pay.svg` - 120x120
+- [x] `flow/flow-step1-create.png` - 120x120
+- [x] `flow/flow-step2-pay.png` - 120x120
 - [ ] `flow/flow-step3-receipt.svg` - 120x120
 
 ## Backgrounds (3 images)
