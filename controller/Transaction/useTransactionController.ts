@@ -55,6 +55,22 @@ export function useTransactionController(): ITxController {
           );
         }
 
+        // 校验买家地址（前端已校验，此处再次兜底）
+        const buyerAddress = params.buyer.trim() as AleoAddress;
+        const ALEO_ADDR_REGEX = /^aleo1[0-9a-z]{58}$/;
+        if (!ALEO_ADDR_REGEX.test(buyerAddress)) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Invalid buyer address format. It must start with aleo1 and be 63 characters long.'
+          );
+        }
+        if (buyerAddress === publicKey) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Buyer address cannot be the same as seller address.'
+          );
+        }
+
         // 检查 walletService 是否已初始化
         if (!walletService) {
           throw new WalletServiceError(
@@ -144,7 +160,7 @@ export function useTransactionController(): ITxController {
         const requestId = await walletService.requestTransaction({
           functionName: 'create_invoice',
           inputs: [
-            params.buyer,
+            buyerAddress,
             amountStr,
             `${dueTimestamp}u32`,
             invoiceHash,
@@ -247,7 +263,7 @@ export function useTransactionController(): ITxController {
           await invoiceStore.addInvoice({
             id: invoiceId,
             seller: publicKey,
-            buyer: params.buyer,
+            buyer: buyerAddress,
             amount: params.amount,
             invoiceHash: invoiceHash,
             dueDate: params.dueDate,

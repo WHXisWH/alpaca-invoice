@@ -51,7 +51,26 @@ export default function InvoiceForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // 基础校验：去除首尾空格，校验 Aleo 地址格式，并避免卖家给自己开票
+    const buyerAddress = buyer.trim();
+    const ALEO_ADDR_REGEX = /^aleo1[0-9a-z]{58}$/;
+
+    if (!ALEO_ADDR_REGEX.test(buyerAddress)) {
+      handleError(new Error('买家地址格式无效，请输入以 aleo1 开头的 59 位地址'));
+      return;
+    }
+
+    if (publicKey && buyerAddress === publicKey) {
+      handleError(new Error('买家地址不能与当前钱包地址相同'));
+      return;
+    }
+
+    // 将去空格后的地址写回输入框，避免后续步骤使用未修剪的值
+    if (buyerAddress !== buyer) {
+      setBuyer(buyerAddress);
+    }
+
     const microcredits = BigInt(Math.floor(parseFloat(amount) * 1_000_000));
     const details = buildDetails(
       `INV-${Date.now()}`,
