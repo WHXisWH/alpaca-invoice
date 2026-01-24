@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
-import { CreateInvoiceParams, AleoTransactionId, AleoField, Invoice } from '@/lib/types';
+import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice } from '@/lib/types';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
@@ -26,9 +26,9 @@ export function useTransactionController(): ITxController {
   const { isProcessing, progress, logs, startTx, updateProgress, completeTx } = useTransactionStore();
   const { publicKey, masterKey, setMasterKey } = useUserStore();
   const invoiceStore = useInvoiceStore();
-  const { scanInvoiceRecord } = useInvoiceChainScan(); // ✅ 使用 useInvoiceChainScan 获取 record
+  const { scanInvoiceRecord } = useInvoiceChainScan(); // Use scan hook to fetch record
 
-  // 创建 WalletService 实例（通过适配器，与 useWalletController 保持一致）
+  // Create WalletService instance via adapter (aligned with useWalletController)
   const walletService = useMemo(() => {
     if (!wallet) return null;
     const adapter = createWalletAdapter(wallet);
@@ -36,18 +36,16 @@ export function useTransactionController(): ITxController {
   }, [wallet]);
 
   /**
-   * 执行创建发票的完整流程
-   * 
-   * 流程分为三个阶段（参考架构图）：
-   * 1. 权限检查与数据准备
-   * 2. 零知识证明生成与链上广播
-   * 3. 本地加密归档与状态同步
+   * Execute the full create-invoice flow
+   * 1) permission & data prep
+   * 2) proof generation & chain broadcast
+   * 3) local archival & status sync
    */
   const executeCreateInvoice = useCallback(
     async (params: CreateInvoiceParams): Promise<AleoField> => {
       try {
-        // ==================== 阶段 1: 权限检查与数据准备 ====================
-        // 检查钱包连接
+        // Phase 1: permission & data prep
+        // Ensure wallet is connected
         if (!publicKey) {
           throw new WalletServiceError(
             WalletError.UNAUTHORIZED,
@@ -55,7 +53,7 @@ export function useTransactionController(): ITxController {
           );
         }
 
-        // 校验买家地址（前端已校验，此处再次兜底）
+        // Validate buyer address (frontend already checks; this is a safeguard)
         const buyerAddress = params.buyer.trim() as AleoAddress;
         const ALEO_ADDR_REGEX = /^aleo1[0-9a-z]{58}$/;
         if (!ALEO_ADDR_REGEX.test(buyerAddress)) {

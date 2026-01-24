@@ -12,7 +12,7 @@ function buildDetails(
   description: string,
   amountCredits: number
 ): InvoiceDetails {
-  // 标准化数字，保留6位小数，避免浮点数精度问题
+  // Normalize numbers to 6 decimals to avoid floating-point drift
   const subtotal = Math.round(amountCredits * 1000000) / 1000000;
   const taxRate = 0;
   const taxAmount = 0;
@@ -33,7 +33,7 @@ function buildDetails(
     taxAmount,
     total,
     currency: 'CREDITS'
-    // notes 字段不设置，保持 undefined
+    // Leave notes undefined
   };
 }
 
@@ -52,21 +52,21 @@ export default function InvoiceForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 基础校验：去除首尾空格，校验 Aleo 地址格式，并避免卖家给自己开票
+    // Basic validation: trim, validate Aleo address format, and prevent seller invoicing themselves
     const buyerAddress = buyer.trim();
     const ALEO_ADDR_REGEX = /^aleo1[0-9a-z]{58}$/;
 
     if (!ALEO_ADDR_REGEX.test(buyerAddress)) {
-      handleError(new Error('买家地址格式无效，请输入以 aleo1 开头的 59 位地址'));
+      handleError(new Error('Invalid buyer address. It must start with aleo1 and be 63 characters long.'));
       return;
     }
 
     if (publicKey && buyerAddress === publicKey) {
-      handleError(new Error('买家地址不能与当前钱包地址相同'));
+      handleError(new Error('Buyer address cannot be the same as the current wallet address.'));
       return;
     }
 
-    // 将去空格后的地址写回输入框，避免后续步骤使用未修剪的值
+    // Write the trimmed address back so later steps use the cleaned value
     if (buyerAddress !== buyer) {
       setBuyer(buyerAddress);
     }
@@ -86,10 +86,10 @@ export default function InvoiceForm() {
         details
       });
       
-      // 归档成功后，跳转到发票详情页（发票状态为 SENDING，详情页会自动轮询）
+      // After archiving, jump to invoice detail page; the page will poll while status is SENDING
       router.push(`/invoices/${invoiceHash}`);
     } catch (err) {
-      // 统一错误处理
+      // Centralized error handling
       handleError(err);
     }
   };
@@ -149,11 +149,11 @@ export default function InvoiceForm() {
         />
       </div>
       
-      {/* 进度显示 */}
+      {/* Progress indicator */}
       {isProcessing && (
         <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-900">处理中...</span>
+            <span className="text-sm font-medium text-blue-900">Processing...</span>
             <span className="text-sm text-blue-700">{currentProgress}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
@@ -173,7 +173,7 @@ export default function InvoiceForm() {
         disabled={isProcessing}
         className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
       >
-        {isProcessing ? '处理中...' : 'Create invoice'}
+        {isProcessing ? 'Processing...' : 'Create invoice'}
       </button>
     </form>
   );
