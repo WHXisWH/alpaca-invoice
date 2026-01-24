@@ -1,253 +1,202 @@
-# ZK-Invoice Technical Architecture
+# Alpaca Invoice - Technical Architecture
 
-## System Overview
+## 1. Architecture Overview
 
-ZK-Invoice is a privacy-preserving invoice and payment system built on the Aleo blockchain. It uses zero-knowledge proofs to protect transaction privacy while maintaining verifiability and audit capabilities.
+Alpaca Invoice is a privacy-preserving B2B invoice system built on the Aleo blockchain. The frontend adopts a **4-layer decoupled architecture** to separate privacy data management from UI rendering, achieving deep decoupling between business logic and the Aleo protocol.
+
+### 1.1 Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Frontend Layer                          │
-│  ┌───────────────┐  ┌──────────────┐  ┌────────────────────┐  │
-│  │  Next.js 14   │  │  Tailwind    │  │  Wallet Adapter    │  │
-│  │  (App Router) │  │  CSS         │  │  (@demox-labs)     │  │
-│  └───────────────┘  └──────────────┘  └────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      State Management                           │
-│  ┌───────────────────────┐     ┌───────────────────────────┐   │
-│  │   Zustand Stores      │     │   Local Storage Cache     │   │
-│  │  - walletStore.ts     │     │   - Invoice Records       │   │
-│  │  - invoiceStore.ts    │     │   - Payment Receipts      │   │
-│  └───────────────────────┘     └───────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Service Layer                               │
-│  ┌─────────────────┐  ┌──────────────┐  ┌─────────────────┐   │
-│  │ invoiceService  │  │ paymentService│  │  auditService   │   │
-│  │  - Create       │  │  - Transfer   │  │  - Generate Keys│   │
-│  │  - Verify       │  │  - Mark Paid  │  │  - Verify       │   │
-│  │  - Cancel       │  │  - Receipt    │  │                 │   │
-│  └─────────────────┘  └──────────────┘  └─────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Aleo Blockchain Layer                        │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │              zk_invoice.aleo Program                      │ │
-│  │  ┌──────────────────────────────────────────────────┐    │ │
-│  │  │  Transitions:                                    │    │ │
-│  │  │  - create_invoice                                │    │ │
-│  │  │  - verify_invoice                                │    │ │
-│  │  │  - mark_as_paid                                  │    │ │
-│  │  │  - create_seller_receipt                         │    │ │
-│  │  │  - cancel_invoice                                │    │ │
-│  │  │  - verify_payment                                │    │ │
-│  │  └──────────────────────────────────────────────────┘    │ │
-│  │                                                           │ │
-│  │  ┌──────────────────────────────────────────────────┐    │ │
-│  │  │  Records:                                        │    │ │
-│  │  │  - InvoiceRecord                                 │    │ │
-│  │  │  - PaymentRecord                                 │    │ │
-│  │  └──────────────────────────────────────────────────┘    │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │              credits.aleo Program                         │ │
-│  │  - transfer_private (for payment transfers)               │ │
-│  └───────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              View Layer                                  │
+│   React components for UI rendering and user interaction                 │
+│   (Dashboard, Invoice List, Invoice Detail, Receipts, Audit Center)     │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │ User interaction / State display
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Controller Layer                               │
+│   Custom Hooks orchestrating business logic                              │
+│   (useWalletController, useInvoiceDetail, useTransactionController)     │
+└──────────────────┬──────────────────────────────────┬───────────────────┘
+                   │ Coordinate operations             │ Read/Update state
+                   ▼                                   ▼
+┌─────────────────────────────────┐   ┌───────────────────────────────────┐
+│         Service Layer           │   │           Model Layer              │
+│  Protocol adapters & utilities  │   │    Zustand Stores + IndexedDB     │
+│  (Wallet, Crypto, Storage, RPC) │   │    (User, Invoice, Transaction)   │
+└─────────────────────────────────┘   └───────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Aleo Blockchain                                  │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                    zk_invoice.aleo Program                       │   │
+│   │  Transitions: create_invoice, mark_as_paid, cancel_invoice,     │   │
+│   │               verify_invoice, verify_payment, create_seller_receipt │
+│   │  Records: InvoiceRecord, PaymentRecord                           │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                    credits.aleo Program                          │   │
+│   │  transfer_private (for payment transfers)                        │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Component Architecture
+### 1.2 Layer Responsibilities
 
-### 1. Frontend Layer
+| Layer | Responsibility | Key Characteristics |
+|-------|---------------|---------------------|
+| **View** | UI rendering, user interaction | Pure React components, no business logic |
+| **Controller** | Business logic orchestration | Custom Hooks, state derivation, flow control |
+| **Service** | Protocol adaptation, heavy operations | Wallet interaction, encryption, RPC communication |
+| **Model** | Global state management | Zustand stores, IndexedDB persistence |
 
-**Technology Stack:**
-- **Next.js 14**: React framework with App Router for server-side rendering and routing
-- **TypeScript**: Type-safe development
-- **Tailwind CSS**: Utility-first styling with amber/yellow theme
-- **date-fns**: Date formatting and manipulation
+---
 
-**Key Components:**
+## 2. Layer Details
 
+### 2.1 View Layer
+
+**Responsibility**: UI rendering, user interaction, and display of derived business states.
+
+**Core Characteristics**:
+- Pure React components without business logic
+- Interacts only with Controller layer
+- Does not directly read Store or call Aleo SDK
+
+**Page Structure**:
 ```
 app/
 ├── page.tsx                    # Landing page
-├── layout.tsx                  # Root layout with header/footer
-├── dashboard/
-│   └── page.tsx               # Main dashboard
+├── layout.tsx                  # Root layout with sidebar
+├── dashboard/page.tsx          # Dashboard with statistics
 ├── invoices/
-│   ├── page.tsx               # Invoice list
-│   ├── create/
-│   │   └── page.tsx          # Create invoice form
-│   └── [id]/
-│       └── page.tsx          # Invoice detail view
-├── receipts/
-│   └── page.tsx              # Payment receipts
-└── audit/
-    └── page.tsx              # Audit key generator
-
-components/
-├── invoice-card.tsx           # Invoice display card
-├── invoice-form.tsx           # Invoice creation form
-├── function-guide.tsx         # Contract function reference
-├── receipt-viewer.tsx         # Payment receipt display
-├── audit-key-generator.tsx    # Audit key generator
-├── wallet-connect-button.tsx  # Wallet connection UI
-├── wallet-watcher.tsx         # Wallet state monitoring
-└── providers.tsx              # Context providers
+│   ├── page.tsx               # Invoice list with filtering
+│   ├── create/page.tsx        # Create invoice form
+│   └── [id]/page.tsx          # Invoice detail view
+├── receipts/page.tsx          # Payment receipts
+└── audit/page.tsx             # Audit key generator
 ```
 
-### 2. State Management
+### 2.2 Controller Layer
 
-**Zustand Stores:**
+**Responsibility**: System's "command center". Receives View instructions, coordinates Service operations, and updates Model based on results.
 
-**walletStore.ts**
-- Connected state
-- Wallet address
-- Connection/disconnection handlers
-- Wallet adapter integration
+**Core Functions**:
+1. **State Derivation**: Derive business semantics from raw Records (e.g., `isPaid`, `canCancel`)
+2. **Flow Control**: Manage async transaction lifecycle (Pending → Mining → Confirmed)
+3. **Error Handling**: Capture Service errors and transform to user-friendly messages
 
-**invoiceStore.ts**
-- Sent invoices list
-- Received invoices list
-- Payment receipts
-- CRUD operations (create, fetch, pay, cancel)
-- Filter state (all, pending, paid, cancelled)
+**Module Responsibilities**:
 
-**Storage Strategy:**
-- Uses localStorage for persistence
-- Records are stored as JSON
-- Automatic sync on wallet connection
-- Cache invalidation on updates
+| Hook | Responsibility |
+|------|---------------|
+| `useWalletController` | Wallet connection, balance polling, identity authorization |
+| `useAuthCheck` | Independent authorization check, reusable across pages |
+| `useInvoices` | Invoice list compositor (initialize, poll, filter, role) |
+| `useInvoiceDetail` | Invoice detail compositor (data, role, chain sync, actions) |
+| `useTransactionController` | Transaction flow management (create/pay/cancel) |
+| `useAuditController` | Privacy data packaging, signing, and export |
 
-### 3. Service Layer
+### 2.3 Service Layer
 
-**invoiceService.ts**
-- Invoice creation logic
-- Hash generation (BHP256)
-- Invoice encryption
-- Record construction
-- Transaction submission
+**Responsibility**: All "heavy" and "low-level" operations. Adapter for Aleo protocol.
 
-**paymentService.ts**
-- Payment transfer coordination
-- Two-step payment flow:
-  1. credits.aleo/transfer_private
-  2. zk_invoice.aleo/mark_as_paid
-- Receipt generation
-- Payment verification
+**Core Functions**:
+1. **Wallet Interaction**: Wrap `requestRecords`, `requestTransaction` (ZKP generated by wallet)
+2. **Encryption**: AES encryption for invoice details, audit key derivation, SHA-256 hashing
+3. **Unit Conversion**: Microcredits ↔ Credits precision handling
+4. **RPC Communication**: Network communication with Aleo nodes
 
-**auditService.ts**
-- Audit key generation
-- View key derivation
-- Selective disclosure
-- Time-bound access control
+**Service Interfaces**:
 
-### 4. Smart Contract Layer
+| Service | Responsibility | Status |
+|---------|---------------|--------|
+| `IWalletService` | Connect wallet, get ViewKey, balance, sign, request transaction | Implemented |
+| `ICryptoService` | Compute invoice hash, local encrypt/decrypt, Record parsing | Implemented |
+| `IStorageService` | IndexedDB CRUD for data persistence | Implemented |
+| `IPollingService` | Generic polling service for status tracking | Implemented |
+| `IAleoProtocolService` | Node RPC interaction (broadcast, query Mapping) | Partial |
 
-**Contract Architecture:**
+### 2.4 Model Layer
 
-```leo
-program zk_invoice.aleo {
-    // Status constants
-    const STATUS_PENDING: u8 = 0u8;
-    const STATUS_PAID: u8 = 1u8;
-    const STATUS_CANCELLED: u8 = 2u8;
-    const STATUS_EXPIRED: u8 = 3u8;
+**Responsibility**: System's data source, managing global state as "single source of truth".
 
-    // Record definitions
-    record InvoiceRecord {
-        owner: address,
-        invoice_id: field,
-        seller: address,
-        buyer: address,
-        amount: u64,
-        status: u8,
-        due_date: u32,
-        invoice_hash: field,
-        created_at: u32
-    }
+**Core Components**:
+1. **Zustand Stores**: Store synced Records and Mapping states
+2. **IndexedDB**: Local persistence for decrypted invoice details
 
-    record PaymentRecord {
-        owner: address,
-        payment_id: field,
-        invoice_id: field,
-        payer: address,
-        payee: address,
-        amount: u64,
-        payment_nonce: field,
-        paid_at: u32
-    }
+**Store Structure**:
 
-    // Transition functions
-    // ... (6 transitions)
-}
-```
+| Store | Responsibility |
+|-------|---------------|
+| `useUserStore` | User identity, masterKey, public key |
+| `useInvoiceStore` | Invoice index, CRUD operations |
+| `useArchiveStore` | Decrypted details archive |
+| `useTransactionStore` | Transaction progress and logs |
+| `useErrorStore` | Error state management |
 
-## Data Flow Architecture
+---
 
-### Invoice Creation Flow
+## 3. Data Flow
+
+### 3.1 Invoice Creation Flow
 
 ```
-User Input → Frontend Form → invoiceService
-                                    │
-                                    ▼
-                          Generate Invoice Hash
-                                    │
-                                    ▼
-                          Build Transaction Input
-                                    │
-                                    ▼
-                    Call zk_invoice.aleo/create_invoice
-                                    │
-                                    ▼
-                          Aleo Network Processing
-                                    │
-                                    ▼
-                      Return 2 InvoiceRecords
-                                    │
-                    ┌───────────────┴───────────────┐
-                    ▼                               ▼
-            Seller Record                   Buyer Record
-         (owner: seller)                (owner: buyer)
-                    │                               │
-                    └───────────────┬───────────────┘
-                                    ▼
-                        Store in localStorage
-                                    │
-                                    ▼
-                          Update Zustand Store
-                                    │
-                                    ▼
-                            UI Update (React)
+User Input → Frontend Form → Controller
+                                │
+                                ▼
+                    Compute Invoice Hash (SHA-256)
+                                │
+                                ▼
+                    Request Transaction via Wallet
+                    (Wallet generates ZK proof internally)
+                                │
+                                ▼
+                    Broadcast to Aleo Network
+                                │
+                                ▼
+                    Return 2 InvoiceRecords
+                    (seller + buyer)
+                                │
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+            Seller Record           Buyer Record
+            (owner: seller)         (owner: buyer)
+                    │                       │
+                    └───────────┬───────────┘
+                                ▼
+                    Encrypt & Store in IndexedDB
+                    (status: SENDING)
+                                │
+                                ▼
+                    Poll until CONFIRMED
+                                │
+                                ▼
+                    Update UI
 ```
 
-### Payment Flow
+### 3.2 Payment Flow (Two-Step)
 
 ```
 Buyer Initiates Payment
         │
         ▼
-Step 1: Transfer Credits
+Step 1: Scan InvoiceRecord from chain
+        │
+        ▼
+Step 2: Transfer Credits
         │
         ▼
 credits.aleo/transfer_private
         │
-        ├─ Input: sender's credit record
-        ├─ Input: recipient address
+        ├─ Input: buyer's credit record
+        ├─ Input: seller address
         ├─ Input: amount
         │
         ▼
-Get Transaction ID & Nonce
-        │
-        ▼
-Step 2: Mark as Paid
+Step 3: Mark as Paid
         │
         ▼
 zk_invoice.aleo/mark_as_paid
@@ -258,262 +207,181 @@ zk_invoice.aleo/mark_as_paid
         ▼
 Generate PaymentRecord
         │
-        ├─ payment_id (hash)
-        ├─ invoice_id
-        ├─ payer address
-        ├─ payee address
-        ├─ amount
-        ├─ payment_nonce
-        │
         ▼
 Return Updated InvoiceRecord + PaymentRecord
         │
         ▼
-Store Receipt in localStorage
-        │
-        ▼
-Update UI
+Update IndexedDB & UI
 ```
 
-## Record Management
+### 3.3 Invoice Status Lifecycle
 
-### Record Storage Model
+```
+    ┌──────────────┐
+    │   PENDING    │ ◄─── Initial state after creation
+    └──────┬───────┘
+           │
+     ┌─────┴─────┐
+     │           │
+     ▼           ▼
+┌─────────┐  ┌───────────┐
+│  PAID   │  │ CANCELLED │ (seller only)
+└─────────┘  └───────────┘
+     │           │
+     └─────┬─────┘
+           │
+           ▼
+    ┌───────────┐
+    │  EXPIRED  │ (time-based check)
+    └───────────┘
+```
 
-**Pure Record-Based Architecture:**
-- NO global mappings
-- NO async/finalize operations
-- All state in Records (UTXO-style)
+---
 
-**Why?**
+## 4. Smart Contract Design
+
+### 4.1 Record Definitions
+
+**InvoiceRecord**:
+```leo
+record InvoiceRecord {
+    owner: address,
+    invoice_id: field,
+    seller: address,
+    buyer: address,
+    amount: u64,
+    status: u8,          // 0=PENDING, 1=PAID, 2=CANCELLED, 3=EXPIRED
+    due_date: u32,
+    invoice_hash: field,
+    created_at: u32
+}
+```
+
+**PaymentRecord**:
+```leo
+record PaymentRecord {
+    owner: address,
+    payment_id: field,
+    invoice_id: field,
+    payer: address,
+    payee: address,
+    amount: u64,
+    payment_nonce: field,
+    paid_at: u32
+}
+```
+
+### 4.2 Dual Record Design
+
+`create_invoice` returns two identical InvoiceRecords (except owner field):
+- One for seller (owner: seller_address)
+- One for buyer (owner: buyer_address)
+
+Both parties can independently manage their records.
+
+### 4.3 Pure Record Architecture
+
+**Design Choice**: All state stored in Records (UTXO-style), no global mappings.
+
+**Reasons**:
 - Testnet limitation: doesn't support async/finalize
 - Privacy: records are private by default
 - Simplicity: no state synchronization needed
 
-**Record Lifecycle:**
+---
+
+## 5. Error Handling System
+
+### 5.1 Error Flow
 
 ```
-Creation → Active → Updated → Consumed
-                        │
-                        └──→ New Record Generated
-```
-
-**Dual Record Design:**
-- Each invoice creates TWO identical records
-- One for seller (owner: seller_address)
-- One for buyer (owner: buyer_address)
-- Both have same content except owner field
-- Enables both parties to manage independently
-
-### Record Tracking
-
-**Frontend Challenge:**
-Records are private and not queryable on-chain.
-
-**Current Solution:**
-- Store records in localStorage after creation
-- Track record IDs and states
-- Manual sync required after wallet switch
-
-**Future Enhancement:**
-- Integrate with Aleo SDK for record scanning
-- Use view keys for automatic discovery
-- Implement encrypted cloud sync
-
-## Privacy Model
-
-### Zero-Knowledge Proofs
-
-**What's Private:**
-- Invoice amounts
-- Party identities (buyer/seller)
-- Payment nonces
-- Transaction details
-
-**What's Public:**
-- Program ID (zk_invoice.aleo)
-- Transaction IDs
-- Block timestamps
-- Program execution success/failure
-
-**How Privacy is Maintained:**
-- All records are private (encrypted on-chain)
-- Only record owners can decrypt
-- ZK proofs verify correctness without revealing data
-- Hash commitments prove invoice authenticity
-
-### Audit Support
-
-**Selective Disclosure:**
-- View keys enable read-only access
-- Time-bound audit keys
-- Scope-limited disclosure (specific invoices only)
-- No modification rights for auditors
-
-**Audit Flow:**
-```
-1. Generate Audit Key (view key + scope + expiry)
-2. Share key with auditor
-3. Auditor uses key to decrypt specific records
-4. Auditor can verify but not modify
-5. Key expires after set duration
-```
-
-## Security Considerations
-
-### Smart Contract Security
-
-**Input Validation:**
-- Amount > 0
-- Valid addresses
-- Status checks before transitions
-- Timestamp validation
-
-**State Consistency:**
-- Status transitions enforce valid flow
-- No double-payment possible
-- Cancelled invoices can't be paid
-- Paid invoices can't be cancelled
-
-**Hash Security:**
-- BHP256 hash algorithm
-- Collision resistance
-- Deterministic hashing
-- Invoice content integrity
-
-### Frontend Security
-
-**Current Limitations:**
-- No backend server (client-side only)
-- localStorage can be cleared
-- No encryption at rest
-- Wallet private keys managed by wallet extension
-
-**Best Practices:**
-- Never store private keys in localStorage
-- Use wallet adapters for signing
-- Validate all inputs
-- Sanitize addresses
-- Check transaction results
-
-## Deployment Architecture
-
-### Development
-```
-Local Machine
-├── npm run dev (Next.js)
-├── leo build (compile contract)
-└── leo deploy (testnet)
-```
-
-### Production (Vercel)
-```
-GitHub Repository
+Service Layer (Technical Errors)
+        │
+        │ WalletServiceError / ProtocolServiceError
+        ▼
+Controller Layer (Capture & Transform)
+        │
+        │ toAppError()
+        ▼
+ErrorStore (State Management)
         │
         ▼
-Vercel CI/CD
-        │
-        ├─ Build Next.js app
-        ├─ Set environment variables
-        └─ Deploy to CDN
+ErrorHandler (Toast Display)
         │
         ▼
-Vercel Edge Network
-        │
-        └─ Serve static files
-        └─ Server-side rendering
-        │
-        ▼
-User Browser
-        │
-        ├─ Load React app
-        ├─ Connect Aleo wallet
-        └─ Interact with blockchain
+User Interface
 ```
 
-### Environment Variables
+### 5.2 Error Types
 
-**Required for Vercel:**
-```bash
-NEXT_PUBLIC_ALEO_NETWORK=testnet
-NEXT_PUBLIC_ALEO_ADDRESS=aleo1...
-```
+**Service Layer** (Technical):
+- `WalletServiceError`: NOT_INSTALLED, USER_REJECTED, INSUFFICIENT_FEE, etc.
+- `ProtocolServiceError`: NODE_CONNECTION_FAILED, INVALID_RECORD, etc.
 
-**Optional (local dev only):**
-```bash
-ALEO_PRIVATE_KEY=APrivateKey1...
-ALEO_VIEW_KEY=AViewKey1...
-```
+**UI Layer** (User-Friendly):
+- WALLET_NOT_CONNECTED
+- TRANSACTION_REJECTED
+- INSUFFICIENT_BALANCE
+- NETWORK_ERROR
 
-## Performance Considerations
+---
 
-### Transaction Times
-- Block time: ~10-15 seconds (Aleo testnet)
-- Transaction confirmation: 1-2 blocks
-- ZK proof generation: 2-5 seconds
-- Total invoice creation: ~20-30 seconds
+## 6. Storage Strategy
 
-### Scalability
-- No on-chain storage (only records)
-- Linear scaling with user base
-- No global state contention
-- Parallel transaction processing
+### 6.1 Data Persistence
 
-### Optimization Strategies
-- Lazy loading components
-- Code splitting by route
-- Static asset optimization
-- Memoized computations
-- Efficient record filtering
+| Data Type | Persisted | Location | Reason |
+|-----------|-----------|----------|--------|
+| Basic Info (id, seller, buyer, amount) | Yes | IndexedDB | Source for unconfirmed invoices |
+| Encrypted Details | Yes | IndexedDB | Sensitive data, needs encryption |
+| Confirmation Status | No | Memory | Runtime state, fetched from chain |
+| Chain Data | No | On-chain | Confirmed invoices more reliable from chain |
 
-## Technology Choices
+### 6.2 Encryption Scheme
 
-### Why Aleo?
-- Native zero-knowledge proofs
-- Privacy by default
-- Leo language simplicity
-- Active ecosystem
+- **Key Derivation**: PBKDF2 (100,000 iterations) from wallet signature
+- **Encryption**: AES-GCM symmetric encryption
+- **Integrity**: Hash verification via `verifyInvoiceIntegrity`
 
-### Why Record-Based?
-- Testnet limitations
-- UTXO familiarity
-- Privacy benefits
-- Simpler state model
+---
 
-### Why Next.js?
-- SEO friendly
-- Fast page loads
-- File-based routing
-- Built-in optimization
+## 7. Technology Stack
 
-### Why Zustand?
-- Lightweight (3kb)
-- No boilerplate
-- TypeScript support
-- React 18 compatible
+### Frontend
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **Zustand** - Lightweight state management
+- **IndexedDB (idb)** - Client-side persistence
 
-## Future Improvements
+### Blockchain
+- **Leo 3.4.0** - Aleo smart contract language
+- **@provablehq/sdk** - Aleo SDK
+- **@demox-labs/aleo-wallet-adapter** - Wallet integration
 
-### Short Term
-- Integrate @provablehq/sdk for record scanning
-- Add loading states and error handling
-- Implement retry logic
-- Add transaction history
+### Wallets Supported
+- Leo Wallet
+- Puzzle Wallet
 
-### Medium Term
-- Multi-signature support
-- Recurring invoices
-- Batch operations
-- Invoice templates
+---
 
-### Long Term
-- Cross-chain payments
-- Fiat on/off ramps
-- Mobile app (React Native)
-- Enterprise features
+## 8. Deployment
 
-## References
+### Contract
+- **Program ID**: `zk_invoice.aleo`
+- **Network**: Aleo Testnet
+- **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
 
-- [Aleo Developer Docs](https://developer.aleo.org/)
-- [Leo Language Guide](https://developer.aleo.org/leo/)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Zustand Documentation](https://github.com/pmndrs/zustand)
+### Frontend
+- **Platform**: Vercel
+- **Environment Variables**:
+  - `NEXT_PUBLIC_ALEO_NETWORK=testnet`
+  - `NEXT_PUBLIC_ALEO_ADDRESS=your_address`
+
+---
+
+## 9. Version Information
+
+- **Document Version**: 2.0
+- **Code Version**: 1.2
+- **Last Updated**: January 2026

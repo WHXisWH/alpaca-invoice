@@ -1,0 +1,286 @@
+# Alpaca Invoice - Development Milestones
+
+## Roadmap to Aleo Mainnet
+
+This document outlines the 10 development milestones for Alpaca Invoice, from the current MVP (Milestone 1) to production deployment on Aleo Mainnet.
+
+---
+
+## Milestone 1: Core MVP on Testnet (Completed)
+
+**Status**: Completed
+
+**Deliverables**:
+- Leo smart contract with core transitions (`create_invoice`, `mark_as_paid`, `cancel_invoice`, `verify_invoice`, `verify_payment`)
+- Next.js frontend with wallet integration (Leo Wallet, Puzzle Wallet)
+- Invoice creation, payment, and cancellation workflows
+- Two-step payment flow (transfer + mark_as_paid)
+- IndexedDB local storage with record caching
+- Dashboard, invoice list, invoice detail, receipts pages
+- Basic audit key generation
+- Testnet deployment (Program ID: `zk_invoice.aleo`)
+
+**Verification Criteria**:
+- End-to-end invoice lifecycle works on Aleo Testnet
+- Multiple users can create and pay invoices
+- Records sync correctly between blockchain and UI
+
+---
+
+## Milestone 2: Enhanced Payment Reliability
+
+**Status**: Pending
+
+**Objective**: Improve payment flow robustness and handle edge cases
+
+**Deliverables**:
+- Transaction retry mechanism with exponential backoff
+- Partial payment failure recovery (credits transferred but marking failed)
+- Transaction status persistence across browser sessions
+- Improved error messages with actionable guidance
+- Transaction history page with status tracking
+- Optimistic UI updates with rollback on failure
+
+**Verification Criteria**:
+- 99% payment success rate under normal network conditions
+- Users can recover from partial failures without losing funds
+- Transaction status persists after page refresh
+
+---
+
+## Milestone 3: USDCx Stablecoin Integration
+
+**Status**: Pending
+
+**Objective**: Replace credits.aleo with USDCx for real-world payment scenarios
+
+**Deliverables**:
+- USDCx integration in Leo contract (import USDCx program)
+- Updated payment service to use USDCx transfers
+- Currency selection UI (credits vs USDCx)
+- Exchange rate display (optional)
+- Updated receipt format with currency information
+- Backward compatibility with existing credit-based invoices
+
+**Verification Criteria**:
+- Invoices can be paid using USDCx
+- Proper decimal handling (6 decimals for USDC)
+- Works with USDCx testnet deployment
+
+**Dependencies**: USDCx mainnet launch (expected Q1 2026)
+
+---
+
+## Milestone 4: Advanced Audit & Compliance
+
+**Status**: Pending
+
+**Objective**: Enterprise-grade audit functionality for regulatory compliance
+
+**Deliverables**:
+- Scoped audit keys with invoice ID filtering
+- Time-limited audit key expiration
+- Audit key revocation mechanism
+- Compliance report PDF generation
+- Audit log tracking (who accessed what, when)
+- Bulk invoice selection for audit packages
+- Auditor portal view (read-only access)
+
+**Verification Criteria**:
+- Auditors can decrypt only authorized invoices
+- Expired keys are rejected
+- PDF reports contain all required fields
+
+---
+
+## Milestone 5: Security Hardening & Testing
+
+**Status**: Pending
+
+**Objective**: Comprehensive security audit and test coverage
+
+**Deliverables**:
+- Leo contract unit tests (100% transition coverage)
+- Frontend integration tests (Playwright/Cypress)
+- Security audit by third-party firm
+- Penetration testing for web frontend
+- Rate limiting and DDoS protection
+- Input validation hardening
+- Client-side encryption audit
+- Bug bounty program launch
+
+**Verification Criteria**:
+- All critical/high security issues resolved
+- 80%+ test coverage on critical paths
+- Security audit report published
+
+---
+
+## Milestone 6: Performance Optimization
+
+**Status**: Pending
+
+**Objective**: Optimize for production-scale usage
+
+**Deliverables**:
+- Proof generation optimization (WebAssembly tuning)
+- Lazy loading for invoice lists
+- Virtual scrolling for large datasets
+- IndexedDB query optimization
+- Record scanning pagination
+- Caching strategy for static assets
+- Bundle size optimization (<500KB initial load)
+- Lighthouse score >90 on all metrics
+
+**Verification Criteria**:
+- Proof generation <15 seconds average
+- Page load <3 seconds on 4G
+- Smooth performance with 1000+ invoices
+
+---
+
+## Milestone 7: Enterprise Features
+
+**Status**: Pending
+
+**Objective**: Features required for business adoption
+
+**Deliverables**:
+- Multi-signature invoice approval workflow
+- Organization/team management
+- Role-based access control (admin, finance, viewer)
+- Batch invoice creation (CSV import)
+- Bulk payment processing
+- Invoice templates and recurring invoices
+- Email/webhook notifications
+- API documentation for integrations
+
+**Verification Criteria**:
+- 3+ approvers workflow works correctly
+- CSV import handles 100+ invoices
+- Webhooks trigger on status changes
+
+---
+
+## Milestone 8: External Integrations
+
+**Status**: Pending
+
+**Objective**: Connect with enterprise systems
+
+**Deliverables**:
+- REST API for invoice management
+- Webhook system for external notifications
+- IPFS integration for large attachments
+- ERP integration adapters (SAP, Oracle, QuickBooks)
+- Accounting software export formats (CSV, QIF, OFX)
+- OAuth2 authentication for API access
+- SDK for third-party developers
+
+**Verification Criteria**:
+- API can create/pay/cancel invoices
+- IPFS attachments retrievable and verifiable
+- Export formats import correctly into accounting software
+
+---
+
+## Milestone 9: Mainnet Preparation
+
+**Status**: Pending
+
+**Objective**: Production readiness for Aleo Mainnet
+
+**Deliverables**:
+- Mainnet contract deployment
+- Environment configuration (testnet/mainnet toggle)
+- Production monitoring and alerting (Datadog/Sentry)
+- Disaster recovery procedures
+- Database backup strategy for off-chain data
+- Load testing (1000+ concurrent users)
+- Legal compliance review
+- Terms of service and privacy policy
+- User documentation and help center
+- Customer support infrastructure
+
+**Verification Criteria**:
+- Contract deployed on Aleo Mainnet
+- Monitoring catches issues within 5 minutes
+- Load test passes with <1% error rate
+
+---
+
+## Milestone 10: Mainnet Launch & Growth
+
+**Status**: Pending
+
+**Objective**: Public launch on Aleo Mainnet with growth features
+
+**Deliverables**:
+- Public mainnet launch announcement
+- Marketing website and landing pages
+- Onboarding tutorial flow
+- Referral program smart contract
+- Analytics dashboard for usage metrics
+- Customer feedback system
+- Partnership integrations
+- Multi-language support (i18n)
+- Mobile app (React Native or PWA)
+- Community governance framework
+
+**Verification Criteria**:
+- 100+ active users in first month
+- Zero critical issues post-launch
+- 95%+ uptime SLA maintained
+
+---
+
+## Timeline Overview
+
+| Milestone | Target Date | Status |
+|-----------|-------------|--------|
+| M1: Core MVP | Jan 2025 | Completed |
+| M2: Payment Reliability | Feb 2026 | Pending |
+| M3: USDCx Integration | Mar 2026 | Pending |
+| M4: Audit & Compliance | Apr 2026 | Pending |
+| M5: Security Hardening | May 2026 | Pending |
+| M6: Performance Optimization | Jun 2026 | Pending |
+| M7: Enterprise Features | Jul 2026 | Pending |
+| M8: External Integrations | Aug 2026 | Pending |
+| M9: Mainnet Preparation | Sep 2026 | Pending |
+| M10: Mainnet Launch | Oct 2026 | Pending |
+
+---
+
+## Success Metrics
+
+**Technical Metrics**:
+- Transaction success rate: >99%
+- Average proof generation time: <15s
+- System uptime: >99.9%
+- Page load time: <3s
+
+**Business Metrics**:
+- Monthly active users
+- Total invoice volume (USD)
+- Average invoices per user
+- Audit key generation rate
+- Enterprise customer count
+
+**Security Metrics**:
+- Zero critical vulnerabilities
+- <24h response time for security issues
+- 100% audit coverage for compliance
+
+---
+
+## Risk Factors
+
+1. **Aleo Mainnet Delays**: Mainnet schedule changes could impact M9/M10 timeline
+2. **USDCx Availability**: Stablecoin launch timing affects M3
+3. **Regulatory Changes**: Compliance requirements may evolve
+4. **Wallet Ecosystem**: Dependency on third-party wallet development
+5. **Competition**: Other privacy payment solutions may emerge
+
+---
+
+*Last Updated: January 2026*
