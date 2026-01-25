@@ -34,7 +34,7 @@ Optional utilities:
 Create `.env` file:
 
 ```env
-NEXT_PUBLIC_ALEO_NETWORK=testnet
+NEXT_PUBLIC_ALEO_NETWORK=testnetbeta
 NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ```
 
@@ -118,14 +118,13 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ## Deployment
 
 - **Program ID**: `zk_invoice.aleo`
-- **Network**: Aleo Testnet
+- **Network**: Aleo Testnet Beta
 - **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
 
 ## Documentation
 
 - [Architecture](./docs/ARCHITECTURE.md) - Technical architecture and data flows
 - [Business Flow](./docs/BUSINESS_FLOW.md) - Complete business logic flows
-- [Audit Testing](./tests/AUDIT_FLOW_TESTING.md) - How to exercise audit packages and the offline validator
 
 ## License
 
