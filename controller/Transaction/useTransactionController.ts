@@ -4,7 +4,7 @@ import { ITxController } from './ITxController';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
-import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
+import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
 import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice } from '@/lib/types';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';

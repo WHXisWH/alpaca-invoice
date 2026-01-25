@@ -594,4 +594,53 @@ export class WalletService {
       );
     }
   }
+
+  /**
+   * 查询交易状态
+   * @param transactionId 交易ID
+   * @returns 交易状态字符串
+   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED
+   * 
+   * 说明：
+   * - 封装钱包适配器的 transactionStatus 方法
+   * - 用于查询已提交交易的状态
+   */
+  async transactionStatus(transactionId: string): Promise<string> {
+    if (!this.wallet) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet not connected. Please connect first.'
+      );
+    }
+
+    if (!this.wallet.transactionStatus) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet does not support transactionStatus'
+      );
+    }
+
+    if (!transactionId || transactionId.trim() === '') {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Transaction ID cannot be empty'
+      );
+    }
+
+    try {
+      const status = await this.wallet.transactionStatus(transactionId);
+      return status;
+    } catch (error: any) {
+      // 已经是 WalletServiceError，直接抛出
+      if (error instanceof WalletServiceError) {
+        throw error;
+      }
+
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Failed to get transaction status',
+        { originalError: error }
+      );
+    }
+  }
 }
