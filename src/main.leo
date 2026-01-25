@@ -1,11 +1,8 @@
-// zk_invoice program for Aleo - Full implementation with async/mappings
-// Implements invoice creation, payment, cancellation with on-chain state tracking
+// zk_invoice - For testnet deployment with Consensus V9
 
-import credits.aleo;
+program zk_invoice.aleo {
 
-program zkinvoice.aleo {
-
-    // The constructor is required for V9+ consensus
+    // ========== Constructor (Required for Consensus V9+) ==========
     @noupgrade
     async constructor() {}
 
@@ -13,18 +10,16 @@ program zkinvoice.aleo {
     const STATUS_PENDING: u8 = 0u8;
     const STATUS_PAID: u8 = 1u8;
     const STATUS_CANCELLED: u8 = 2u8;
+    const STATUS_UNKNOWN: u8 = 255u8;
 
     // ========== Struct definitions ==========
     struct InvoiceData {
         seller: address,
         buyer: address,
         amount: u64,
-        invoice_hash: field
+        invoice_hash: field,
+        due_date: u32
     }
-
-    // ========== Mappings (公开状态) ==========
-    mapping invoice_registry: field => u8;  // invoice_id => status
-    mapping invoice_hash_index: field => field;  // hash => invoice_id
 
     // ========== Record definitions ==========
     record InvoiceRecord {
@@ -34,7 +29,9 @@ program zkinvoice.aleo {
         buyer: address,
         amount: u64,
         invoice_hash: field,
-        created_at: u32
+        due_date: u32,
+        created_at: u32,
+        status: u8
     }
 
     record PaymentRecord {
@@ -46,13 +43,18 @@ program zkinvoice.aleo {
         paid_at: u32
     }
 
-    // ========== Core Transitions ==========
+    // ========== Public state ==========
+    mapping invoice_status: field => u8; // invoice_id -> status
 
-    // Create invoice - generates two records and registers on-chain
+    // ========== Core Transitions (Simple version without finalize) ==========
+
+    // Create invoice - returns records for both parties
     async transition create_invoice(
         buyer: address,
         amount: u64,
-        invoice_hash: field
+        invoice_hash: field,
+        due_date: u32,
+        timestamp: u32
     ) -> (InvoiceRecord, InvoiceRecord, Future) {
         let seller: address = self.caller;
 
@@ -65,7 +67,8 @@ program zkinvoice.aleo {
             seller: seller,
             buyer: buyer,
             amount: amount,
-            invoice_hash: invoice_hash
+            invoice_hash: invoice_hash,
+            due_date: due_date
         };
         let invoice_id: field = BHP256::hash_to_field(invoice_data);
 
@@ -77,7 +80,9 @@ program zkinvoice.aleo {
             buyer: buyer,
             amount: amount,
             invoice_hash: invoice_hash,
-            created_at: 0u32
+            due_date: due_date,
+            created_at: timestamp,
+            status: STATUS_PENDING
         };
 
         // Create buyer's record
@@ -88,36 +93,49 @@ program zkinvoice.aleo {
             buyer: buyer,
             amount: amount,
             invoice_hash: invoice_hash,
-            created_at: 0u32
+            due_date: due_date,
+            created_at: timestamp,
+            status: STATUS_PENDING
         };
 
-        return (seller_record, buyer_record, finalize_create_invoice(invoice_id, invoice_hash));
+        return (seller_record, buyer_record, finalize_create_invoice(invoice_id));
     }
 
-    async function finalize_create_invoice(invoice_id: field, invoice_hash: field) {
-        // Register invoice in public mappings
-        Mapping::set(invoice_registry, invoice_id, STATUS_PENDING);
-        Mapping::set(invoice_hash_index, invoice_hash, invoice_id);
+    async function finalize_create_invoice(invoice_id: field) {
+        let current: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_UNKNOWN);
+        assert_eq(current, STATUS_UNKNOWN);
+        Mapping::set(invoice_status, invoice_id, STATUS_PENDING);
     }
 
-    // Pay invoice - marks invoice as paid and generates payment records
-    // Note: Actual payment should be done via separate credits.aleo/transfer_private call
-    async transition pay_invoice(
-        invoice: InvoiceRecord
-    ) -> (PaymentRecord, PaymentRecord, Future) {
+    // Verify invoice hash matches
+    transition verify_invoice_hash(
+        invoice: InvoiceRecord,
+        expected_hash: field
+    ) -> bool {
+        return invoice.invoice_hash == expected_hash;
+    }
+
+    // Mark invoice as paid - generates payment receipts
+    async transition mark_as_paid(
+        invoice: InvoiceRecord,
+        timestamp: u32
+    ) -> (PaymentRecord, PaymentRecord, InvoiceRecord, Future) {
         let buyer: address = self.caller;
 
-        // Validation
+        // Validation: only buyer can mark as paid
         assert_eq(buyer, invoice.buyer);
 
-        // Generate PaymentRecords for both parties
+        // Validation: invoice must be pending
+        assert_eq(invoice.status, STATUS_PENDING);
+
+        // Create payment receipts
         let buyer_receipt: PaymentRecord = PaymentRecord {
             owner: buyer,
             invoice_id: invoice.invoice_id,
             payer: buyer,
             payee: invoice.seller,
             amount: invoice.amount,
-            paid_at: 0u32
+            paid_at: timestamp
         };
 
         let seller_receipt: PaymentRecord = PaymentRecord {
@@ -126,44 +144,74 @@ program zkinvoice.aleo {
             payer: buyer,
             payee: invoice.seller,
             amount: invoice.amount,
-            paid_at: 0u32
+            paid_at: timestamp
         };
 
-        return (buyer_receipt, seller_receipt, finalize_pay_invoice(invoice.invoice_id));
+        // Update invoice status
+        let updated_invoice: InvoiceRecord = InvoiceRecord {
+            owner: invoice.owner,
+            invoice_id: invoice.invoice_id,
+            seller: invoice.seller,
+            buyer: invoice.buyer,
+            amount: invoice.amount,
+            invoice_hash: invoice.invoice_hash,
+            due_date: invoice.due_date,
+            created_at: invoice.created_at,
+            status: STATUS_PAID
+        };
+
+        return (buyer_receipt, seller_receipt, updated_invoice, finalize_mark_as_paid(invoice.invoice_id));
     }
 
-    async function finalize_pay_invoice(invoice_id: field) {
-        // Update invoice status to PAID
-        Mapping::set(invoice_registry, invoice_id, STATUS_PAID);
+    async function finalize_mark_as_paid(invoice_id: field) {
+        let current: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_UNKNOWN);
+        assert_eq(current, STATUS_PENDING);
+        Mapping::set(invoice_status, invoice_id, STATUS_PAID);
     }
 
-    // Cancel invoice - only seller can cancel PENDING invoices
+    // Cancel invoice - seller only
     async transition cancel_invoice(
         invoice: InvoiceRecord
-    ) -> Future {
+    ) -> (InvoiceRecord, Future) {
         let caller: address = self.caller;
 
-        // Validation
+        // Validation: only seller can cancel
         assert_eq(caller, invoice.seller);
 
-        return finalize_cancel_invoice(invoice.invoice_id);
+        // Validation: invoice must be pending
+        assert_eq(invoice.status, STATUS_PENDING);
+
+        // Update invoice status
+        let updated_invoice: InvoiceRecord = InvoiceRecord {
+            owner: invoice.owner,
+            invoice_id: invoice.invoice_id,
+            seller: invoice.seller,
+            buyer: invoice.buyer,
+            amount: invoice.amount,
+            invoice_hash: invoice.invoice_hash,
+            due_date: invoice.due_date,
+            created_at: invoice.created_at,
+            status: STATUS_CANCELLED
+        };
+
+        return (updated_invoice, finalize_cancel_invoice(invoice.invoice_id));
     }
 
     async function finalize_cancel_invoice(invoice_id: field) {
-        // Check current status
-        let current_status: u8 = Mapping::get(invoice_registry, invoice_id);
-        assert_eq(current_status, STATUS_PENDING);
-        
-        // Update to CANCELLED
-        Mapping::set(invoice_registry, invoice_id, STATUS_CANCELLED);
+        let current: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_UNKNOWN);
+        assert_eq(current, STATUS_PENDING);
+        Mapping::set(invoice_status, invoice_id, STATUS_CANCELLED);
     }
 
-    // Verify payment receipt matches invoice hash
+    // Verify payment receipt matches invoice
     transition verify_payment(
         payment: PaymentRecord,
-        invoice_hash: field
+        invoice: InvoiceRecord
     ) -> bool {
-        // Verification logic - compare payment data with expected hash
-        return true;  // Simplified for now
+        let matches_id: bool = payment.invoice_id == invoice.invoice_id;
+        let matches_amount: bool = payment.amount == invoice.amount;
+        let matches_parties: bool = (payment.payer == invoice.buyer) && (payment.payee == invoice.seller);
+        
+        return matches_id && matches_amount && matches_parties;
     }
 }
