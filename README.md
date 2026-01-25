@@ -1,13 +1,13 @@
 # Alpaca Invoice
 
-Privacy-preserving B2B invoice and payment system built on Aleo blockchain. Uses zero-knowledge proofs to protect transaction privacy while supporting audit capabilities.
+Privacy-preserving B2B invoice and payment system built on Aleo blockchain. Uses zero-knowledge proofs to protect transaction privacy while enabling off-chain, permissioned audit packages.
 
 ## Features
 
 - **Privacy-First**: Transaction amounts and party details encrypted on-chain
 - **Two-Step Payment**: Secure payment flow via credits.aleo + zk_invoice.aleo
 - **Dual Records**: Both seller and buyer receive independent invoice records
-- **Audit Support**: Selective disclosure via View Keys and Audit Keys
+- **Audit Support**: Off-chain selective disclosure via wallet-signed audit packages (permissioned + expiring) and shareable audit keys
 - **IndexedDB Storage**: Encrypted local persistence with integrity verification
 
 ## Quick Start
@@ -25,6 +25,9 @@ npm run dev
 ```
 
 Visit http://localhost:3000
+
+Optional utilities:
+- Offline audit-package validator: `node tests/validate_audit_package.mjs <package.json> <audit_key_hex>`
 
 ### Configuration
 
@@ -84,7 +87,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 │   ├── dashboard/            # Dashboard
 │   ├── invoices/             # Invoice management
 │   ├── receipts/             # Payment receipts
-│   └── audit/                # Audit center
+│   └── audit/                # Audit Center (generate + validate audit packages)
 ├── components/               # React components
 ├── controller/               # Business logic hooks
 ├── services/                 # Protocol adapters
@@ -100,6 +103,18 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 **Wallets**: Leo Wallet, Puzzle Wallet
 
+## Audit Workflow (Selective Disclosure)
+1. Connect a wallet that supports `signMessage`; ensure the invoice you want to disclose is decrypted locally (masterKey is derived during create/pay flows).
+2. Open `/audit`, choose invoice ID, auditor address, expiry, and permissions; click **Generate** to get an audit package JSON plus a random audit key.
+3. Share the JSON package + audit key to the auditor (out-of-band).
+4. Auditor validates & decrypts via the UI “Validate Audit Package” panel or the offline script `node tests/validate_audit_package.mjs <package.json> <audit_key_hex>`.
+5. Validation checks expiry, cipher-hash integrity, and recomputes `invoice_hash` from disclosed details; the smart contract remains unchanged.
+
+## Testing & Debugging
+- UI flow and negative cases: `tests/AUDIT_FLOW_TESTING.md`.
+- Offline validation: `node tests/validate_audit_package.mjs /path/to/package.json <audit_key_hex>`.
+- Linting: run `npm run lint` (if the Next.js ESLint setup prompt appears, complete it once, then rerun).
+
 ## Deployment
 
 - **Program ID**: `zk_invoice.aleo`
@@ -110,7 +125,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 - [Architecture](./docs/ARCHITECTURE.md) - Technical architecture and data flows
 - [Business Flow](./docs/BUSINESS_FLOW.md) - Complete business logic flows
-- [PRD & TDD](./docs/PRD&TDD.md) - Product requirements and technical design
+- [Audit Testing](./tests/AUDIT_FLOW_TESTING.md) - How to exercise audit packages and the offline validator
 
 ## License
 

@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import AuditKeyGenerator from '@/components/audit-key-generator';
+import AuditValidator from '@/components/audit-validator';
 import { ShieldCheck } from 'lucide-react';
 
 export default function AuditPage() {
@@ -34,8 +35,9 @@ export default function AuditPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm md:p-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <AuditKeyGenerator />
+        <AuditValidator />
       </div>
     </div>
   );

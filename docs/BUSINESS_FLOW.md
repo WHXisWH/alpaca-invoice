@@ -614,95 +614,28 @@ Payment Initiation
 └─────────────────────────┘
 ```
 
-## 7. Audit Flow
+## 7. Audit Flow (Off-chain Selective Disclosure)
 
-### Audit Key Generation
+### Generation (Owner)
+- Actor: Invoice owner (seller or buyer) with wallet connected and masterKey available.
+- Steps:
+  1. Open **Audit Center** → choose invoice ID, auditor address, expiry, permissions.
+  2. Wallet signs an audit message (`signMessage`); app generates a **random 32-byte audit key**.
+  3. Filter invoice data by permissions → AES-GCM encrypt with audit key → bundle **AuditPackage JSON** (includes cipher hash, permissions, expiry, signerAddress, signature).
+  4. Owner shares **{AuditPackage JSON, audit key}** off-chain with the auditor.
+  - Scope: one invoice per package (generate multiple packages if needed).
 
-```
-┌─────────────────┐
-│ Record Owner    │ ◄─── Seller or Buyer
-└──────┬──────────┘
-       │
-       │ 1. Navigate to Audit Center
-       ▼
-┌─────────────────────────────────┐
-│ Audit Key Generator Page        │
-└──────┬──────────────────────────┘
-       │
-       │ 2. Configure Audit Key:
-       ▼
-┌─────────────────────────────────┐
-│ Parameters:                     │
-│ - Base key: View Key            │
-│ - Scope: Specific invoice IDs   │
-│ - Expiry: Time duration         │
-│ - Permissions: Read-only        │
-└──────┬──────────────────────────┘
-       │
-       │ 3. Generate audit key
-       ▼
-┌─────────────────────────────────┐
-│ Derive Audit Key:               │
-│ audit_key = derive(             │
-│   view_key,                     │
-│   scope,                        │
-│   expiry                        │
-│ )                               │
-└──────┬──────────────────────────┘
-       │
-       │ 4. Share with auditor
-       ▼
-┌─────────────┐
-│  Auditor    │
-└─────────────┘
-```
-
-### Auditor Access
-
-```
-┌─────────────┐
-│  Auditor    │
-└──────┬──────┘
-       │
-       │ 1. Receives audit key
-       ▼
-┌─────────────────────────────────┐
-│ Input Audit Key                 │
-└──────┬──────────────────────────┘
-       │
-       │ 2. Validate key
-       ▼
-┌─────────────────────────────────┐
-│ Check:                          │
-│ - Key format valid?             │
-│ - Within expiry time?           │
-│ - Scope includes requested IDs? │
-└──────┬────────┬─────────────────┘
-  FAIL │        │ PASS
-       │        │
-       ▼        ▼
-┌──────────────────────┐
-│ Access Granted       │
-│ - View invoice       │
-│ - View payment       │
-│ - NO modification    │
-└──────────────────────┘
-       │
-       │ 3. Decrypt records
-       ▼
-┌──────────────────────────────────┐
-│ Auditor can:                     │
-│ ✓ Read invoice details           │
-│ ✓ Read payment receipts          │
-│ ✓ Verify amounts                 │
-│ ✓ Check timestamps               │
-│ ✓ Generate reports               │
-│                                  │
-│ ✗ Cannot modify                  │
-│ ✗ Cannot cancel                  │
-│ ✗ Cannot pay                     │
-└──────────────────────────────────┘
-```
+### Validation (Auditor)
+- Inputs: AuditPackage JSON + audit key.
+- Paths:
+  - UI: Audit Center → “Validate Audit Package”.
+  - CLI: `node tests/validate_audit_package.mjs <package.json> <audit_key_hex>`.
+- Checks performed:
+  - Expiry not passed.
+  - Cipher hash matches payload.
+  - Decrypt with provided audit key.
+  - Recompute `invoice_hash` from disclosed details and compare with package value.
+- Result: If valid, auditor sees only the permitted fields; no on-chain state is modified.
 
 ## 8. Record Synchronization Flow
 
