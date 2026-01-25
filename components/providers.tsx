@@ -7,6 +7,7 @@ import { DecryptPermission } from '@demox-labs/aleo-wallet-adapter-base';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { getNetworkFromEnv } from '@/lib/network';
+import { CREDITS_PROGRAM_ID, PROGRAM_ID } from '@/lib/program';
 import './wallet.css';
 
 type Props = {
@@ -36,7 +37,7 @@ export default function Providers({ children }: Props) {
       wallets={wallets}
       decryptPermission={DecryptPermission.OnChainHistory}
       network={network}
-      programs={['credits.aleo', 'zk_invoice.aleo']}
+      programs={[CREDITS_PROGRAM_ID, PROGRAM_ID]}
       autoConnect
     >
       <WalletModalProvider>{children}</WalletModalProvider>

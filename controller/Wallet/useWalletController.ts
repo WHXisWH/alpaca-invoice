@@ -10,6 +10,7 @@ import type { AleoProtocolService } from '@/services/AleoProtocolService/AleoPro
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { getNetworkFromEnv } from '@/lib/network';
+import { CREDITS_PROGRAM_ID, PROGRAM_ID } from '@/lib/program';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import type { AleoAddress } from '@/lib/types';
 
@@ -23,7 +24,7 @@ import type { AleoAddress } from '@/lib/types';
  */
 export function createWalletAdapter(walletContext: WalletContextState): IWalletService {
   const network = getNetworkFromEnv();
-  const programs = ['credits.aleo', 'zk_invoice.aleo'];
+  const programs = [CREDITS_PROGRAM_ID, PROGRAM_ID];
   const isInvalidParamsError = (error: any) => {
     const message = (error?.message || error?.error?.message || '').toLowerCase();
     const code = error?.code || error?.error?.code;

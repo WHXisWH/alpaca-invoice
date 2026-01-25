@@ -1,4 +1,5 @@
 import { Microcredits } from '@/lib/types';
+import { PROGRAM_ID } from '@/lib/program';
 import { 
   IWalletService, 
   WalletServiceError, 
@@ -478,7 +479,7 @@ export class WalletService {
       functionName,
       inputs,
       publicKey,
-      programId = 'zk_invoice.aleo',
+      programId = PROGRAM_ID,
       feeRecord,
       fee = 250_000,
       chainId

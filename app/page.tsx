@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ArrowRight,
 } from 'lucide-react';
+import { PROGRAM_ID } from '@/lib/program';
 
 export default function HomePage() {
   return (
@@ -203,7 +204,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between border-b border-primary-100 pb-3">
             <span className="text-sm text-primary-500">Program ID</span>
             <code className="rounded-lg bg-primary-100 px-3 py-1 font-mono text-sm text-primary-700">
-              zk_invoice.aleo
+              {PROGRAM_ID}
             </code>
           </div>
           <div className="flex items-center justify-between border-b border-primary-100 pb-3">
