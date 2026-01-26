@@ -9,8 +9,8 @@ import { AleoField } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';
 import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
+import { PROGRAM_ID } from '@/lib/program';
 
-const PROGRAM_ID = 'zk_invoice.aleo';
 
 /**
  * Hook: 链上扫描逻辑（统一版本，可复用）

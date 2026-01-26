@@ -1,6 +1,6 @@
 'use client';
 
-import { generateInvoiceHash, randomField } from '@/lib/crypto';
+import { generateInvoiceHash } from '@/lib/crypto';
 import {
   type AleoAddress,
   type AleoField,
@@ -11,7 +11,7 @@ import {
   InvoiceStatus
 } from '@/lib/types';
 
-const PROGRAM_ID = 'zk_invoice.aleo';
+import { PROGRAM_ID } from '@/lib/program';
 const STORAGE_KEY = 'zk_invoice_records';
 
 // Get wallet instance
@@ -65,10 +65,10 @@ export const invoiceService = {
 
     const seller = wallet.publicKey as AleoAddress;
 
-    // Generate invoice hash and nonce
+    // Generate invoice hash (used for chain lookups)
     const invoiceHash = (await generateInvoiceHash(params.details)) as AleoField;
-    const nonce = randomField() as AleoField;
     const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
+    const createdTimestamp = Math.floor(Date.now() / 1000);
     const amountStr = `${params.amount.toString()}u64`;
 
     console.log('Creating invoice on-chain...');
@@ -76,9 +76,9 @@ export const invoiceService = {
       seller,
       buyer: params.buyer,
       amount: amountStr,
-      dueDate: `${dueTimestamp}u32`,
       invoiceHash,
-      nonce
+      dueDate: `${dueTimestamp}u32`,
+      createdAt: `${createdTimestamp}u32`
     });
 
     // Call real contract
@@ -91,9 +91,9 @@ export const invoiceService = {
         inputs: [
           params.buyer,
           amountStr,
-          `${dueTimestamp}u32`,
           invoiceHash,
-          nonce
+          `${dueTimestamp}u32`,
+          `${createdTimestamp}u32`
         ]
       }],
       fee: 1000000,
@@ -165,8 +165,8 @@ export const invoiceService = {
       );
     }
 
-    // Generate invoice ID (use nonce as base)
-    const invoiceId = `${nonce.slice(0, 32)}field` as AleoField;
+    // Use invoice hash as local ID; on-chain invoice_id is derived from InvoiceData.
+    const invoiceId = invoiceHash as AleoField;
 
     // Save to localStorage
     const invoice: Invoice = {
@@ -232,7 +232,7 @@ export const invoiceService = {
 
     // Find the matching invoice record by invoice_id
     const matchingRecord = invoicePlaintexts.find(
-      (r: any) => !r.spent && r.data?.invoice_id === invoiceId
+      (r: any) => !r.spent && r.data?.invoice_hash === invoice.invoiceHash
     );
 
     if (!matchingRecord) {

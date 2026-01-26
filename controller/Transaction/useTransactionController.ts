@@ -7,6 +7,7 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
 import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice } from '@/lib/types';
+import { PROGRAM_ID } from '@/lib/program';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
@@ -15,7 +16,6 @@ import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
 // 初始化服务实例（在 hook 内部使用）
 const cryptoService = new CryptoService();
 
-const PROGRAM_ID = 'zk_invoice.aleo';
 
 /**
  * Transaction Controller Hook
@@ -134,16 +134,7 @@ export function useTransactionController(): ITxController {
         const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
         const amountStr = `${params.amount.toString()}u64`;
         
-        // 生成随机 nonce
-        const nonceField = await cryptoService.computeInvoiceHash({
-          invoiceNumber: `NONCE-${Date.now()}-${Math.random()}`,
-          lineItems: [],
-          subtotal: 0,
-          taxRate: 0,
-          taxAmount: 0,
-          total: 0,
-          currency: 'CREDITS'
-        });
+        const createdTimestamp = Math.floor(Date.now() / 1000);
 
         updateProgress(25, '✓ 交易参数准备完成');
 
@@ -160,9 +151,9 @@ export function useTransactionController(): ITxController {
           inputs: [
             buyerAddress,
             amountStr,
-            `${dueTimestamp}u32`,
             invoiceHash,
-            nonceField
+            `${dueTimestamp}u32`,
+            `${createdTimestamp}u32`
           ],
           publicKey: publicKey,
           programId: PROGRAM_ID,
@@ -181,7 +172,7 @@ export function useTransactionController(): ITxController {
         // 钱包在后台生成证明并准备广播，不阻塞后续流程
         updateProgress(35, `✓ 交易请求已提交 (requestId: ${requestId.slice(0, 20)}...)`);
 
-        const invoiceId = `${nonceField.slice(0, 32)}field` as AleoField;
+        const invoiceId = invoiceHash as AleoField;
 
         // ==================== 阶段 3: 本地加密归档与即时跳转 ====================
         
@@ -337,16 +328,7 @@ export function useTransactionController(): ITxController {
 
         updateProgress(30, 'Invoice record found. Preparing payment...');
 
-        // 2. 生成 payment_nonce
-        const paymentNonce = await cryptoService.computeInvoiceHash({
-          invoiceNumber: `PAYMENT-${Date.now()}-${Math.random()}`,
-          lineItems: [],
-          subtotal: 0,
-          taxRate: 0,
-          taxAmount: 0,
-          total: 0,
-          currency: 'CREDITS'
-        });
+        const paidTimestamp = Math.floor(Date.now() / 1000);
 
         updateProgress(50, 'Submitting payment transaction...');
 
@@ -356,7 +338,7 @@ export function useTransactionController(): ITxController {
           functionName: 'mark_as_paid',
           inputs: [
             invoiceRecord,
-            paymentNonce
+            `${paidTimestamp}u32`
           ],
           publicKey: publicKey,
           programId: PROGRAM_ID,

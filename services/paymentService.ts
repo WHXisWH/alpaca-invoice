@@ -1,6 +1,5 @@
 'use client';
 
-import { randomField } from '@/lib/crypto';
 import {
   type AleoAddress,
   type AleoField,
@@ -10,8 +9,7 @@ import {
   type PaymentReceipt
 } from '@/lib/types';
 
-const PROGRAM_ID = 'zk_invoice.aleo';
-const CREDITS_PROGRAM = 'credits.aleo';
+import { CREDITS_PROGRAM_ID, PROGRAM_ID } from '@/lib/program';
 const RECEIPTS_KEY = 'zk_invoice_receipts';
 
 function getWallet() {
@@ -60,7 +58,7 @@ export const paymentService = {
     console.log('Step 1/2: Fetching credits records...');
 
     // Get credits record plaintexts from wallet (not metadata)
-    const creditsPlaintextsResponse = await wallet.requestRecordPlaintexts(CREDITS_PROGRAM);
+    const creditsPlaintextsResponse = await wallet.requestRecordPlaintexts(CREDITS_PROGRAM_ID);
     const creditsPlaintexts = creditsPlaintextsResponse.records || [];
     console.log('Credits plaintexts:', creditsPlaintexts);
 
@@ -83,7 +81,7 @@ export const paymentService = {
       address: wallet.publicKey,
       chainId: 'testnetbeta',
       transitions: [{
-        program: CREDITS_PROGRAM,
+        program: CREDITS_PROGRAM_ID,
         functionName: 'transfer_private',
         inputs: [creditsRecord, params.recipientAddress, `${params.amount.toString()}u64`]
       }],
@@ -97,8 +95,7 @@ export const paymentService = {
 
     console.log('Credits transferred! TX:', transferResponse.transactionId);
 
-    // Generate payment nonce
-    const paymentNonce = randomField() as AleoField;
+    const paidTimestamp = Math.floor(Date.now() / 1000);
 
     console.log('Step 2/2: Fetching invoice records...');
 
@@ -113,7 +110,7 @@ export const paymentService = {
 
     // Find the matching invoice record by invoice_id
     const matchingRecord = invoicePlaintexts.find(
-      (r: any) => !r.spent && r.data?.invoice_id === invoice.id
+      (r: any) => !r.spent && r.data?.invoice_hash === invoice.invoiceHash
     );
 
     if (!matchingRecord) {
@@ -131,7 +128,7 @@ export const paymentService = {
       transitions: [{
         program: PROGRAM_ID,
         functionName: 'mark_as_paid',
-        inputs: [invoiceRecord, paymentNonce]
+        inputs: [invoiceRecord, `${paidTimestamp}u32`]
       }],
       fee: 1000000,
       feePrivate: false
@@ -147,7 +144,7 @@ export const paymentService = {
     console.log('Invoice marked as paid! TX:', markPaidResponse.transactionId);
 
     // Generate payment ID
-    const paymentId = `${paymentNonce.slice(0, 32)}field` as AleoField;
+    const paymentId = invoice.id as AleoField;
 
     // Save receipt to localStorage
     const receipt: PaymentReceipt = {

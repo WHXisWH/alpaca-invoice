@@ -11,6 +11,7 @@ import {
   Receipt,
   ShieldCheck,
   HelpCircle,
+  TestTube2,
 } from 'lucide-react';
 
 const navItems = [
@@ -38,6 +39,11 @@ const navItems = [
     title: 'Audit Center',
     href: '/audit',
     icon: ShieldCheck,
+  },
+  {
+    title: 'Contract Test',
+    href: '/contract-test',
+    icon: TestTube2,
   },
 ];
 
