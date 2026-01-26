@@ -637,7 +637,138 @@ Payment Initiation
   - Recompute `invoice_hash` from disclosed details and compare with package value.
 - Result: If valid, auditor sees only the permitted fields; no on-chain state is modified.
 
-## 8. Record Synchronization Flow
+## 8. Auto-Polling Flow (Chain Confirmation)
+
+### List/Dashboard Page Polling
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              List/Dashboard Page Load                       │
+└─────────────────────────────────────────────────────────────┘
+
+    ┌──────────────┐
+    │   useInvoices│
+    │   hook init  │
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────────────┐
+    │ Load from IndexedDB  │
+    │ - Load all invoices  │
+    │ - Load metadata      │
+    └──────┬───────────────┘
+           │
+           ▼
+    ┌──────────────────────────┐
+    │ Check confirmation       │
+    │ status for each invoice  │
+    └──────┬─────────┬─────────┘
+           │         │
+     CONFIRMED       SENDING
+           │         │
+           ▼         ▼
+    ┌──────────┐  ┌─────────────────────┐
+    │ Display  │  │ Found SENDING       │
+    │ normally │  │ invoices            │
+    └──────────┘  └──────┬──────────────┘
+                         │
+                         ▼
+                  ┌─────────────────────┐
+                  │ Start batch polling │
+                  │ - One service per   │
+                  │   invoice           │
+                  │ - 15s interval      │
+                  │ - 5min timeout      │
+                  └──────┬──────────────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+       ┌────────────┐        ┌────────────┐
+       │ Scan chain │        │ Timeout    │
+       │ every 15s  │        │ after 5min │
+       └──────┬─────┘        └──────┬─────┘
+              │                     │
+              ▼                     ▼
+       ┌────────────┐        ┌────────────┐
+       │Found record│        │ Roll back  │
+       │on chain?   │        │ to PENDING │
+       └──────┬─────┘        └────────────┘
+              │YES
+              ▼
+       ┌────────────────────┐
+       │ Validate status    │
+       │ - Check transitions│
+       │ - Verify action    │
+       └──────┬─────────────┘
+              │
+              ▼
+       ┌────────────────────┐
+       │ Update invoice:    │
+       │ - status → PAID    │
+       │ - metadata →       │
+       │   CONFIRMED        │
+       └──────┬─────────────┘
+              │
+              ▼
+       ┌────────────────────┐
+       │ Stop polling this  │
+       │ invoice            │
+       └──────┬─────────────┘
+              │
+              ▼
+       ┌────────────────────┐
+       │ Update UI:         │
+       │ - Show "Confirmed" │
+       │ - Update status    │
+       └────────────────────┘
+```
+
+### User Operation Triggers Polling
+
+```
+┌─────────────────┐
+│ User clicks     │
+│ Pay / Cancel    │
+└──────┬──────────┘
+       │
+       ▼
+┌──────────────────────────┐
+│ Execute transaction      │
+│ - Pay: executePay()      │
+│ - Cancel: executeCancel()│
+└──────┬───────────────────┘
+       │
+       │ Transaction success
+       ▼
+┌──────────────────────────┐
+│ Update metadata:         │
+│ confirmationStatus =     │
+│ 'SENDING'                │
+└──────┬───────────────────┘
+       │
+       ▼
+┌──────────────────────────┐
+│ Update chainStatusMap    │
+│ - Set invoice → SENDING  │
+└──────┬───────────────────┘
+       │
+       ▼
+┌──────────────────────────┐
+│ UI shows "Sending..."    │
+│ - Orange badge           │
+│ - Processing indicator   │
+└──────┬───────────────────┘
+       │
+       │ On next page load
+       ▼
+┌──────────────────────────┐
+│ Auto-detect SENDING      │
+│ status and start polling │
+└──────────────────────────┘
+```
+
+## 9. Record Synchronization Flow
 
 ### When User Switches Wallets
 
@@ -660,15 +791,17 @@ Payment Initiation
 │ - Clear sentInvoices            │
 │ - Clear receivedInvoices        │
 │ - Clear paymentReceipts         │
+│ - Stop all polling              │
 └──────┬──────────────────────────┘
        │
        │ Fetch for new address
        ▼
 ┌─────────────────────────────────┐
-│ Load from localStorage:         │
+│ Load from IndexedDB:            │
 │ - Filter by new address         │
 │ - Restore sent invoices         │
 │ - Restore received invoices     │
+│ - Restart polling for SENDING   │
 └──────┬──────────────────────────┘
        │
        │ Update UI
@@ -688,21 +821,28 @@ Payment Initiation
        │
        ▼
 ┌─────────────────────────────────┐
-│ Trigger fetchInvoices()         │
+│ Scan blockchain for records:    │
+│ - Use scanAndBuildInvoices()    │
+│ - Scan InvoiceRecords           │
+│ - Scan PaymentRecords           │
+│ - Merge and deduplicate         │
 └──────┬──────────────────────────┘
        │
-       │ Current: localStorage only
        ▼
 ┌─────────────────────────────────┐
-│ Future: Query blockchain        │
-│ - Use @provablehq/sdk           │
-│ - Scan for records              │
-│ - Filter by address             │
-│ - Update local cache            │
+│ Update local state:             │
+│ - Update invoices in store      │
+│ - Update metadata to CONFIRMED  │
+│ - Refresh chainStatusMap        │
+└──────┬──────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────┐
+│ UI reflects latest state        │
 └─────────────────────────────────┘
 ```
 
-## 9. Status Lifecycle
+## 10. Status Lifecycle
 
 ### Complete Invoice Status Flow
 
@@ -754,7 +894,7 @@ Status Transitions:
 - EXPIRED → (no transitions, final state)
 ```
 
-## 10. Role-Based Action Matrix
+## 11. Role-Based Action Matrix
 
 ```
 ┌──────────────────┬──────────┬──────────┬───────────┐
@@ -775,7 +915,7 @@ Status Transitions:
 * Auditor: Only with valid audit key and within scope
 ```
 
-## 11. Error Scenarios
+## 12. Error Scenarios
 
 ### Common Error Flows
 
@@ -827,9 +967,12 @@ This document covers all major business flows in the ZK-Invoice system:
 5. **Receipt Generation** - Seller creates receipt for accounting
 6. **Payment Verification** - Match payment to invoice for auditing
 7. **Audit Access** - Time-bound, scoped access for auditors
-8. **Record Sync** - Wallet switch and manual synchronization
-9. **Status Lifecycle** - State transitions and finality rules
-10. **Role Permissions** - Action matrix by role
-11. **Error Handling** - Common error scenarios and resolutions
+8. **Auto-Polling** - Automatic chain confirmation tracking for SENDING invoices
+9. **Record Sync** - Wallet switch and manual synchronization
+10. **Status Lifecycle** - State transitions and finality rules
+11. **Role Permissions** - Action matrix by role
+12. **Error Handling** - Common error scenarios and resolutions
 
 All flows prioritize privacy through zero-knowledge proofs while maintaining transparency for authorized parties through audit mechanisms.
+
+**Key Feature**: The system now includes automatic polling for SENDING invoices on list/dashboard pages, providing real-time feedback on transaction confirmation status without requiring manual intervention.

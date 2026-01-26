@@ -5,9 +5,9 @@ import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
-import { AleoField } from '@/lib/types';
+import { AleoField, Invoice } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';
-import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId } from '@/lib/invoice';
+import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId, buildInvoiceFromRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
 
 const PROGRAM_ID = 'zk_invoice.aleo';
@@ -299,10 +299,103 @@ export function useInvoiceChainScan() {
     return result.byHash; // 返回按 hash 索引的 Map（向后兼容）
   }, [scanAllInvoiceRecords]);
 
+  /**
+   * 扫描链上所有发票并构建 Invoice 对象
+   * 
+   * 职责：
+   * - 调用 scanAllInvoiceRecords 和 scanAllPaymentRecords
+   * - 合并处理（优先 PaymentRecord）
+   * - 构建完整的 Invoice 对象列表
+   * 
+   * @returns Invoice[] - 已构建好的发票对象数组
+   */
+  const scanAndBuildInvoices = useCallback(async (): Promise<Invoice[]> => {
+    const invoices: Invoice[] = [];
+    
+    // 1. 扫描链上数据
+    const { byInvoiceId: invoiceRecordsByInvoiceId } = await scanAllInvoiceRecords();
+    const paymentRecords = await scanAllPaymentRecords();
+    
+    if (invoiceRecordsByInvoiceId.size === 0 && paymentRecords.size === 0) {
+      console.log('📋 [scanAndBuildInvoices] No records found on chain');
+      return [];
+    }
+    
+    const processedInvoiceIds = new Set<string>();
+    
+    // 2. 先处理 PaymentRecord（优先级更高）
+    for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
+      try {
+        const invoiceRecordData = invoiceRecordsByInvoiceId.get(invoiceId);
+        const invoiceHash = invoiceRecordData?.invoiceHash || invoiceId;
+        
+        // 构建基础发票对象
+        const baseInvoice = invoiceRecordData 
+          ? buildInvoiceFromRecord(invoiceRecordData.record, invoiceHash as AleoField)
+          : {
+              id: invoiceId as AleoField,
+              invoiceHash: invoiceHash as AleoField,
+              seller: paymentRecord.payee as any,
+              buyer: paymentRecord.payer as any,
+              amount: BigInt(cleanAleoNumber(paymentRecord.amount)) as any,
+              dueDate: new Date(),
+              createdAt: new Date(),
+              status: 1 as any, // PAID
+              details: undefined
+            } as Invoice;
+        
+        // 使用 PaymentRecord 更新状态
+        const updatedInvoice = updateInvoiceFromPaymentRecord(baseInvoice, paymentRecord);
+        const finalInvoice: Invoice = {
+          ...baseInvoice,
+          ...updatedInvoice,
+          id: invoiceRecordData?.record?.originalInvoiceId 
+            ? (invoiceRecordData.record.originalInvoiceId as AleoField)
+            : (invoiceId as AleoField),
+          status: 1, // PAID
+          invoiceHash: invoiceHash as AleoField
+        };
+        
+        invoices.push(finalInvoice);
+        processedInvoiceIds.add(invoiceId);
+      } catch (error) {
+        console.error(`[scanAndBuildInvoices] Failed to process payment record ${invoiceId}:`, error);
+        continue;
+      }
+    }
+    
+    // 3. 处理剩余的 InvoiceRecord
+    for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
+      if (processedInvoiceIds.has(invoiceId)) {
+        continue;
+      }
+      
+      try {
+        const invoice = buildInvoiceFromRecord(
+          invoiceRecordData.record,
+          invoiceRecordData.invoiceHash as AleoField
+        );
+        
+        if (invoiceRecordData.record.originalInvoiceId) {
+          invoice.id = invoiceRecordData.record.originalInvoiceId as AleoField;
+        }
+        
+        invoices.push(invoice);
+      } catch (error) {
+        console.error(`[scanAndBuildInvoices] Failed to process invoice ${invoiceId}:`, error);
+        continue;
+      }
+    }
+    
+    console.log(`✅ [scanAndBuildInvoices] Built ${invoices.length} invoices from chain`);
+    return invoices;
+  }, [scanAllInvoiceRecords, scanAllPaymentRecords]);
+
   return {
     scanAllInvoiceRecords,
     scanAllPaymentRecords,
     scanInvoiceRecord,
+    scanAndBuildInvoices, // ✅ 新增：扫描并构建 Invoice 对象
     scanAllRecords // 向后兼容
   };
 }

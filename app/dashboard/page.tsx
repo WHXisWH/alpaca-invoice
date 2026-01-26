@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useInvoiceStore } from '@/stores/invoiceStore';
-import { useWalletStore } from '@/stores/walletStore';
+import { useInvoices } from '@/controller/Invoice/useInvoices';
 import { InvoiceStatus } from '@/lib/types';
 import {
   Send,
@@ -19,26 +17,53 @@ import {
   Search,
   ArrowRight,
   Wallet,
+  Loader2,
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { sentInvoices, receivedInvoices, fetchInvoices } = useInvoiceStore();
-  const { connected, address } = useWalletStore();
+  const {
+    receivedInvoices,
+    sentInvoices,
+    pending,
+    complete,
+    showLoading,
+    showWalletPrompt,
+    isInvoiceProcessing,
+    isInvoiceSyncing,
+  } = useInvoices();
 
-  useEffect(() => {
-    if (connected) {
-      fetchInvoices();
-    }
-  }, [connected, fetchInvoices]);
+  // 统计数据
+  const stats = {
+    totalSent: sentInvoices.length,
+    totalReceived: receivedInvoices.length,
+    pendingSent: sentInvoices.filter(
+      (item) => item.invoice.status === InvoiceStatus.PENDING
+    ).length,
+    pendingReceived: receivedInvoices.filter(
+      (item) => item.invoice.status === InvoiceStatus.PENDING
+    ).length,
+    paidSent: sentInvoices.filter(
+      (item) => item.invoice.status === InvoiceStatus.PAID
+    ).length,
+    paidReceived: receivedInvoices.filter(
+      (item) => item.invoice.status === InvoiceStatus.PAID
+    ).length,
+    totalPending: pending.length,
+    totalComplete: complete.length,
+  };
 
-  const totalSent = sentInvoices.length;
-  const totalReceived = receivedInvoices.length;
-  const pendingSent = sentInvoices.filter(inv => inv.status === InvoiceStatus.PENDING).length;
-  const pendingReceived = receivedInvoices.filter(inv => inv.status === InvoiceStatus.PENDING).length;
-  const paidSent = sentInvoices.filter(inv => inv.status === InvoiceStatus.PAID).length;
-  const paidReceived = receivedInvoices.filter(inv => inv.status === InvoiceStatus.PAID).length;
+  // 显示加载状态
+  if (showLoading) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <p className="mt-4 text-sm text-primary-500">Loading invoices...</p>
+      </div>
+    );
+  }
 
-  if (!connected) {
+  // 显示钱包连接提示
+  if (showWalletPrompt) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center">
         <div className="rounded-2xl border border-primary-200 bg-white p-10 text-center shadow-sm">
@@ -75,12 +100,12 @@ export default function DashboardPage() {
               <Send className="h-6 w-6 text-info-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-primary-900">{totalSent}</p>
+              <p className="text-2xl font-bold text-primary-900">{stats.totalSent}</p>
               <p className="text-sm text-primary-500">Sent</p>
             </div>
           </div>
           <p className="mt-3 text-xs text-primary-400">
-            Pending: {pendingSent} · Paid: {paidSent}
+            Pending: {stats.pendingSent} · Paid: {stats.paidSent}
           </p>
         </div>
 
@@ -90,12 +115,12 @@ export default function DashboardPage() {
               <Inbox className="h-6 w-6 text-accent-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-primary-900">{totalReceived}</p>
+              <p className="text-2xl font-bold text-primary-900">{stats.totalReceived}</p>
               <p className="text-sm text-primary-500">Received</p>
             </div>
           </div>
           <p className="mt-3 text-xs text-primary-400">
-            Pending: {pendingReceived} · Paid: {paidReceived}
+            Pending: {stats.pendingReceived} · Paid: {stats.paidReceived}
           </p>
         </div>
 
@@ -105,7 +130,7 @@ export default function DashboardPage() {
               <Clock className="h-6 w-6 text-warning-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-warning-900">{pendingSent + pendingReceived}</p>
+              <p className="text-2xl font-bold text-warning-900">{stats.totalPending}</p>
               <p className="text-sm text-warning-700">Pending</p>
             </div>
           </div>
@@ -118,7 +143,7 @@ export default function DashboardPage() {
               <CheckCircle className="h-6 w-6 text-success-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-success-900">{paidSent + paidReceived}</p>
+              <p className="text-2xl font-bold text-success-900">{stats.totalComplete}</p>
               <p className="text-sm text-success-700">Completed</p>
             </div>
           </div>
@@ -214,8 +239,15 @@ export default function DashboardPage() {
           />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {sentInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} role="SELLER" />
+            {sentInvoices.slice(0, 4).map((item) => (
+              <InvoiceCard
+                key={item.invoice.id}
+                invoice={item.invoice}
+                role={item.role}
+                statusConfig={item.statusConfig}
+                isProcessing={isInvoiceProcessing(item.invoice.id)}
+                isSyncing={isInvoiceSyncing(item.invoice)}
+              />
             ))}
           </div>
         )}
@@ -254,8 +286,15 @@ export default function DashboardPage() {
           />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {receivedInvoices.slice(0, 4).map((inv) => (
-              <InvoiceCard key={inv.id} invoice={inv} role="BUYER" />
+            {receivedInvoices.slice(0, 4).map((item) => (
+              <InvoiceCard
+                key={item.invoice.id}
+                invoice={item.invoice}
+                role={item.role}
+                statusConfig={item.statusConfig}
+                isProcessing={isInvoiceProcessing(item.invoice.id)}
+                isSyncing={isInvoiceSyncing(item.invoice)}
+              />
             ))}
           </div>
         )}

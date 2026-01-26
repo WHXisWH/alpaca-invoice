@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { InvoiceStatus } from '@/lib/types';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
-import { Invoice, AleoField } from '@/lib/types';
+import { Invoice } from '@/lib/types';
 import { StatusConfig } from './IInvoices';
 
 type InvoiceWithRole = {

@@ -94,10 +94,14 @@ app/
 |------|---------------|
 | `useWalletController` | Wallet connection, balance polling, identity authorization |
 | `useAuthCheck` | Independent authorization check, reusable across pages |
-| `useInvoices` | Invoice list compositor (initialize, poll, filter, role) |
+| `useInvoices` | Invoice list compositor (initialize, auto-poll SENDING invoices, filter, role) |
 | `useInvoiceDetail` | Invoice detail compositor (data, role, chain sync, actions) |
 | `useTransactionController` | Transaction flow management (create/pay/cancel) |
 | `useAuditController` | Audit package generation & validation (selective disclosure) |
+| `useInvoiceListPolling` | Batch polling for multiple SENDING invoices (list/dashboard pages) |
+| `useInvoiceChainSync` | Single invoice polling and sync (detail page) |
+| `useInvoicePollingCore` | Core polling logic shared by list and detail polling |
+| `useInvoiceChainScan` | Chain scanning and invoice building utilities |
 
 ### 2.3 Service Layer
 
@@ -246,7 +250,72 @@ Auditor validates (UI or scripts/validate_audit_package.mjs)
         └─ decrypts with audit key
 ```
 
-### 3.4 Invoice Status Lifecycle
+### 3.4 Polling Architecture
+
+The system implements a dual-layer polling strategy for tracking invoice confirmation status:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                     Polling Architecture                        │
+└────────────────────────────────────────────────────────────────┘
+
+List/Dashboard Pages              Detail Page
+┌─────────────────────┐          ┌─────────────────────┐
+│   useInvoices       │          │ useInvoiceDetail    │
+│                     │          │                     │
+│  ┌───────────────┐  │          │  ┌───────────────┐  │
+│  │ Initialize    │  │          │  │ Load Invoice  │  │
+│  │ from IndexedDB│  │          │  │               │  │
+│  └───────┬───────┘  │          │  └───────┬───────┘  │
+│          │          │          │          │          │
+│          ▼          │          │          ▼          │
+│  ┌───────────────┐  │          │  ┌───────────────┐  │
+│  │ Found SENDING │  │          │  │ Check Status  │  │
+│  │  invoices?    │  │          │  │ = SENDING?    │  │
+│  └───────┬───────┘  │          │  └───────┬───────┘  │
+│          │YES       │          │          │YES       │
+│          ▼          │          │          ▼          │
+│  ┌───────────────┐  │          │  ┌───────────────┐  │
+│  │useInvoiceList │  │          │  │useInvoiceChain│  │
+│  │   Polling     │  │          │  │    Sync       │  │
+│  │ (batch mode)  │  │          │  │ (single mode) │  │
+│  └───────┬───────┘  │          │  └───────┬───────┘  │
+│          │          │          │          │          │
+│          └──────────┼──────────┼──────────┘          │
+│                     │          │                     │
+│                     ▼          ▼                     │
+│            ┌─────────────────────────┐               │
+│            │ useInvoicePollingCore   │               │
+│            │  - Scan chain           │               │
+│            │  - Validate status      │               │
+│            │  - Build updated invoice│               │
+│            └─────────────────────────┘               │
+└─────────────────────────────────────────────────────┘
+```
+
+**Polling Behavior:**
+
+1. **List/Dashboard Pages** (`useInvoices`):
+   - Automatically polls multiple SENDING invoices in batch
+   - Triggered on initialization if SENDING invoices found in IndexedDB
+   - Triggered after user operations (pay/cancel)
+   - Each invoice has independent PollingService instance
+   - Stops polling when invoice confirmed or timeout
+
+2. **Detail Page** (`useInvoiceDetail`):
+   - Polls single invoice if status is SENDING
+   - Supports manual sync button
+   - Includes special key migration logic for confirmed invoices
+   - Auto-stops when invoice confirmed
+
+3. **Core Polling Logic** (`useInvoicePollingCore`):
+   - Shared by both list and detail polling
+   - 15-second intervals with 5-minute timeout
+   - Scans chain for matching InvoiceRecord/PaymentRecord
+   - Validates status transitions with InvoiceStatusValidator
+   - Builds updated invoice with correct metadata
+
+### 3.5 Invoice Status Lifecycle
 
 ```
     ┌──────────────┐
@@ -267,6 +336,10 @@ Auditor validates (UI or scripts/validate_audit_package.mjs)
     │  EXPIRED  │ (time-based check)
     └───────────┘
 ```
+
+**Confirmation Status** (metadata):
+- `SENDING`: Transaction submitted, awaiting chain confirmation
+- `CONFIRMED`: Found matching record on chain, status validated
 
 ---
 

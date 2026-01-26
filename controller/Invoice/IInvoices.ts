@@ -13,18 +13,35 @@ export interface StatusConfig {
 }
 
 /**
+ * 带角色的发票项类型
+ */
+export type InvoiceWithRole = {
+  invoice: Invoice;
+  role: 'SELLER' | 'BUYER' | 'BOTH';
+  chainStatus: ChainConfirmationStatus;
+  statusConfig: StatusConfig;
+};
+
+/**
  * IInvoices Controller 接口
  * 发票列表页的业务逻辑控制器
  */
 export interface IInvoices {
   // --- 数据 ---
   /** 过滤后的发票列表（包含角色、链上状态、状态配置） */
-  filteredInvoices: Array<{
-    invoice: Invoice;
-    role: 'SELLER' | 'BUYER' | 'BOTH';
-    chainStatus: ChainConfirmationStatus;  // ✅ 新增：链上确认状态
-    statusConfig: StatusConfig;            // ✅ 新增：状态配置
-  }>;
+  filteredInvoices: InvoiceWithRole[];
+  
+  /** 已收到发票（角色为 BUYER 或 BOTH） */
+  receivedInvoices: InvoiceWithRole[];
+  
+  /** 发出去的发票（角色为 SELLER 或 BOTH） */
+  sentInvoices: InvoiceWithRole[];
+  
+  /** 待支付发票（状态为 PENDING） */
+  pending: InvoiceWithRole[];
+  
+  /** 已支付发票（状态为 PAID） */
+  complete: InvoiceWithRole[];
   
   // --- 状态 ---
   /** 当前过滤状态 */

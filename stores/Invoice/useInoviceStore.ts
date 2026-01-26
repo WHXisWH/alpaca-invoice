@@ -418,6 +418,10 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
   /**
    * ✅ 从 IndexedDB 获取所有发票：IndexedDB → 解密 → 更新内存 → 返回
+   * 
+   * ✅ masterKey 是可选的：
+   * - 有 masterKey：解密 details，返回完整发票
+   * - 无 masterKey：不解密 details，只返回基本信息
    */
   getAllInvoices: async (options = {}) => {
     const { masterKey, refreshMemory = true } = options;
@@ -426,13 +430,14 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       // 1. 从 IndexedDB 读取所有记录
       const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
       console.log(`📦 [Store.getAllInvoices] Found ${allDBRecords.length} invoices in IndexedDB`);
+      console.log(`📦 [Store.getAllInvoices] Has masterKey for decryption:`, !!masterKey);
       
       const invoices: Invoice[] = [];
       
       // 2. 批量解密并构建完整发票对象
       for (const dbRecord of allDBRecords) {
         try {
-          // 解密 details（如果有 masterKey）
+          // ✅ 如果没有 masterKey，details 会是 undefined（这是正常的）
           const details = (masterKey && dbRecord.encryptedDetails)
             ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
             : undefined;
@@ -473,10 +478,15 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       
       // 3. ✅ 更新内存状态（如果 refreshMemory 为 true）
       if (refreshMemory) {
-        set({
+        // ✅ 使用函数式更新确保状态正确更新
+        set((state) => ({
+          ...state,
           invoices: invoices
-        });
+        }));
         console.log(`✅ [Store.getAllInvoices] Updated memory state with ${invoices.length} invoices`);
+        if (!masterKey && invoices.length > 0) {
+          console.log(`💡 [Store.getAllInvoices] Details not decrypted (no masterKey)`);
+        }
       }
       
       return invoices;
