@@ -129,7 +129,7 @@ const config: Config = {
         ring: "hsl(var(--ring))",
       },
       fontFamily: {
-        sans: ["Inter", "SF Pro Display", "system-ui", "sans-serif"],
+        sans: ["DM Sans", "Inter", "SF Pro Display", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "SF Mono", "monospace"],
       },
       borderRadius: {

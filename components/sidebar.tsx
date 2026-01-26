@@ -45,15 +45,21 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-primary-900">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-white/5 bg-gradient-to-b from-primary-950 via-primary-900 to-primary-950">
       <div className="flex h-full flex-col">
         {/* Logo - Click to go to homepage */}
         <Link
           href="/"
-          className="flex h-16 items-center gap-3 border-b border-primary-800 px-6 transition-colors hover:bg-primary-800"
+          className="flex h-16 items-center gap-3 border-b border-white/5 px-6 transition-colors hover:bg-white/5 cursor-pointer"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500">
-            <span className="text-xl">🦙</span>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
+            <Image
+              src="/images/mascot/mascot-shield.png"
+              alt="Alpaca logo"
+              width={28}
+              height={28}
+              className="object-contain"
+            />
           </div>
           <div>
             <span className="text-lg font-bold text-white">Alpaca</span>
@@ -76,10 +82,10 @@ export default function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all cursor-pointer',
                   isActive
-                    ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25'
-                    : 'text-primary-300 hover:bg-primary-800 hover:text-white'
+                    ? 'bg-gradient-to-r from-accent-500/90 to-accent-400/80 text-white shadow-lg shadow-accent-500/25'
+                    : 'text-primary-300 hover:bg-white/5 hover:text-white'
                 )}
               >
                 <Icon className="h-5 w-5" />
@@ -91,9 +97,9 @@ export default function Sidebar() {
 
         {/* Help Card */}
         <div className="p-4">
-          <div className="rounded-xl bg-primary-800 p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_12px_24px_-16px_rgba(15,23,42,0.5)] backdrop-blur">
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-500/20">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-500/15 ring-1 ring-accent-500/20">
                 <HelpCircle className="h-5 w-5 text-accent-400" />
               </div>
               <div>
@@ -103,7 +109,7 @@ export default function Sidebar() {
             </div>
             <Link
               href="/docs"
-              className="block w-full rounded-lg bg-primary-700 py-2 text-center text-xs font-medium text-primary-200 transition-colors hover:bg-primary-600 hover:text-white"
+              className="block w-full cursor-pointer rounded-lg bg-white/10 py-2 text-center text-xs font-medium text-primary-200 transition-colors hover:bg-white/20 hover:text-white"
             >
               Documentation
             </Link>
@@ -111,7 +117,7 @@ export default function Sidebar() {
         </div>
 
         {/* Footer with mascot */}
-        <div className="border-t border-primary-800 p-4">
+        <div className="border-t border-white/5 p-4">
           <div className="flex items-center gap-3">
             <Image
               src="/images/mascot/mascot-happy.png"

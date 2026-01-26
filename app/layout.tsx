@@ -2,8 +2,6 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Providers from '@/components/providers';
 import WalletWatcher from '@/components/wallet-watcher';
-import Sidebar from '@/components/sidebar';
-import Header from '@/components/header';
 import { ErrorHandler } from '@/components/error-handler';
 import { Toaster } from 'sonner';
 import './globals.css';
@@ -20,7 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-primary-50">
+      <body className="min-h-screen bg-primary-50 text-foreground antialiased bg-[radial-gradient(60%_40%_at_10%_0%,rgba(245,158,11,0.12),transparent),radial-gradient(50%_35%_at_90%_10%,rgba(139,92,246,0.12),transparent)]">
         <Providers>
           <WalletWatcher />
           <ErrorHandler />
@@ -35,22 +33,10 @@ export default function RootLayout({
               },
             }}
           />
-
-          {/* Sidebar */}
-          <Sidebar />
-
-          {/* Main Content Area */}
-          <div className="pl-64">
-            {/* Header */}
-            <Header />
-
-            {/* Page Content */}
-            <main className="min-h-[calc(100vh-4rem)] p-6">
-              <div className="mx-auto max-w-7xl">{children}</div>
-            </main>
-          </div>
+          {children}
         </Providers>
       </body>
     </html>
   );
 }
+

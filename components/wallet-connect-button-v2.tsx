@@ -35,14 +35,14 @@ export default function WalletConnectButtonV2() {
 
         {/* Connect Button with integrated network badge */}
         <div className="inline-flex items-center gap-2">
-          <span className="rounded-full bg-accent-100 px-2.5 py-1 text-xs font-medium text-accent-700">
+          <span className="rounded-full bg-accent-100/80 px-2.5 py-1 text-xs font-medium text-accent-700 ring-1 ring-accent-200/50">
             {networkName}
           </span>
           <button
             onClick={handleConnect}
             disabled={isConnecting}
             className={cn(
-              'inline-flex items-center gap-2 rounded-lg px-4 py-2',
+              'inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2',
               'bg-accent-500 text-sm font-semibold text-white',
               'shadow-sm transition-all',
               'hover:bg-accent-600 hover:shadow-md',
@@ -67,7 +67,7 @@ export default function WalletConnectButtonV2() {
   }
 
   return (
-    <div className="inline-flex items-center gap-3 rounded-xl border border-primary-200 bg-white px-4 py-2.5 shadow-sm">
+    <div className="inline-flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-2.5 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.25)] backdrop-blur">
       {/* Connection Status */}
       <div className="flex items-center gap-2.5">
         <span className="relative flex h-2 w-2">
@@ -83,7 +83,7 @@ export default function WalletConnectButtonV2() {
       </div>
 
       {/* Divider */}
-      <div className="h-8 w-px bg-primary-200" />
+      <div className="h-8 w-px bg-primary-200/70" />
 
       {/* Balance */}
       <div className="flex flex-col text-right">
@@ -96,7 +96,7 @@ export default function WalletConnectButtonV2() {
       {/* Disconnect */}
       <button
         onClick={handleLogout}
-        className="rounded-lg p-2 text-primary-400 transition-colors hover:bg-error-50 hover:text-error-600"
+        className="cursor-pointer rounded-lg p-2 text-primary-400 transition-colors hover:bg-error-50 hover:text-error-600"
         title="Disconnect"
       >
         <LogOut className="h-4 w-4" />
