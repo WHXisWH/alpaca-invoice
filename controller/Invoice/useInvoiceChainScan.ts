@@ -3,7 +3,7 @@ import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
+import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { AleoField } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';

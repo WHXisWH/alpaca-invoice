@@ -95,4 +95,11 @@ export interface IWalletService {
     fee: number;
     feePrivate: boolean;
   }): Promise<string>;
+
+  /**
+   * 查询交易状态
+   * @param transactionId 交易ID
+   * @returns 交易状态字符串
+   */
+  transactionStatus?(transactionId: string): Promise<string>;
 }

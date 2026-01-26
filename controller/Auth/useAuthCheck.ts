@@ -3,7 +3,7 @@ import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { createWalletAdapter } from '@/controller/Wallet/useWalletController';
+import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { toast } from 'sonner';
