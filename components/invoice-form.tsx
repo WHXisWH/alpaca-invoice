@@ -97,13 +97,13 @@ export default function InvoiceForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+      className="surface-card space-y-4 p-6"
     >
       <div className="space-y-1">
         <label className="text-sm font-medium text-slate-800">
           Seller address (current wallet)
         </label>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        <div className="rounded-lg border border-primary-200/60 bg-primary-50/70 px-3 py-2 text-sm text-slate-700">
           {publicKey || 'Not connected'}
         </div>
       </div>
@@ -114,7 +114,7 @@ export default function InvoiceForm() {
           required
           value={buyer}
           onChange={(e) => setBuyer(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="input-field"
           placeholder="aleo1..."
         />
       </div>
@@ -127,7 +127,7 @@ export default function InvoiceForm() {
           required
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="input-field"
         />
       </div>
       <div className="space-y-1">
@@ -136,7 +136,7 @@ export default function InvoiceForm() {
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="input-field"
         />
       </div>
       <div className="space-y-1">
@@ -145,13 +145,13 @@ export default function InvoiceForm() {
           type="date"
           value={dueDate}
           onChange={(e) => setDueDate(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="input-field"
         />
       </div>
       
       {/* Progress indicator */}
       {isProcessing && (
-        <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <div className="space-y-2 rounded-lg border border-blue-200/60 bg-blue-50/70 p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-blue-900">Processing...</span>
             <span className="text-sm text-blue-700">{currentProgress}%</span>
@@ -171,7 +171,7 @@ export default function InvoiceForm() {
       <button
         type="submit"
         disabled={isProcessing}
-        className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+        className="w-full cursor-pointer rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isProcessing ? 'Processing...' : 'Create invoice'}
       </button>

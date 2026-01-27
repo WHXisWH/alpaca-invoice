@@ -18,7 +18,7 @@ export default function Header() {
   const pageInfo = pageTitles[pathname] || { title: 'Alpaca Invoice' };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-primary-200 bg-white px-6">
+    <header className="sticky top-6 z-30 flex h-16 items-center justify-between rounded-2xl border border-white/60 bg-white/80 px-6 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] backdrop-blur-xl">
       <div>
         <h1 className="text-lg font-semibold text-primary-900">{pageInfo.title}</h1>
         {pageInfo.subtitle && (
@@ -28,7 +28,7 @@ export default function Header() {
 
       <div className="flex items-center gap-4">
         {/* Notifications (placeholder) */}
-        <button className="relative rounded-lg p-2 text-primary-500 transition-colors hover:bg-primary-100 hover:text-primary-700">
+        <button className="relative cursor-pointer rounded-lg p-2 text-primary-500 transition-colors hover:bg-primary-100/70 hover:text-primary-700">
           <Bell className="h-5 w-5" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-500" />
         </button>

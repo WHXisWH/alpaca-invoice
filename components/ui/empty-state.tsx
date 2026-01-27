@@ -30,7 +30,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-primary-200 bg-primary-50/50 px-6 py-12',
+        'flex flex-col items-center justify-center rounded-2xl border border-dashed border-primary-200/70 bg-white/70 px-6 py-12 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.25)] backdrop-blur',
         className
       )}
     >
@@ -43,8 +43,8 @@ export function EmptyState({
           className="mb-4 opacity-80"
         />
       ) : Icon ? (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100">
-          <Icon className="h-8 w-8 text-primary-400" />
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-100/80 ring-1 ring-primary-200/50">
+          <Icon className="h-8 w-8 text-primary-500" />
         </div>
       ) : null}
 
