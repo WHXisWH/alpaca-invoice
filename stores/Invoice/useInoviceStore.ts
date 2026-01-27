@@ -134,15 +134,34 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     const { masterKey, persistFull = true } = options;
     const state = get();
     
-    // ✅ 优先使用 currentInvoice（如果存在且 id 匹配），否则从 invoices 中查找
-    let currentInvoice = state.currentInvoice?.id === id 
-      ? state.currentInvoice 
-      : state.invoices.find(inv => inv.id === id);
+    // ✅ 优先使用 currentInvoice（如果存在且匹配），否则从 invoices 中查找
+    // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+    const updatesInvoiceHash = (updates as any).invoiceHash;
+    
+    let currentInvoice = 
+      (state.currentInvoice?.id === id || 
+       (updatesInvoiceHash && state.currentInvoice?.invoiceHash === updatesInvoiceHash))
+        ? state.currentInvoice 
+        : state.invoices.find(inv => 
+            inv.id === id || 
+            (updatesInvoiceHash && inv.invoiceHash === updatesInvoiceHash)
+          );
     
     if (!currentInvoice) {
-      console.warn('⚠️ [Store.updateInvoice] Invoice not found:', id);
+      console.warn('⚠️ [Store.updateInvoice] Invoice not found:', id, {
+        updateInvoiceHash: updatesInvoiceHash,
+        availableInvoiceIds: state.invoices.map(inv => inv.id).slice(0, 5)
+      });
       return;
     }
+    
+    console.log('✅ [Store.updateInvoice] Found invoice:', {
+      searchId: id,
+      foundById: currentInvoice.id === id,
+      foundByHash: updatesInvoiceHash && currentInvoice.invoiceHash === updatesInvoiceHash,
+      currentId: currentInvoice.id,
+      invoiceHash: currentInvoice.invoiceHash
+    });
 
     // ✅ 正确合并 metadata（如果 updates 中有 metadata，使用它；否则保持现有的）
     const updatedInvoice = { 
@@ -220,12 +239,18 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
     // 2. 更新内存（仅在持久化成功或不需要持久化时）
     set((state) => {
+      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+      // 如果 id 不匹配，但 invoiceHash 匹配，说明发生了 key 迁移，需要更新
       const updatedInvoices = state.invoices.map((inv) =>
-        inv.id === id ? updatedInvoice : inv
+        (inv.id === id || inv.invoiceHash === updatedInvoice.invoiceHash) 
+          ? updatedInvoice 
+          : inv
       );
       
       // ✅ 如果更新的是当前 invoice，同步更新 currentInvoice
-      const newCurrentInvoice = state.currentInvoice?.id === id 
+      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+      const newCurrentInvoice = (state.currentInvoice?.id === id || 
+                                 state.currentInvoice?.invoiceHash === updatedInvoice.invoiceHash)
         ? updatedInvoice 
         : state.currentInvoice;
 
