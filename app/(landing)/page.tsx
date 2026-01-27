@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { useEffect, useRef } from 'react';
 import {
   ArrowRight,
   FileText,
@@ -16,59 +15,11 @@ import {
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 
 export default function HomePage() {
-  const sectionRefs = useRef<Array<HTMLElement | null>>([]);
-  const isAutoScrolling = useRef(false);
-
-  useEffect(() => {
-    const handleWheel = (event: WheelEvent) => {
-      if (isAutoScrolling.current || Math.abs(event.deltaY) < 12) {
-        return;
-      }
-
-      const sections = sectionRefs.current.filter(Boolean) as HTMLElement[];
-      if (sections.length === 0) return;
-
-      event.preventDefault();
-      const focusY = window.scrollY + window.innerHeight / 2;
-      let currentIndex = 0;
-      let closestDistance = Number.POSITIVE_INFINITY;
-      sections.forEach((section, index) => {
-        const center = section.offsetTop + section.offsetHeight / 2;
-        const distance = Math.abs(center - focusY);
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          currentIndex = index;
-        }
-      });
-      const direction = event.deltaY > 0 ? 1 : -1;
-      const targetIndex = Math.min(
-        sections.length - 1,
-        Math.max(0, currentIndex + direction)
-      );
-
-      if (targetIndex === currentIndex) {
-        return;
-      }
-
-      isAutoScrolling.current = true;
-      sections[targetIndex].scrollIntoView({ behavior: 'smooth' });
-      window.setTimeout(() => {
-        isAutoScrolling.current = false;
-      }, 900);
-    };
-
-    window.addEventListener('wheel', handleWheel, { passive: false });
-    return () => window.removeEventListener('wheel', handleWheel);
-  }, []);
-
   return (
-    <MotionContainer className="snap-y snap-mandatory">
+    <MotionContainer>
       <MotionItem>
         <section
-          ref={(el) => {
-            sectionRefs.current[0] = el;
-          }}
-          className="relative min-h-screen snap-start overflow-hidden border-b border-white/10 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
+          className="relative min-h-screen overflow-hidden border-b border-white/10 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
         >
           <div className="absolute left-10 top-8 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/70">
             <Sparkles className="h-3.5 w-3.5 text-accent-400" />
@@ -162,10 +113,7 @@ export default function HomePage() {
       </MotionItem>
 
       <motion.section
-        ref={(el) => {
-          sectionRefs.current[1] = el;
-        }}
-        className="min-h-screen snap-start border-b border-white/10 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
+        className="min-h-screen border-b border-white/10 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
         initial={{ opacity: 0, y: 60, filter: 'blur(10px)' }}
         whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
@@ -252,10 +200,7 @@ export default function HomePage() {
 
       <MotionItem>
         <section
-          ref={(el) => {
-            sectionRefs.current[2] = el;
-          }}
-          className="min-h-screen snap-start bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
+          className="min-h-screen bg-gradient-to-br from-primary-950 via-primary-900 to-primary-950 px-12 py-24 text-white"
         >
           <div className="mx-auto flex min-h-[calc(100vh-12rem)] max-w-7xl items-center justify-center">
             <div className="rounded-3xl border border-white/10 bg-white/10 p-14 text-center text-white/90 backdrop-blur-xl">

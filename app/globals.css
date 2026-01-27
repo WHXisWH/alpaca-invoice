@@ -93,10 +93,6 @@
     font-family: "DM Sans", "Inter", system-ui, sans-serif;
   }
 
-  /* Smooth scrolling */
-  html {
-    scroll-behavior: smooth;
-  }
 }
 
 @layer components {
