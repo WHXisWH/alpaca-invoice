@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { Invoice, AleoField } from '@/lib/types';
 import { toast } from 'sonner';
 
@@ -14,7 +15,7 @@ import { toast } from 'sonner';
  * - 处理支付操作
  * - 处理取消操作
  * - 管理操作状态
- * - 操作后触发同步
+ * - ✅ 操作成功后标记为 SENDING（触发 AutoPoller）
  */
 export function useInvoiceActions(
   invoice: Invoice | null,
@@ -22,11 +23,13 @@ export function useInvoiceActions(
 ) {
   const { executePay, executeCancel } = useTransactionController();
   const { handleError } = useErrorHandler();
+  const markInvoiceSending = useInvoiceStore((state) => state.markInvoiceSending);
   const [isProcessing, setIsProcessing] = useState(false);
 
   /**
    * 处理支付
    * 直接使用 hook 的 invoice 对象，不需要参数
+   * ✅ 成功后标记为 SENDING，触发全局 AutoPoller
    */
   const handlePay = useCallback(async () => {
     if (!invoice) {
@@ -40,12 +43,16 @@ export function useInvoiceActions(
     try {
       toast.loading('Processing payment...', { id: `pay-${invoice.id}` });
       const transactionId = await executePay(invoice);
+      
+      // ✅ 标记为 SENDING（触发 AutoPoller 自动轮询）
+      markInvoiceSending(invoice.invoiceHash);
+      
       toast.success('Payment successful!', {
         id: `pay-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      // 触发同步以更新发票状态
-      await onSyncAfterAction?.();
+      
+      // 不再需要手动同步，AutoPoller 会自动处理
     } catch (error) {
       toast.error('Payment failed', {
         id: `pay-${invoice.id}`,
@@ -55,11 +62,12 @@ export function useInvoiceActions(
     } finally {
       setIsProcessing(false);
     }
-  }, [invoice, executePay, onSyncAfterAction, handleError]);
+  }, [invoice, executePay, markInvoiceSending, handleError]);
 
   /**
    * 处理取消
    * 直接使用 hook 的 invoice 对象，不需要参数
+   * ✅ 成功后标记为 SENDING，触发全局 AutoPoller
    */
   const handleCancel = useCallback(async () => {
     if (!invoice) {
@@ -73,12 +81,16 @@ export function useInvoiceActions(
     try {
       toast.loading('Cancelling invoice...', { id: `cancel-${invoice.id}` });
       const transactionId = await executeCancel(invoice);
+      
+      // ✅ 标记为 SENDING（触发 AutoPoller 自动轮询）
+      markInvoiceSending(invoice.invoiceHash);
+      
       toast.success('Invoice cancelled successfully', { 
         id: `cancel-${invoice.id}`,
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
-      // 触发同步以更新发票状态
-      await onSyncAfterAction?.();
+      
+      // 不再需要手动同步，AutoPoller 会自动处理
     } catch (error) {
       toast.error('Failed to cancel invoice', {
         id: `cancel-${invoice.id}`,
@@ -88,7 +100,7 @@ export function useInvoiceActions(
     } finally {
       setIsProcessing(false);
     }
-  }, [invoice, executeCancel, onSyncAfterAction, handleError]);
+  }, [invoice, executeCancel, markInvoiceSending, handleError]);
 
   return {
     isProcessing,

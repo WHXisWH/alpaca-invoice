@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
@@ -7,22 +7,20 @@ import { AleoField, Invoice } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
-import { PollingService } from '@/services/PollingService/PollingServiceImpl';
-import { InvoiceScanResult } from '@/services/PollingService/adapters/InvoiceStatusValidatorAdapter';
 import { useInvoicePollingCore } from './useInvoicePollingCore';
 
 /**
- * Hook: 链上同步逻辑（重构版）
+ * Hook: 链上手动同步逻辑（统一轮询架构版）
  * 
  * 职责：
- * - 单个发票的轮询和同步
- * - 手动同步功能（handleSyncStatus）
- * - 支持 key 迁移逻辑（create action 时）
- * - 自动启动/停止轮询
+ * - ✅ 手动同步功能（handleSyncStatus）- 用户主动触发
+ * - ✅ 支持 key 迁移逻辑（create action 时）
+ * - ❌ 移除自动轮询：由全局 AutoPoller 统一管理
  * 
- * 重构说明：
- * - 使用 useInvoicePollingCore 复用核心轮询逻辑
- * - 保留详情页特有的功能（key 迁移、手动同步）
+ * 架构说明：
+ * - 自动轮询：由 InvoiceAutoPoller（全局单例）统一管理
+ * - isSyncing：在 useInvoiceDetail 中从 sendingInvoiceHashes 派生
+ * - 本 Hook 只提供手动同步功能
  */
 export function useInvoiceChainSync(
   invoice: Invoice | null,
@@ -34,46 +32,40 @@ export function useInvoiceChainSync(
   const { handleError } = useErrorHandler();
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
-  // ✅ 使用核心轮询逻辑
-  const { createPollingService, buildUpdatedInvoice } = useInvoicePollingCore();
-  const pollingServiceRef = useRef<PollingService<InvoiceScanResult> | null>(null);
+  // ✅ 使用核心轮询逻辑（仅用于 buildUpdatedInvoice）
+  const { buildUpdatedInvoice } = useInvoicePollingCore();
   
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
-  
-  // ✅ 使用 ref 来跟踪最新的 currentStatus，确保在异步回调中能读取到最新值
-  const currentStatusRef = useRef<ChainConfirmationStatus | null>(currentStatus);
-  
-  // ✅ 每次 currentStatus 变化时更新 ref
-  useEffect(() => {
-    currentStatusRef.current = currentStatus;
-  }, [currentStatus]);
 
   /**
    * 确认发票并更新到 store
    * ✅ 包含 key 迁移逻辑（详情页特有）
+   * ✅ 支持无 masterKey 时仅更新内存（不持久化）
    */
   const confirmInvoice = useCallback(async (
     updatedInvoice: Invoice,
     record: AleoInvoiceRecord | AleoPaymentRecord
   ) => {
-    if (!invoiceHash || !masterKey) {
-      console.warn('⚠️ [ChainSync] Missing required data', { invoiceHash, masterKey: !!masterKey });
+    if (!invoiceHash) {
+      console.warn('⚠️ [ChainSync] Missing invoiceHash');
       return;
     }
 
     try {
-      console.log('🔄 [ChainSync] Confirming invoice:', invoiceHash);
+      console.log('🔄 [ChainSync] Confirming invoice:', invoiceHash, {
+        hasMasterKey: !!masterKey,
+        willPersist: !!masterKey
+      });
       
       // ✅ 检测是否需要 key 迁移（action === 'create' 且 id 发生变化）
       const oldId = invoice?.id;
       const newId = updatedInvoice.id;
       const needsKeyMigration = invoice?.metadata?.action === 'create' && newId && newId !== oldId;
       
-      if (needsKeyMigration) {
+      if (needsKeyMigration && masterKey) {
+        // ✅ Key 迁移需要 masterKey（因为要移动加密数据）
         console.log(`🔄 [ChainSync] Key migration needed for create action: ${oldId} → ${newId}`);
         
-        // ✅ 使用 store 的 migrateInvoiceKey 方法
         await useNewInvoiceStore.getState().migrateInvoiceKey(
           oldId!,
           newId,
@@ -100,6 +92,7 @@ export function useInvoiceChainSync(
         });
       } else {
         // ✅ 常规更新流程（非 create action 或 id 未变化）
+        // 如果没有 masterKey，只更新内存（不持久化）
         await updateInvoice(updatedInvoice.id, {
           ...updatedInvoice,
           metadata: {
@@ -109,9 +102,13 @@ export function useInvoiceChainSync(
             lastUpdated: new Date()
           }
         } as any, {
-          masterKey: masterKey,
-          persistFull: true
+          masterKey: masterKey || undefined,
+          persistFull: !!masterKey  // ✅ 只有在有 masterKey 时才持久化
         });
+        
+        if (!masterKey) {
+          console.log('💡 [ChainSync] Updated in memory only (no masterKey for persistence)');
+        }
       }
 
       console.log('✅ [ChainSync] Invoice confirmed and synced to IndexedDB', {
@@ -127,14 +124,17 @@ export function useInvoiceChainSync(
 
   /**
    * 回退状态并更新到 store
+   * ✅ 支持无 masterKey 时仅更新内存
    */
   const rollbackInvoice = useCallback(async (rolledBackInvoice: Invoice) => {
-    if (!invoiceHash || !masterKey) {
+    if (!invoiceHash) {
       return;
     }
 
     try {
-      console.log('⚠️ [ChainSync] Rolling back invoice status due to timeout:', rolledBackInvoice.id);
+      console.log('⚠️ [ChainSync] Rolling back invoice status due to timeout:', rolledBackInvoice.id, {
+        hasMasterKey: !!masterKey
+      });
       
       // ✅ 回退到 CONFIRMED 状态（保持原有的 invoice 状态不变）
       await updateInvoice(rolledBackInvoice.id, {
@@ -145,8 +145,8 @@ export function useInvoiceChainSync(
           lastUpdated: new Date()
         }
       } as any, {
-        masterKey: masterKey,
-        persistFull: true
+        masterKey: masterKey || undefined,
+        persistFull: !!masterKey  // ✅ 只有在有 masterKey 时才持久化
       });
       
       toast.warning('Transaction may have failed', {
@@ -154,7 +154,11 @@ export function useInvoiceChainSync(
         duration: 10000
       });
       
-      console.log('✅ [ChainSync] Status rolled back to CONFIRMED');
+      if (!masterKey) {
+        console.log('💡 [ChainSync] Rolled back in memory only (no masterKey for persistence)');
+      } else {
+        console.log('✅ [ChainSync] Status rolled back to CONFIRMED');
+      }
     } catch (error) {
       console.error('❌ [ChainSync] Failed to rollback status:', error);
       handleError(error as Error);
@@ -210,92 +214,13 @@ export function useInvoiceChainSync(
     }
   }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, handleError]);
 
-  /**
-   * 停止轮询
-   */
-  const stopPolling = useCallback(() => {
-    if (pollingServiceRef.current) {
-      pollingServiceRef.current.stop();
-      pollingServiceRef.current = null;
-      setIsSyncing(false);
-      console.log('⏹️ [ChainSync] Stopped polling');
-    }
-  }, []);
-
-  /**
-   * 开始轮询扫描
-   * ✅ 使用核心逻辑创建 PollingService
-   */
-  const startPolling = useCallback(() => {
-    // ✅ 使用 ref 读取最新值
-    if (!invoiceHash || currentStatusRef.current === 'CONFIRMED') {
-      console.log('⏭️ [ChainSync] Skipping - already confirmed or no hash', { 
-        invoiceHash, 
-        currentStatus: currentStatusRef.current 
-      });
-      return;
-    }
-
-    // ✅ 如果 invoice 还未加载，等待加载完成
-    if (!invoice) {
-      console.log('⏳ [ChainSync] Waiting for invoice to load...', { invoiceHash });
-      return;
-    }
-
-    // ✅ 停止之前的轮询（如果存在）
-    if (pollingServiceRef.current) {
-      pollingServiceRef.current.stop();
-    }
-
-    setIsSyncing(true);
-    console.log('🔄 [ChainSync] Starting to poll chain records for invoice:', invoiceHash);
-
-    // ✅ 使用核心逻辑创建 PollingService
-    pollingServiceRef.current = createPollingService(invoiceHash, invoice, {
-      onSuccess: async (updatedInvoice, record) => {
-        await confirmInvoice(updatedInvoice, record);
-        setIsSyncing(false);
-      },
-      onTimeout: async (rolledBackInvoice) => {
-        await rollbackInvoice(rolledBackInvoice);
-        setIsSyncing(false);
-      },
-      onError: (error) => {
-        console.error('[ChainSync] Polling error:', error);
-      }
-    });
-
-    pollingServiceRef.current.start();
-  }, [invoiceHash, invoice, createPollingService, confirmInvoice, rollbackInvoice]);
-
-  /**
-   * 自动开始/停止轮询
-   */
-  useEffect(() => {
-    console.log('🔄 [ChainSync] Status changed:', { 
-      invoiceHash, 
-      currentStatus, 
-      hasInvoice: !!invoice 
-    });
-    
-    // ✅ 只有当 invoice 存在且 currentStatus 不是 null 且不是 'CONFIRMED' 时才启动轮询
-    if (invoiceHash && invoice && currentStatus && currentStatus !== 'CONFIRMED') {
-      startPolling();
-    } else {
-      stopPolling();
-    }
-
-    // 清理函数
-    return () => {
-      stopPolling();
-    };
-  }, [invoiceHash, invoice, currentStatus, startPolling, stopPolling]);
+  // ✅ 移除自动轮询逻辑：由全局 AutoPoller 统一管理
+  // ✅ 移除 startPolling/stopPolling：不再需要详情页独立轮询
 
   return {
-    isSyncing,
     isSyncingStatus,
-    handleSyncStatus,
-    startPolling,
-    stopPolling
+    handleSyncStatus
+    // ✅ 移除 isSyncing：在 useInvoiceDetail 中从 sendingInvoiceHashes 派生
+    // ✅ 移除 startPolling/stopPolling：由 AutoPoller 统一管理
   };
 }

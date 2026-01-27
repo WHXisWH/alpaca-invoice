@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Sidebar from '@/components/sidebar';
 import Header from '@/components/header';
+import { InvoiceAutoPoller } from '@/components/InvoiceAutoPoller';
 
 export default function AppLayout({
   children,
@@ -9,6 +10,9 @@ export default function AppLayout({
 }) {
   return (
     <>
+      {/* ✅ 全局自动轮询组件：监听 SENDING 发票并自动启动轮询 */}
+      <InvoiceAutoPoller />
+      
       {/* Sidebar */}
       <Sidebar />
 
