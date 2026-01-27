@@ -14,22 +14,22 @@ const statusConfig = {
   [InvoiceStatus.PENDING]: {
     icon: Clock,
     label: 'Pending',
-    className: 'bg-warning-50 text-warning-700 border-warning-200',
+    className: 'bg-warning-50/80 text-warning-700 border-warning-200/60',
   },
   [InvoiceStatus.PAID]: {
     icon: CheckCircle,
     label: 'Paid',
-    className: 'bg-success-50 text-success-700 border-success-200',
+    className: 'bg-success-50/80 text-success-700 border-success-200/60',
   },
   [InvoiceStatus.CANCELLED]: {
     icon: XCircle,
     label: 'Cancelled',
-    className: 'bg-primary-100 text-primary-600 border-primary-200',
+    className: 'bg-primary-100/80 text-primary-600 border-primary-200/60',
   },
   [InvoiceStatus.EXPIRED]: {
     icon: AlertTriangle,
     label: 'Expired',
-    className: 'bg-error-50 text-error-700 border-error-200',
+    className: 'bg-error-50/80 text-error-700 border-error-200/60',
   },
 };
 

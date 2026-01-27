@@ -50,7 +50,7 @@ export default function InvoiceCard({
 
   return (
     <TooltipProvider>
-      <div className="group relative overflow-hidden rounded-xl border border-primary-200 bg-white shadow-sm transition-all hover:border-primary-300 hover:shadow-md">
+      <div className="group relative overflow-hidden rounded-2xl border border-white/60 bg-white/80 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.3)] backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_46px_-24px_rgba(15,23,42,0.35)]">
         {/* Left Status Bar */}
         <div
           className={cn(
@@ -72,7 +72,7 @@ export default function InvoiceCard({
                     </code>
                     <button
                       onClick={() => navigator.clipboard.writeText(invoice.id)}
-                      className="text-primary-400 hover:text-primary-600"
+                      className="cursor-pointer text-primary-400 hover:text-primary-600"
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </button>
@@ -87,7 +87,7 @@ export default function InvoiceCard({
           </div>
 
           {(isProcessing || isSyncing) && (
-            <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-700">
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-50/70 px-3 py-2 text-xs text-primary-700 ring-1 ring-primary-200/40">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>{isProcessing ? 'Processing transaction...' : 'Syncing chain records...'}</span>
             </div>
@@ -128,10 +128,10 @@ export default function InvoiceCard({
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 border-t border-primary-100 pt-4">
+          <div className="flex gap-2 border-t border-primary-100/70 pt-4">
             <Link
               href={`/invoices/${invoice.invoiceHash}`}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary-200 bg-white px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50"
+              className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-primary-200/60 bg-white/70 px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-white"
             >
               <Eye className="h-4 w-4" />
               View
@@ -143,7 +143,7 @@ export default function InvoiceCard({
                   <button
                     onClick={() => onPay(invoice)}
                     disabled={isLoading || isProcessing || isSyncing}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-success-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-success-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-success-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-success-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isProcessing ? (
                       <>
@@ -162,7 +162,7 @@ export default function InvoiceCard({
                   <button
                     onClick={() => onCancel(invoice)}
                     disabled={isLoading || isProcessing || isSyncing}
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-error-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-error-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-error-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-error-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isProcessing ? (
                       <>

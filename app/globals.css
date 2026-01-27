@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -88,6 +90,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: "DM Sans", "Inter", system-ui, sans-serif;
   }
 
   /* Smooth scrolling */
@@ -97,6 +100,17 @@
 }
 
 @layer components {
+  /* Premium surfaces */
+  .surface-card {
+    @apply rounded-2xl border border-white/60 bg-white/80 shadow-[0_18px_40px_-20px_rgba(15,23,42,0.35)] backdrop-blur;
+  }
+  .surface-card-muted {
+    @apply rounded-2xl border border-primary-200/60 bg-primary-50/70 shadow-[0_12px_28px_-18px_rgba(15,23,42,0.25)] backdrop-blur;
+  }
+  .surface-divider {
+    @apply border-b border-primary-200/60;
+  }
+
   /* Card hover effect */
   .card-hover {
     @apply transition-all duration-200 ease-out;
@@ -128,7 +142,7 @@
     @apply w-full rounded-xl border-2 border-alpaca-300 bg-alpaca-50 px-4 py-3 text-sm transition-all duration-200 placeholder:text-alpaca-400;
   }
   .input-field:focus {
-    @apply border-accent outline-none ring-2 ring-accent/20;
+    @apply border-accent-500 outline-none ring-2 ring-accent-500/20;
   }
 
   /* Status badges */
@@ -154,7 +168,7 @@
 
   /* Glass effect */
   .glass {
-    @apply bg-white/80 backdrop-blur-md;
+    @apply bg-white/80 backdrop-blur-xl border border-white/60;
   }
 
   /* Skeleton loading */
