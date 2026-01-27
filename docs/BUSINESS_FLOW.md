@@ -637,135 +637,180 @@ Payment Initiation
   - Recompute `invoice_hash` from disclosed details and compare with package value.
 - Result: If valid, auditor sees only the permitted fields; no on-chain state is modified.
 
-## 8. Auto-Polling Flow (Chain Confirmation)
+## 8. Unified Auto-Polling Flow (Chain Confirmation)
 
-### List/Dashboard Page Polling
+### Architecture: Global Singleton with Single Source of Truth
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              List/Dashboard Page Load                       │
+│            InvoiceStore (Single Source of Truth)            │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ sendingInvoiceHashes: Record<AleoField, true>          │ │
+│  │ - All SENDING invoices tracked here                    │ │
+│  │ - Updated by all invoice mutations                     │ │
+│  │ - Subscribed by all pages + AutoPoller                 │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Zustand Subscribe
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│         InvoiceAutoPoller (Global Singleton Component)      │
+│         Placed in app/(app)/layout.tsx                      │
+└─────────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────┐
+    │ useEffect watches:     │
+    │ sendingInvoiceHashes   │
+    └──────┬─────────────────┘
+           │ Detect changes
+           ▼
+    ┌─────────────────────────┐
+    │ New hash added?         │
+    │ (not in pollingHashesRef│
+    └──────┬──────────────────┘
+           │ YES
+           ▼
+    ┌─────────────────────────┐
+    │ Start polling for hash  │
+    │ - useInvoiceListPolling │
+    │ - Create PollingService │
+    │ - 15s interval          │
+    │ - 10min timeout         │
+    └──────┬──────────────────┘
+           │
+    ┌──────┴───────┐
+    │              │
+    ▼              ▼
+┌──────────┐  ┌──────────┐
+│ Success  │  │ Timeout  │
+└────┬─────┘  └────┬─────┘
+     │             │
+     ▼             ▼
+┌─────────────────────────┐
+│ markInvoiceConfirmed()  │
+│ - Remove from index     │
+│ - Update invoice        │
+└─────────────────────────┘
+           │
+           ▼
+┌─────────────────────────┐
+│ UI auto-updates         │
+│ (all pages subscribed)  │
+└─────────────────────────┘
+```
+
+### User Operation Triggers Polling (Immediate)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Any Page: User clicks Pay/Cancel               │
 └─────────────────────────────────────────────────────────────┘
 
     ┌──────────────┐
-    │   useInvoices│
-    │   hook init  │
+    │ handlePay() or│
+    │ handleCancel()│
     └──────┬───────┘
            │
            ▼
-    ┌──────────────────────┐
-    │ Load from IndexedDB  │
-    │ - Load all invoices  │
-    │ - Load metadata      │
-    └──────┬───────────────┘
+    ┌──────────────────────────┐
+    │ Execute transaction      │
+    │ - executePay()           │
+    │ - executeCancel()        │
+    └──────┬───────────────────┘
+           │ Transaction submitted
+           ▼
+    ┌──────────────────────────┐
+    │ Update invoice metadata: │
+    │ - confirmationStatus =   │
+    │   'SENDING'              │
+    │ - action = 'pay'/'cancel'│
+    └──────┬───────────────────┘
            │
            ▼
     ┌──────────────────────────┐
-    │ Check confirmation       │
-    │ status for each invoice  │
-    └──────┬─────────┬─────────┘
-           │         │
-     CONFIRMED       SENDING
-           │         │
-           ▼         ▼
-    ┌──────────┐  ┌─────────────────────┐
-    │ Display  │  │ Found SENDING       │
-    │ normally │  │ invoices            │
-    └──────────┘  └──────┬──────────────┘
-                         │
-                         ▼
-                  ┌─────────────────────┐
-                  │ Start batch polling │
-                  │ - One service per   │
-                  │   invoice           │
-                  │ - 15s interval      │
-                  │ - 5min timeout      │
-                  └──────┬──────────────┘
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-              ▼                     ▼
-       ┌────────────┐        ┌────────────┐
-       │ Scan chain │        │ Timeout    │
-       │ every 15s  │        │ after 5min │
-       └──────┬─────┘        └──────┬─────┘
-              │                     │
-              ▼                     ▼
-       ┌────────────┐        ┌────────────┐
-       │Found record│        │ Roll back  │
-       │on chain?   │        │ to PENDING │
-       └──────┬─────┘        └────────────┘
-              │YES
-              ▼
-       ┌────────────────────┐
-       │ Validate status    │
-       │ - Check transitions│
-       │ - Verify action    │
-       └──────┬─────────────┘
-              │
-              ▼
-       ┌────────────────────┐
-       │ Update invoice:    │
-       │ - status → PAID    │
-       │ - metadata →       │
-       │   CONFIRMED        │
-       └──────┬─────────────┘
-              │
-              ▼
-       ┌────────────────────┐
-       │ Stop polling this  │
-       │ invoice            │
-       └──────┬─────────────┘
-              │
-              ▼
-       ┌────────────────────┐
-       │ Update UI:         │
-       │ - Show "Confirmed" │
-       │ - Update status    │
-       └────────────────────┘
+    │ markInvoiceSending(hash) │ ◄─── Immediate update
+    │ - Add to global index    │
+    │ - Triggers Zustand event │
+    └──────┬───────────────────┘
+           │
+           │ < 1ms
+           ▼
+    ┌──────────────────────────┐
+    │ AutoPoller detects       │
+    │ - useEffect triggered    │
+    │ - New hash in index      │
+    └──────┬───────────────────┘
+           │
+           ▼
+    ┌──────────────────────────┐
+    │ Start polling            │
+    │ immediately              │
+    └──────┬───────────────────┘
+           │
+           ▼
+    ┌──────────────────────────┐
+    │ UI updates immediately   │
+    │ - Dashboard: "Syncing" +1│
+    │ - List: "Sending" badge  │
+    │ - Detail: "Syncing..."   │
+    └──────────────────────────┘
+           │
+           │ Every 15s
+           ▼
+    ┌──────────────────────────┐
+    │ Scan chain for record    │
+    └──────┬───────────────────┘
+           │ Found
+           ▼
+    ┌──────────────────────────┐
+    │ markInvoiceConfirmed()   │
+    │ - Remove from index      │
+    └──────┬───────────────────┘
+           │
+           ▼
+    ┌──────────────────────────┐
+    │ UI updates immediately   │
+    │ - Dashboard: "Syncing" -1│
+    │ - List: "Confirmed" badge│
+    │ - Detail: Hide "Syncing" │
+    └──────────────────────────┘
 ```
 
-### User Operation Triggers Polling
+### Cross-Page Real-Time Synchronization
 
 ```
-┌─────────────────┐
-│ User clicks     │
-│ Pay / Cancel    │
-└──────┬──────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ Execute transaction      │
-│ - Pay: executePay()      │
-│ - Cancel: executeCancel()│
-└──────┬───────────────────┘
-       │
-       │ Transaction success
-       ▼
-┌──────────────────────────┐
-│ Update metadata:         │
-│ confirmationStatus =     │
-│ 'SENDING'                │
-└──────┬───────────────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ Update chainStatusMap    │
-│ - Set invoice → SENDING  │
-└──────┬───────────────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ UI shows "Sending..."    │
-│ - Orange badge           │
-│ - Processing indicator   │
-└──────┬───────────────────┘
-       │
-       │ On next page load
-       ▼
-┌──────────────────────────┐
-│ Auto-detect SENDING      │
-│ status and start polling │
-└──────────────────────────┘
+Scenario: User cancels invoice on List Page
+
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│ List Page   │       │   Store     │       │Detail Page  │
+└──────┬──────┘       └──────┬──────┘       └──────┬──────┘
+       │                     │                     │
+       │ handleCancel()      │                     │
+       ├────────────────────►│                     │
+       │                     │                     │
+       │              markInvoiceSending()         │
+       │              sendingHashes[hash]=true     │
+       │                     ├────────────────────►│
+       │                     │                     │
+       │                     │              isSyncing = true
+       │                     │              (Zustand subscribe)
+       │                     │                     │
+       │              AutoPoller detects           │
+       │              Starts polling               │
+       │                     │                     │
+       │ "Sending" badge     │              "Syncing records..."
+       │ shown               │              shown immediately
+       │                     │                     │
+       │              (15s later - record found)   │
+       │                     │                     │
+       │              markInvoiceConfirmed()       │
+       │              sendingHashes[hash]=deleted  │
+       │                     ├────────────────────►│
+       │                     │                     │
+       │ "Confirmed" badge   │              "Confirmed" shown
+       │ shown               │              Hide "Syncing"
+       │                     │                     │
 ```
 
 ## 9. Record Synchronization Flow

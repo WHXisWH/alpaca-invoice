@@ -94,14 +94,19 @@ app/
 |------|---------------|
 | `useWalletController` | Wallet connection, balance polling, identity authorization |
 | `useAuthCheck` | Independent authorization check, reusable across pages |
-| `useInvoices` | Invoice list compositor (initialize, auto-poll SENDING invoices, filter, role) |
-| `useInvoiceDetail` | Invoice detail compositor (data, role, chain sync, actions) |
+| `useInvoices` | Invoice list compositor (initialize, filter, role, categorization) |
+| `useInvoiceDetail` | Invoice detail compositor (data, role, manual sync, actions) |
 | `useTransactionController` | Transaction flow management (create/pay/cancel) |
 | `useAuditController` | Audit package generation & validation (selective disclosure) |
-| `useInvoiceListPolling` | Batch polling for multiple SENDING invoices (list/dashboard pages) |
-| `useInvoiceChainSync` | Single invoice polling and sync (detail page) |
-| `useInvoicePollingCore` | Core polling logic shared by list and detail polling |
+| `useInvoiceListPolling` | Batch polling manager (used by InvoiceAutoPoller) |
+| `useInvoiceChainSync` | Manual chain sync and key migration (detail page only) |
+| `useInvoicePollingCore` | Core polling logic shared by all polling operations |
 | `useInvoiceChainScan` | Chain scanning and invoice building utilities |
+
+**Components**:
+| Component | Responsibility |
+|-----------|---------------|
+| `InvoiceAutoPoller` | Global singleton auto-poller (monitors `sendingInvoiceHashes`, triggers polling) |
 
 ### 2.3 Service Layer
 
@@ -250,70 +255,123 @@ Auditor validates (UI or scripts/validate_audit_package.mjs)
         └─ decrypts with audit key
 ```
 
-### 3.4 Polling Architecture
+### 3.4 Unified Polling Architecture
 
-The system implements a dual-layer polling strategy for tracking invoice confirmation status:
+The system implements a **global singleton auto-polling strategy** with a single source of truth for SENDING invoice status:
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                     Polling Architecture                        │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                  Unified Polling Architecture                     │
+│                   (Single Source of Truth)                        │
+└──────────────────────────────────────────────────────────────────┘
 
-List/Dashboard Pages              Detail Page
-┌─────────────────────┐          ┌─────────────────────┐
-│   useInvoices       │          │ useInvoiceDetail    │
-│                     │          │                     │
-│  ┌───────────────┐  │          │  ┌───────────────┐  │
-│  │ Initialize    │  │          │  │ Load Invoice  │  │
-│  │ from IndexedDB│  │          │  │               │  │
-│  └───────┬───────┘  │          │  └───────┬───────┘  │
-│          │          │          │          │          │
-│          ▼          │          │          ▼          │
-│  ┌───────────────┐  │          │  ┌───────────────┐  │
-│  │ Found SENDING │  │          │  │ Check Status  │  │
-│  │  invoices?    │  │          │  │ = SENDING?    │  │
-│  └───────┬───────┘  │          │  └───────┬───────┘  │
-│          │YES       │          │          │YES       │
-│          ▼          │          │          ▼          │
-│  ┌───────────────┐  │          │  ┌───────────────┐  │
-│  │useInvoiceList │  │          │  │useInvoiceChain│  │
-│  │   Polling     │  │          │  │    Sync       │  │
-│  │ (batch mode)  │  │          │  │ (single mode) │  │
-│  └───────┬───────┘  │          │  └───────┬───────┘  │
-│          │          │          │          │          │
-│          └──────────┼──────────┼──────────┘          │
-│                     │          │                     │
-│                     ▼          ▼                     │
-│            ┌─────────────────────────┐               │
-│            │ useInvoicePollingCore   │               │
-│            │  - Scan chain           │               │
-│            │  - Validate status      │               │
-│            │  - Build updated invoice│               │
-│            └─────────────────────────┘               │
-└─────────────────────────────────────────────────────┘
+                    ┌─────────────────────────┐
+                    │   InvoiceStore (Zustand) │
+                    │  ┌────────────────────┐  │
+                    │  │sendingInvoiceHashes│  │ ◄─── Single Source of Truth
+                    │  │Record<hash, true>  │  │
+                    │  └────────────────────┘  │
+                    └────────┬──────────────────┘
+                             │ Subscribe (Zustand)
+                             ▼
+                    ┌─────────────────────────┐
+                    │  InvoiceAutoPoller      │ ◄─── Global Singleton
+                    │  (in app layout)        │
+                    │                         │
+                    │  - Watches sending index│
+                    │  - Auto-starts polling  │
+                    │  - Updates on complete  │
+                    └────────┬────────────────┘
+                             │ Uses
+                             ▼
+                    ┌─────────────────────────┐
+                    │ useInvoiceListPolling   │
+                    │  - Manages batch polling│
+                    │  - One service per hash │
+                    └────────┬────────────────┘
+                             │ Uses
+                             ▼
+                    ┌─────────────────────────┐
+                    │ useInvoicePollingCore   │
+                    │  - Scan chain           │
+                    │  - Validate status      │
+                    │  - Build updated invoice│
+                    └─────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    Pages Subscribe to Store                       │
+└──────────────────────────────────────────────────────────────────┘
+
+Dashboard              List Page              Detail Page
+┌────────────┐        ┌────────────┐        ┌─────────────┐
+│useInvoices │        │useInvoices │        │useInvoice   │
+│            │        │            │        │   Detail    │
+│isSyncing = │        │isSyncing = │        │             │
+│check global│        │check global│        │isSyncing =  │
+│  index     │        │  index     │        │check global │
+└────────────┘        └────────────┘        └─────────────┘
+      │                     │                      │
+      └─────────────────────┴──────────────────────┘
+                            │
+                            ▼
+                  All read from same source
+                  (sendingInvoiceHashes)
 ```
 
-**Polling Behavior:**
+**Key Design Principles:**
 
-1. **List/Dashboard Pages** (`useInvoices`):
-   - Automatically polls multiple SENDING invoices in batch
-   - Triggered on initialization if SENDING invoices found in IndexedDB
-   - Triggered after user operations (pay/cancel)
-   - Each invoice has independent PollingService instance
-   - Stops polling when invoice confirmed or timeout
+1. **Single Source of Truth**: `sendingInvoiceHashes` in InvoiceStore is the only source for SENDING status
+   - All pages derive `isSyncing` from this global index
+   - Avoids state inconsistency across pages
 
-2. **Detail Page** (`useInvoiceDetail`):
-   - Polls single invoice if status is SENDING
-   - Supports manual sync button
-   - Includes special key migration logic for confirmed invoices
-   - Auto-stops when invoice confirmed
+2. **Global Auto-Poller**: `InvoiceAutoPoller` component in `app/(app)/layout.tsx`
+   - Singleton instance for entire application
+   - Automatically detects new SENDING invoices
+   - Manages all polling services centrally
+   - Survives navigation between pages
 
-3. **Core Polling Logic** (`useInvoicePollingCore`):
-   - Shared by both list and detail polling
-   - 15-second intervals with 5-minute timeout
-   - Scans chain for matching InvoiceRecord/PaymentRecord
-   - Validates status transitions with InvoiceStatusValidator
-   - Builds updated invoice with correct metadata
+3. **Automatic State Updates**: All invoice mutations sync the index
+   - `addInvoice` → Auto-updates sending index
+   - `updateInvoice` → Auto-syncs SENDING/CONFIRMED
+   - `markInvoiceSending` → Immediate index update (triggers AutoPoller)
+   - `markInvoiceConfirmed` → Removes from index (stops polling)
+
+4. **No Master Key Required for Polling**: 
+   - Chain scanning works without master key
+   - Updates invoice `confirmationStatus` in memory
+   - Persistence only happens when master key available
+   - Enables Dashboard to show real-time status without unlock
+
+**Polling Flow:**
+
+1. **User Operation** (create/pay/cancel invoice)
+   → `executeCancel/executePay` updates invoice metadata to SENDING
+   → `markInvoiceSending(hash)` adds to global index
+
+2. **AutoPoller Detects Change**
+   → Subscribes to `sendingInvoiceHashes` via Zustand
+   → Detects new hash, calls `startPolling([hash])`
+
+3. **Polling Execution**
+   → `useInvoiceListPolling` creates PollingService for each hash
+   → `useInvoicePollingCore` scans chain every 15s
+   → Validates with `InvoiceStatusValidator`
+
+4. **Confirmation**
+   → Updates invoice with confirmed status
+   → `markInvoiceConfirmed(hash)` removes from index
+   → All subscribed pages re-render automatically
+
+5. **UI Updates** (real-time across all pages)
+   → Dashboard: "Syncing" card appears/disappears
+   → List: Invoice shows "Sending" badge
+   → Detail: "Syncing chain records..." text displays
+
+**Benefits:**
+- Cross-page consistency: Cancel on list page → Detail page shows syncing immediately
+- Real-time dashboard stats: No need to refresh
+- Simplified code: No manual polling management in pages
+- Performance: Single polling instance per invoice (no duplicates)
 
 ### 3.5 Invoice Status Lifecycle
 

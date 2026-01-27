@@ -1,8 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
-import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
-import { AleoField } from '@/lib/types';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { toast } from 'sonner';
 
@@ -13,24 +11,18 @@ import { toast } from 'sonner';
  * - 处理两种情况的初始化
  *   1. IndexedDB 为空 → 从链上扫描并存入
  *   2. IndexedDB 有数据 → 加载到内存
- * - 检查是否有 SENDING 状态的发票，通过回调通知上层
- * - 列表页只显示已确认的发票，不需要轮询
- * 
- * @param onSendingInvoicesFound - 发现 SENDING 状态发票时的回调
+ * - ✅ 不再需要轮询回调：store 的 sendingInvoiceHashes + AutoPoller 自动处理
  */
-export function useInvoiceListInitialize(
-  onSendingInvoicesFound?: (invoiceHashes: AleoField[]) => void
-) {
+export function useInvoiceListInitialize() {
   const { publicKey, masterKey } = useUserStore();
   const { 
     getAllInvoices,
-    getInvoiceMetadata,
-    setInvoices
+    setInvoices,
+    rebuildSendingIndex  // ✅ 新增：重建 sending 索引
   } = useInvoiceStore();
   const { scanAndBuildInvoices } = useInvoiceChainScan();
   
   const [isLoading, setIsLoading] = useState(false);
-  const [chainStatusMap, setChainStatusMap] = useState<Map<AleoField, ChainConfirmationStatus>>(new Map());
 
   /**
    * 情况1：从链上同步所有发票并存入 IndexedDB
@@ -62,13 +54,8 @@ export function useInvoiceListInitialize(
         }
       });
       
-      // ✅ 更新状态映射
-      const newStatusMap = new Map<AleoField, ChainConfirmationStatus>();
-      for (const invoice of invoices) {
-        newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
-      }
-      
-      setChainStatusMap(newStatusMap);
+      // ✅ 重建 sending 索引（setInvoices 已经自动处理了，这里只是确保）
+      rebuildSendingIndex();
       console.log(`✅ [syncFromChain] Synced ${invoices.length} invoices from chain with CONFIRMED status`);
     } catch (error) {
       console.error('Failed to sync from chain:', error);
@@ -79,14 +66,15 @@ export function useInvoiceListInitialize(
   }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices]);
 
   /**
-   * 初始化流程：处理三种情况
+   * 初始化流程：处理两种情况
    * - 情况1：IndexedDB 为空 → 从链上同步（需要 masterKey）
-   * - 情况2：IndexedDB 有数据，无 SENDING 状态 → 已加载到内存
-   * - 情况3：IndexedDB 有数据，有 SENDING 状态 → 通知上层启动轮询
+   * - 情况2：IndexedDB 有数据 → 加载到内存
    * 
    * ✅ masterKey 不是必需的：
    * - 有 masterKey：可以解密 details，可以同步数据到 IndexedDB
    * - 无 masterKey：只能读取基本信息，不解密 details，不能同步到 IndexedDB
+   * 
+   * ✅ 不再需要检测 SENDING：store 自动维护 sending 索引，AutoPoller 自动轮询
    */
   const initialize = useCallback(async () => {
     // ✅ 只需要 publicKey，不强制要求 masterKey
@@ -99,33 +87,13 @@ export function useInvoiceListInitialize(
     try {
       console.log('📋 [initialize] Starting initialization with masterKey:', !!masterKey);
       
-      // 1. 从 IndexedDB 加载所有发票
-      // ✅ 传入 masterKey（可能是 null/undefined），getAllInvoices 会处理
+      // 1. 从 IndexedDB 加载所有发票（会自动重建 sending 索引）
       const dbInvoices = await getAllInvoices({ 
         masterKey: masterKey || undefined, 
         refreshMemory: true 
       });
       
-      // 2. 加载所有发票的 metadata（用于获取 chainStatus）
-      const statusMap = new Map<AleoField, ChainConfirmationStatus>();
-      const sendingInvoiceHashes: AleoField[] = [];
-      
-      for (const invoice of dbInvoices) {
-        const metadata = await getInvoiceMetadata(invoice.invoiceHash);
-        if (metadata) {
-          statusMap.set(invoice.invoiceHash, metadata.confirmationStatus);
-          // ✅ 检查是否有 SENDING 状态的发票
-          if (metadata.confirmationStatus === 'SENDING') {
-            sendingInvoiceHashes.push(invoice.invoiceHash);
-          }
-        } else {
-          statusMap.set(invoice.invoiceHash, 'SENDING');
-          sendingInvoiceHashes.push(invoice.invoiceHash);
-        }
-      }
-      setChainStatusMap(statusMap);
-      
-      // 3. 判断情况
+      // 2. 判断情况
       if (dbInvoices.length === 0) {
         // 情况1：IndexedDB 为空 → 从链上同步
         // ✅ 只有在有 masterKey 时才同步（因为需要加密存储到 IndexedDB）
@@ -136,13 +104,11 @@ export function useInvoiceListInitialize(
           console.log('📋 [initialize] Case 1: IndexedDB is empty, but no masterKey for sync');
           console.log('💡 Tip: Unlock to sync invoices from chain');
         }
-      } else if (sendingInvoiceHashes.length > 0) {
-        // 情况3：有 SENDING 状态的发票 → 通知上层启动轮询
-        console.log(`📋 [initialize] Case 3: Found ${sendingInvoiceHashes.length} SENDING invoices, notifying...`);
-        onSendingInvoicesFound?.(sendingInvoiceHashes);
       } else {
-        // 情况2：IndexedDB 有数据，无 SENDING 状态 → 已加载到内存
+        // 情况2：IndexedDB 有数据 → 已加载到内存
         console.log(`📋 [initialize] Case 2: Loaded ${dbInvoices.length} invoices from IndexedDB`);
+        // ✅ 确保 sending 索引已重建（getAllInvoices 应该已经处理了）
+        rebuildSendingIndex();
       }
     } catch (error) {
       console.error('Failed to initialize:', error);
@@ -152,12 +118,10 @@ export function useInvoiceListInitialize(
     } finally {
       setIsLoading(false);
     }
-  }, [masterKey, publicKey, getAllInvoices, getInvoiceMetadata, syncFromChain, onSendingInvoicesFound]);
+  }, [masterKey, publicKey, getAllInvoices, syncFromChain, rebuildSendingIndex]);
 
   return {
     isLoading,
-    chainStatusMap,
-    setChainStatusMap,
     initialize
   };
 }

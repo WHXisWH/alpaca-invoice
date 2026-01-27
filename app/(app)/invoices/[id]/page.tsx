@@ -2,10 +2,12 @@
 
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
+import { RefreshCw } from 'lucide-react';
 import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -17,8 +19,8 @@ export default function InvoiceDetailPage() {
   // ✅ 授权检查（独立调用）
   const { isAuthRequired, handleUnlock } = useAuthCheck();
 
-  // ✅ 详情页对账逻辑（场景B & C）
-  // 会自动根据 metadata.confirmationStatus === 'SENDING' 开启轮询
+  // ✅ 详情页逻辑（统一轮询架构）
+  // 自动轮询由全局 AutoPoller 管理，手动同步通过 handleSyncStatus 触发
   const { 
     invoice, 
     isLoadingInvoice,
@@ -94,7 +96,8 @@ export default function InvoiceDetailPage() {
         {/* Chain confirmation status and sync button */}
         <div className="flex items-center gap-3">
           {isSyncing && (
-            <span className="text-xs text-amber-600 animate-pulse">
+            <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
+              <RefreshCw className={cn('h-3.5 w-3.5', 'animate-spin')} />
               Syncing chain records...
             </span>
           )}
