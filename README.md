@@ -110,10 +110,23 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 4. Auditor validates & decrypts via the UI “Validate Audit Package” panel or the offline script `node tests/validate_audit_package.mjs <package.json> <audit_key_hex>`.
 5. Validation checks expiry, cipher-hash integrity, and recomputes `invoice_hash` from disclosed details; the smart contract remains unchanged.
 
-## Testing & Debugging
-- UI flow and negative cases: `tests/AUDIT_FLOW_TESTING.md`.
-- Offline validation: `node tests/validate_audit_package.mjs /path/to/package.json <audit_key_hex>`.
-- Linting: run `npm run lint` (if the Next.js ESLint setup prompt appears, complete it once, then rerun).
+## Testing
+
+The project has two layers of tests:
+
+**Smart Contract (Leo)** — 20 test cases covering all `zk_invoice.aleo` transitions (create, verify, pay, cancel, receipt, end-to-end lifecycle). Run with `leo test` or `./run_tests.sh`.
+
+**Service Unit Tests (Vitest)** — Unit tests for core services including WalletService, CryptoService, AleoProtocolService, StorageService, InvoiceStatusValidator, PollingService, and InvoiceStore. Run with `npx vitest`.
+
+**Linting** — `npm run lint`
+
+### Test Documentation
+
+- `tests/README.md` — Leo test suite overview and how-to
+- `tests/TESTING_GUIDE.md` — Step-by-step testing guide
+- `tests/QUICK_REFERENCE.md` — Command cheatsheet
+- `tests/AUDIT_FLOW_TESTING.md` — UI + CLI audit package validation
+- `services/*/__tests__/README.md` — Per-service test docs
 
 ## Deployment
 
