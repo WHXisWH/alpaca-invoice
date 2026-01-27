@@ -1,5 +1,5 @@
 'use client';
 
-import CreateInvoicePage from '@/app/invoices/create/page';
+import CreateInvoicePage from '@/app/(app)/invoices/create/page';
 
 export default CreateInvoicePage;
