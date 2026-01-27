@@ -6,6 +6,7 @@ import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
 import { InvoiceStatus } from '@/lib/types';
+import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import {
   Send,
   Inbox,
@@ -65,8 +66,8 @@ export default function DashboardPage() {
   // 显示钱包连接提示
   if (showWalletPrompt) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center">
-        <div className="rounded-2xl border border-primary-200 bg-white p-10 text-center shadow-sm">
+      <MotionContainer className="flex min-h-[60vh] flex-col items-center justify-center">
+        <MotionItem className="surface-card p-10 text-center">
           <div className="relative mx-auto mb-6 h-32 w-32">
             <Image
               src="/images/mascot/mascot-waiting.png"
@@ -78,25 +79,25 @@ export default function DashboardPage() {
               }}
             />
           </div>
-          <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100 mb-4">
+          <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40 mb-4">
             <Wallet className="h-6 w-6 text-accent-600" />
           </div>
           <h2 className="text-xl font-bold text-primary-900">Connect Wallet</h2>
           <p className="mt-2 text-sm text-primary-500 max-w-xs">
             Connect your Aleo wallet to view and manage your invoices
           </p>
-        </div>
-      </div>
+        </MotionItem>
+      </MotionContainer>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <MotionContainer className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-primary-200 bg-white p-5 shadow-sm">
+      <MotionContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" stagger={0.06}>
+        <MotionItem className="surface-card card-hover p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-info-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-info-100/80 ring-1 ring-info-200/40">
               <Send className="h-6 w-6 text-info-600" />
             </div>
             <div>
@@ -107,11 +108,11 @@ export default function DashboardPage() {
           <p className="mt-3 text-xs text-primary-400">
             Pending: {stats.pendingSent} · Paid: {stats.paidSent}
           </p>
-        </div>
+        </MotionItem>
 
-        <div className="rounded-xl border border-primary-200 bg-white p-5 shadow-sm">
+        <MotionItem className="surface-card card-hover p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40">
               <Inbox className="h-6 w-6 text-accent-600" />
             </div>
             <div>
@@ -122,11 +123,11 @@ export default function DashboardPage() {
           <p className="mt-3 text-xs text-primary-400">
             Pending: {stats.pendingReceived} · Paid: {stats.paidReceived}
           </p>
-        </div>
+        </MotionItem>
 
-        <div className="rounded-xl border border-warning-200 bg-warning-50 p-5 shadow-sm">
+        <MotionItem className="surface-card-muted card-hover p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning-100/80 ring-1 ring-warning-200/40">
               <Clock className="h-6 w-6 text-warning-600" />
             </div>
             <div>
@@ -135,11 +136,11 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="mt-3 text-xs text-warning-600">Requires action</p>
-        </div>
+        </MotionItem>
 
-        <div className="rounded-xl border border-success-200 bg-success-50 p-5 shadow-sm">
+        <MotionItem className="surface-card-muted card-hover p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success-100/80 ring-1 ring-success-200/40">
               <CheckCircle className="h-6 w-6 text-success-600" />
             </div>
             <div>
@@ -148,18 +149,18 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="mt-3 text-xs text-success-600">Paid invoices</p>
-        </div>
-      </div>
+        </MotionItem>
+      </MotionContainer>
 
       {/* Quick Actions */}
-      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+      <MotionItem className="surface-card p-6">
         <h2 className="mb-4 text-lg font-semibold text-primary-900">Quick Actions</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/invoices/create"
-            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-accent-300 hover:shadow-sm"
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-primary-200/60 bg-white/70 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-md"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-100/80 ring-1 ring-accent-200/40">
               <FilePlus className="h-5 w-5 text-accent-600" />
             </div>
             <div>
@@ -170,9 +171,9 @@ export default function DashboardPage() {
 
           <Link
             href="/invoices?filter=pending"
-            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-warning-300 hover:shadow-sm"
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-primary-200/60 bg-white/70 p-4 transition-all hover:-translate-y-0.5 hover:border-warning-300 hover:shadow-md"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning-100/80 ring-1 ring-warning-200/40">
               <CreditCard className="h-5 w-5 text-warning-600" />
             </div>
             <div>
@@ -183,9 +184,9 @@ export default function DashboardPage() {
 
           <Link
             href="/receipts"
-            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-success-300 hover:shadow-sm"
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-primary-200/60 bg-white/70 p-4 transition-all hover:-translate-y-0.5 hover:border-success-300 hover:shadow-md"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-100/80 ring-1 ring-success-200/40">
               <Receipt className="h-5 w-5 text-success-600" />
             </div>
             <div>
@@ -196,9 +197,9 @@ export default function DashboardPage() {
 
           <Link
             href="/audit"
-            className="flex items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 transition-all hover:border-info-300 hover:shadow-sm"
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-primary-200/60 bg-white/70 p-4 transition-all hover:-translate-y-0.5 hover:border-info-300 hover:shadow-md"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-info-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-info-100/80 ring-1 ring-info-200/40">
               <Search className="h-5 w-5 text-info-600" />
             </div>
             <div>
@@ -207,15 +208,15 @@ export default function DashboardPage() {
             </div>
           </Link>
         </div>
-      </div>
+      </MotionItem>
 
       {/* Sent Invoices */}
-      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+      <MotionItem className="surface-card p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-primary-900">Sent Invoices</h2>
           <Link
             href="/invoices/create"
-            className="inline-flex items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
+            className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
             Create New
             <ArrowRight className="h-4 w-4" />
@@ -230,7 +231,7 @@ export default function DashboardPage() {
             action={
               <Link
                 href="/invoices/create"
-                className="inline-flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent-600"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent-600"
               >
                 <FilePlus className="h-4 w-4" />
                 Create Invoice
@@ -256,22 +257,22 @@ export default function DashboardPage() {
           <div className="mt-4 text-center">
             <Link
               href="/invoices?filter=sent"
-              className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
+            className="inline-flex cursor-pointer items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
               View All {sentInvoices.length} Invoices
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         )}
-      </div>
+      </MotionItem>
 
       {/* Received Invoices */}
-      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm">
+      <MotionItem className="surface-card p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-primary-900">Received Invoices</h2>
           <Link
             href="/invoices?filter=received"
-            className="inline-flex items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
+            className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
             View All
             <ArrowRight className="h-4 w-4" />
@@ -303,14 +304,14 @@ export default function DashboardPage() {
           <div className="mt-4 text-center">
             <Link
               href="/invoices?filter=received"
-              className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
+            className="inline-flex cursor-pointer items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
               View All {receivedInvoices.length} Invoices
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         )}
-      </div>
-    </div>
+      </MotionItem>
+    </MotionContainer>
   );
 }
