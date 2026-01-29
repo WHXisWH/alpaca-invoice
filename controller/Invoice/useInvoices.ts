@@ -1,8 +1,7 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
 import { IInvoices, InvoiceWithRole } from './IInvoices';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
@@ -11,7 +10,6 @@ import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/Invoic
 import { useInvoiceListRole } from './useInvoiceListRole';
 import { useInvoiceListFilter } from './useInvoiceListFilter';
 import { useInvoiceListInitialize } from './useInvoiceListInitialize';
-import { useInvoiceListPolling } from './useInvoiceListPolling';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
@@ -22,71 +20,40 @@ import { toast } from 'sonner';
 export type { StatusConfig } from './IInvoices';
 
 /**
- * useInvoices Hook（重构后）
+ * useInvoices Hook
  * 作为组合器，组合各个子 hooks
  * 
  * 职责：
  * - 初始化加载发票数据（从 IndexedDB 或链上）
- * - 自动轮询 SENDING 状态的发票
  * - 提供发票列表的过滤、搜索、分类功能
  * - 处理发票操作（支付、取消）
  * - 批量同步功能
  * 
- * 轮询说明：
- * - 列表页和 Dashboard 页都启用自动轮询
- * - 当初始化时发现 SENDING 状态发票，自动启动轮询
- * - 用户操作（支付/取消）后，标记为 SENDING 并自动启动轮询
- * - 详情页使用独立的 useInvoiceChainSync 处理单个发票轮询
+ * 轮询架构：
+ * - ✅ 自动轮询由全局 InvoiceAutoPoller 统一管理（Single Source of Truth）
+ * - ✅ 用户操作后调用 markInvoiceSending，触发 AutoPoller 自动轮询
+ * - ✅ 详情页使用 useInvoiceChainSync 提供手动同步功能
  */
 export function useInvoices(): IInvoices {
   const wallet = useWallet();
   const { publicKey, masterKey } = useUserStore();
-  const { invoices, updateInvoice, setInvoices } = useInvoiceStore();
+  const { 
+    invoices, 
+    updateInvoice, 
+    setInvoices,
+    sendingInvoiceHashes,
+    markInvoiceSending,  // ✅ 新增：用于标记发票进入 SENDING 状态
+    rebuildSendingIndex  // ✅ 新增：重建 sending 索引
+  } = useInvoiceStore();
   const { scanAllInvoiceRecords, scanAllPaymentRecords } = useInvoiceChainScan();
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // ✅ 使用 ref 保存 chainStatusMap setter，避免循环依赖
-  const chainStatusMapSetterRef = useRef<React.Dispatch<React.SetStateAction<Map<AleoField, ChainConfirmationStatus>>>>();
+  // ✅ 1. 初始化逻辑（轮询由全局 AutoPoller 管理）
+  const { isLoading, initialize } = useInvoiceListInitialize();
 
-  // ✅ 轮询完成回调：更新发票状态和 chainStatusMap
-  const handlePollingComplete = useCallback((invoiceHash: AleoField, updatedInvoice: Invoice) => {
-    console.log(`✅ [useInvoices] Polling complete for ${invoiceHash}`);
-    // updateInvoice 需要 (id, updates, options) 格式
-    updateInvoice(updatedInvoice.id, updatedInvoice, {
-      masterKey: masterKey || undefined,
-      persistFull: true
-    });
-    // 使用 ref 访问最新的 setter
-    if (chainStatusMapSetterRef.current) {
-      chainStatusMapSetterRef.current(prev => {
-        const newMap = new Map(prev);
-        newMap.set(invoiceHash, 'CONFIRMED');
-        return newMap;
-      });
-    }
-  }, [updateInvoice, masterKey]);
-
-  // ✅ 使用轮询 hook（用于批量轮询 SENDING 发票）
-  const { startPolling, stopPolling } = useInvoiceListPolling(handlePollingComplete);
-
-  // ✅ SENDING 发票发现回调：启动轮询
-  const handleSendingInvoicesFound = useCallback((invoiceHashes: AleoField[]) => {
-    if (invoiceHashes.length > 0) {
-      console.log(`📋 [useInvoices] Found ${invoiceHashes.length} SENDING invoices, starting polling...`);
-      startPolling(invoiceHashes);
-    }
-  }, [startPolling]);
-
-  // 1. 初始化逻辑（传入回调，当发现 SENDING 状态发票时启动轮询）
-  const { isLoading, chainStatusMap, setChainStatusMap, initialize } = 
-    useInvoiceListInitialize(handleSendingInvoicesFound);
-
-  // ✅ 保存 setter 到 ref
-  chainStatusMapSetterRef.current = setChainStatusMap;
-
-  // 2. 角色判断（复用）
-  const { invoicesWithRole } = useInvoiceListRole(invoices, chainStatusMap);
-  // 3. 过滤和搜索
+  // ✅ 2. 角色判断（传递 sendingInvoiceHashes，在 hook 中计算 chainStatus）
+  const { invoicesWithRole } = useInvoiceListRole(invoices, sendingInvoiceHashes);
+  // ✅ 3. 过滤和搜索
   const { filteredInvoices, filter, search, setFilter, setSearch } = useInvoiceListFilter(invoicesWithRole);
 
   // ✅ 4. 发票分类逻辑（按角色和状态分类）
@@ -124,23 +91,12 @@ export function useInvoices(): IInvoices {
     };
   }, [filteredInvoices]);
 
-  // 5. 操作（列表页模式：需要为每个 invoice 创建处理函数）
-  // 由于列表页有多个 invoice，不能使用单个 useInvoiceActions
-  // 所以直接使用 useTransactionController 和 useErrorHandler
+  // ✅ 5. 操作（列表页模式：为每个 invoice 创建处理函数）
   const { executePay, executeCancel } = useTransactionController();
   const { handleError } = useErrorHandler();
   
   // ✅ 添加：跟踪每张发票的处理状态
   const [processingInvoiceIds, setProcessingInvoiceIds] = useState<Set<string>>(new Set());
-  
-  // ✅ 添加：更新单个发票的链上状态
-  const handleStatusUpdate = useCallback((invoiceHash: AleoField, status: ChainConfirmationStatus) => {
-    setChainStatusMap(prev => {
-      const newMap = new Map(prev);
-      newMap.set(invoiceHash, status);
-      return newMap;
-    });
-  }, [setChainStatusMap]);
   
   const handlePay = useCallback(async (invoice: Invoice) => {
     // ✅ 设置处理状态
@@ -162,8 +118,8 @@ export function useInvoices(): IInvoices {
         description: `Transaction ID: ${transactionId.slice(0, 16)}... View details for status.`
       });
       
-      // ✅ 更新 chainStatusMap 为 SENDING（用户可以进入详情页查看实时状态）
-      handleStatusUpdate(invoice.invoiceHash, 'SENDING');
+      // ✅ 标记为 SENDING（AutoPoller 会自动启动轮询）
+      markInvoiceSending(invoice.invoiceHash);
     } catch (error) {
       toast.error('Payment failed', {
         id: `pay-${invoice.id}`,
@@ -177,7 +133,7 @@ export function useInvoices(): IInvoices {
         return next;
       });
     }
-  }, [executePay, handleError, handleStatusUpdate]);
+  }, [executePay, handleError, markInvoiceSending]);
 
   const handleCancel = useCallback(async (invoice: Invoice) => {
     // ✅ 设置处理状态
@@ -200,8 +156,8 @@ export function useInvoices(): IInvoices {
         description: `Transaction ID: ${transactionId.slice(0, 16)}... View details for status.`
       });
       
-      // ✅ 更新 chainStatusMap 为 SENDING（用户可以进入详情页查看实时状态）
-      handleStatusUpdate(invoice.invoiceHash, 'SENDING');
+      // ✅ 标记为 SENDING（AutoPoller 会自动启动轮询）
+      markInvoiceSending(invoice.invoiceHash);
     } catch (error) {
       toast.error('Failed to cancel invoice', {
         id: `cancel-${invoice.id}`,
@@ -215,19 +171,20 @@ export function useInvoices(): IInvoices {
         return next;
       });
     }
-  }, [executeCancel, handleError, handleStatusUpdate]);
+  }, [executeCancel, handleError, markInvoiceSending]);
 
   // ✅ 添加：检查发票是否正在处理
   const isInvoiceProcessing = useCallback((invoiceId: string) => {
     return processingInvoiceIds.has(invoiceId);
   }, [processingInvoiceIds]);
 
-  // ✅ 添加：检查发票是否正在同步（通过检查 metadata.confirmationStatus）
+  // ✅ 添加：检查发票是否正在同步（Single Source of Truth）
   const isInvoiceSyncing = useCallback((invoice: Invoice) => {
-    return invoice.metadata?.confirmationStatus === 'SENDING';
-  }, []);
+    // ✅ Single Source of Truth：只检查全局索引
+    return sendingInvoiceHashes[invoice.invoiceHash] === true;
+  }, [sendingInvoiceHashes]);
 
-  // 6. 批量同步（改进版：使用 setInvoices 重置所有发票数据）
+  // ✅ 6. 批量同步（使用 setInvoices 重置所有发票数据）
   const handleSyncAll = useCallback(async () => {
     if (!publicKey || !masterKey) {
       toast.error('Unable to sync', {
@@ -249,7 +206,6 @@ export function useInvoices(): IInvoices {
       // ✅ 重新构建完整的发票列表（使用链上数据）
       const syncedInvoices: Invoice[] = [];
       const processedInvoiceIds = new Set<string>();
-      const newStatusMap = new Map<AleoField, ChainConfirmationStatus>();
       
       // 1. 先处理 PaymentRecord（优先级更高）
       for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
@@ -279,7 +235,6 @@ export function useInvoices(): IInvoices {
                   action: localInvoice.metadata?.action
                 }
               } as Invoice);
-              newStatusMap.set(localInvoice.invoiceHash, 'CONFIRMED');
               processedInvoiceIds.add(invoiceId);
             }
           }
@@ -320,7 +275,6 @@ export function useInvoices(): IInvoices {
                   action: localInvoice.metadata?.action
                 }
               } as Invoice);
-              newStatusMap.set(localInvoice.invoiceHash, 'CONFIRMED');
             }
           } else {
             // ✅ 新发票：从链上构建
@@ -340,7 +294,6 @@ export function useInvoices(): IInvoices {
                 dataSource: 'chain'
               }
             } as Invoice);
-            newStatusMap.set(invoice.invoiceHash, 'CONFIRMED');
           }
         } catch (error) {
           console.error(`Failed to process invoice ${invoiceId}:`, error);
@@ -348,7 +301,7 @@ export function useInvoices(): IInvoices {
         }
       }
       
-      // ✅ 使用 setInvoices 重置所有发票数据
+      // ✅ 使用 setInvoices 重置所有发票数据（自动重建 sending 索引）
       if (syncedInvoices.length > 0) {
         await setInvoices(syncedInvoices, {
           masterKey,
@@ -360,8 +313,6 @@ export function useInvoices(): IInvoices {
           }
         });
       }
-      
-      setChainStatusMap(newStatusMap as Map<AleoField, ChainConfirmationStatus>);
       
       toast.success('Batch sync successful', {
         id: 'sync-all',
@@ -376,9 +327,9 @@ export function useInvoices(): IInvoices {
     } finally {
       setIsSyncing(false);
     }
-  }, [publicKey, masterKey, invoices, chainStatusMap, setChainStatusMap, setInvoices, scanAllInvoiceRecords, scanAllPaymentRecords]);
+  }, [publicKey, masterKey, invoices, setInvoices, rebuildSendingIndex, scanAllInvoiceRecords, scanAllPaymentRecords]);
 
-  // ✅ 自动初始化和清理
+  // ✅ 自动初始化
   useEffect(() => {
     // ✅ 只要有 publicKey 和钱包连接就可以初始化
     // masterKey 不是必需的，只是在需要解密 details 时才需要
@@ -387,12 +338,8 @@ export function useInvoices(): IInvoices {
       console.log('📋 [useInvoices] Has masterKey:', !!masterKey);
       initialize();
     }
-    
-    // 组件卸载时停止所有轮询
-    return () => {
-      stopPolling();
-    };
-  }, [publicKey, wallet?.connected, initialize, stopPolling]);
+    // ✅ 不需要清理：AutoPoller 全局管理轮询，不会随组件卸载而停止
+  }, [publicKey, wallet?.connected, initialize]);
   // ✅ 移除 masterKey 的依赖，允许在没有 masterKey 时也能初始化
 
   /**

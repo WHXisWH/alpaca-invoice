@@ -24,6 +24,14 @@ export interface InvoiceState {
   // 数据
   invoices: Invoice[];     // 所有发票列表
   currentInvoice: Invoice | null;        // ✅ 当前选中的 invoice（包含 metadata）
+  /**
+   * ✅ 全局 SENDING 索引（跨页面共享）
+   * - key: invoiceHash
+   * - value: true
+   *
+   * 使用普通对象而不是 Set，避免原地 mutate 导致 zustand 订阅不触发。
+   */
+  sendingInvoiceHashes: Record<AleoField, true>;
 
   // Actions - 只保留5个核心接口
   /** ✅ 添加发票：接收发票 → 保存到 IndexedDB → 更新内存 */
@@ -74,4 +82,17 @@ export interface InvoiceState {
     masterKey?: string;
     persistFull?: boolean;
   }) => Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // ✅ SENDING 管理（统一入口：用户操作后立即写入，轮询确认后移除）
+  // ---------------------------------------------------------------------------
+
+  /** ✅ 标记发票进入 SENDING（只更新内存；是否持久化由 updateInvoice/options 决定） */
+  markInvoiceSending: (invoiceHash: AleoField) => void;
+  /** ✅ 标记发票已确认（从 sending 索引移除） */
+  markInvoiceConfirmed: (invoiceHash: AleoField) => void;
+  /** ✅ 获取当前所有 SENDING 发票 hash 列表 */
+  getSendingInvoiceHashes: () => AleoField[];
+  /** ✅ 基于 invoices 重新构建 sending 索引（初始化/批量覆盖时使用） */
+  rebuildSendingIndex: () => void;
 }

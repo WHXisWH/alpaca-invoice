@@ -5,6 +5,7 @@ import Image from 'next/image';
 import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
+import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { InvoiceStatus } from '@/lib/types';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import {
@@ -19,6 +20,7 @@ import {
   ArrowRight,
   Wallet,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -32,6 +34,10 @@ export default function DashboardPage() {
     isInvoiceProcessing,
     isInvoiceSyncing,
   } = useInvoices();
+  
+  // ✅ 订阅 store 的 sendingInvoiceHashes（实时更新）
+  const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
+  const sendingCount = Object.keys(sendingInvoiceHashes).length;
 
   // 统计数据
   const stats = {
@@ -51,6 +57,8 @@ export default function DashboardPage() {
     ).length,
     totalPending: pending.length,
     totalComplete: complete.length,
+    // ✅ 新增：实时 SENDING 统计
+    totalSending: sendingCount,
   };
 
   // 显示加载状态
@@ -124,6 +132,24 @@ export default function DashboardPage() {
             Pending: {stats.pendingReceived} · Paid: {stats.paidReceived}
           </p>
         </MotionItem>
+        
+        {/* ✅ 新增：SENDING 状态卡片（实时更新） */}
+        {stats.totalSending > 0 && (
+          <MotionItem className="surface-card-muted card-hover p-5 col-span-2 sm:col-span-1">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-info-100/80 ring-1 ring-info-200/40">
+                <RefreshCw className="h-6 w-6 text-info-600 animate-spin" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-info-900">{stats.totalSending}</p>
+                <p className="text-sm text-info-700">Syncing</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-info-600">
+              Confirming on-chain...
+            </p>
+          </MotionItem>
+        )}
 
         <MotionItem className="surface-card-muted card-hover p-5">
           <div className="flex items-center gap-4">
