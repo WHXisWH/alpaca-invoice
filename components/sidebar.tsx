@@ -11,7 +11,9 @@ import {
   Receipt,
   ShieldCheck,
   HelpCircle,
+  X,
 } from 'lucide-react';
+import { useSidebar } from '@/components/sidebar-context';
 
 const navItems = [
   {
@@ -43,15 +45,42 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { isOpen, close } = useSidebar();
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-white/5 bg-gradient-to-b from-primary-950 via-primary-900 to-primary-950">
-      <div className="flex h-full flex-col">
-        {/* Logo - Click to go to homepage */}
-        <Link
-          href="/"
-          className="flex h-16 items-center gap-3 border-b border-white/5 px-6 transition-colors hover:bg-white/5 cursor-pointer"
-        >
+    <>
+      {/* Mobile overlay backdrop */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={close}
+        />
+      )}
+
+      <aside
+        className={cn(
+          'fixed left-0 top-0 z-50 h-screen w-64 border-r border-white/5 bg-gradient-to-b from-primary-950 via-primary-900 to-primary-950 transition-transform duration-300 ease-in-out',
+          // Desktop: always visible; Mobile: slide in/out
+          'md:z-40 md:translate-x-0',
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <div className="flex h-full flex-col">
+          {/* Logo - Click to go to homepage */}
+          <Link
+            href="/"
+            className="flex h-16 items-center gap-3 border-b border-white/5 px-6 transition-colors hover:bg-white/5 cursor-pointer"
+          >
+            {/* Mobile close button */}
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                close();
+              }}
+              className="absolute right-3 top-4 rounded-lg p-1 text-primary-400 hover:text-white md:hidden"
+            >
+              <X className="h-5 w-5" />
+            </button>
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">
             <Image
               src="/images/mascot/mascot-shield.png"
@@ -133,6 +162,7 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
