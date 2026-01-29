@@ -2,7 +2,8 @@
 
 import { usePathname } from 'next/navigation';
 import WalletConnectButtonV2 from '@/components/wallet-connect-button-v2';
-import { Bell } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
+import { useSidebar } from '@/components/sidebar-context';
 
 const pageTitles: Record<string, { title: string; subtitle?: string }> = {
   '/': { title: 'Welcome', subtitle: 'Get started with Alpaca Invoice' },
@@ -16,13 +17,21 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
 export default function Header() {
   const pathname = usePathname();
   const pageInfo = pageTitles[pathname] || { title: 'Alpaca Invoice' };
+  const { toggle } = useSidebar();
 
   return (
-    <header className="sticky top-6 z-30 flex h-16 items-center justify-between rounded-2xl border border-white/60 bg-white/80 px-6 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] backdrop-blur-xl">
-      <div>
+    <header className="sticky top-4 z-30 flex h-14 items-center justify-between rounded-2xl border border-white/60 bg-white/80 px-4 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] backdrop-blur-xl md:top-6 md:h-16 md:px-6">
+      <div className="flex items-center gap-3">
+        {/* Mobile hamburger menu */}
+        <button
+          onClick={toggle}
+          className="rounded-lg p-1.5 text-primary-500 transition-colors hover:bg-primary-100/70 hover:text-primary-700 md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
         <h1 className="text-lg font-semibold text-primary-900">{pageInfo.title}</h1>
         {pageInfo.subtitle && (
-          <p className="text-sm text-primary-500">{pageInfo.subtitle}</p>
+          <p className="hidden text-sm text-primary-500 sm:block">{pageInfo.subtitle}</p>
         )}
       </div>
 
