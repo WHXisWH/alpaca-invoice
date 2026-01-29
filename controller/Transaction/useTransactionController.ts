@@ -181,7 +181,7 @@ export function useTransactionController(): ITxController {
         // 钱包在后台生成证明并准备广播，不阻塞后续流程
         updateProgress(35, `✓ 交易请求已提交 (requestId: ${requestId.slice(0, 20)}...)`);
 
-        const invoiceId = `${nonceField.slice(0, 32)}field` as AleoField;
+        const invoiceId = invoiceHash;
 
         // ==================== 阶段 3: 本地加密归档与即时跳转 ====================
         

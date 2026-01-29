@@ -129,7 +129,9 @@ export function buildInvoiceFromRecord(
     buyer: record.buyer as any,
     amount: BigInt(cleanAmount) as any,
     dueDate: new Date(Number(cleanDueDate) * 1000),
-    createdAt: new Date(Number(cleanCreatedAt) * 1000),
+    createdAt: Number(cleanCreatedAt) > 0
+      ? new Date(Number(cleanCreatedAt) * 1000)
+      : new Date(),
     status: Number(cleanStatus) as any,
     details: undefined // 链上数据不包含 details
   };
@@ -186,7 +188,9 @@ export function updateInvoiceFromInvoiceRecord(
     buyer: invoiceRecord.buyer as any,
     amount: BigInt(cleanAmount) as any,
     dueDate: new Date(Number(cleanDueDate) * 1000),
-    createdAt: new Date(Number(cleanCreatedAt) * 1000),
+    createdAt: Number(cleanCreatedAt) > 0
+      ? new Date(Number(cleanCreatedAt) * 1000)
+      : invoice.createdAt,
     status: Number(cleanStatus) as any
   };
 }
