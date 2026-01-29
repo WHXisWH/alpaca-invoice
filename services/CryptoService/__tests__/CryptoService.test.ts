@@ -11,7 +11,7 @@ describe('CryptoService', () => {
   });
 
   describe('computeInvoiceHash', () => {
-    it('应该为相同的发票明细生成相同的哈希', async () => {
+    it('should generate the same hash for identical invoice details', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -35,7 +35,7 @@ describe('CryptoService', () => {
       expect(hash1).toMatch(/^\d+field$/);
     });
 
-    it('应该为不同的发票明细生成不同的哈希', async () => {
+    it('should generate different hashes for different invoice details', async () => {
       // Arrange
       const details1: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -69,7 +69,7 @@ describe('CryptoService', () => {
       expect(hash1).not.toBe(hash2);
     });
 
-    it('应该返回正确的AleoField格式', async () => {
+    it('should return the correct AleoField format', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -89,16 +89,16 @@ describe('CryptoService', () => {
       // Assert
       expect(hash).toMatch(/^\d+field$/);
       expect(hash.endsWith('field')).toBe(true);
-      
-      // 提取数字部分并验证是有效的 BigInt
-      const numberPart = hash.slice(0, -5); // 移除 'field'
+
+      // Extract the numeric part and verify it is a valid BigInt
+      const numberPart = hash.slice(0, -5); // Remove 'field'
       expect(() => BigInt(numberPart)).not.toThrow();
-      
-      // 验证值在 Aleo Field 范围内
+
+      // Verify the value is within the Aleo Field range
       expect(service.validateFieldValue(hash)).toBe(true);
     });
 
-    it('应该对字段顺序不敏感（因为使用排序后的 JSON）', async () => {
+    it('should be insensitive to field order (because sorted JSON is used)', async () => {
       // Arrange
       const details1: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -130,7 +130,7 @@ describe('CryptoService', () => {
       expect(hash1).toBe(hash2);
     });
 
-    it('应该处理包含多个行项目的发票', async () => {
+    it('should handle invoices with multiple line items', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-003',
@@ -155,7 +155,7 @@ describe('CryptoService', () => {
       expect(service.validateFieldValue(hash)).toBe(true);
     });
 
-    it('应该处理可选字段（notes）', async () => {
+    it('should handle optional fields (notes)', async () => {
       // Arrange
       const detailsWithNotes: InvoiceDetails = {
         invoiceNumber: 'INV-004',
@@ -188,7 +188,7 @@ describe('CryptoService', () => {
   });
 
   describe('encryptInvoiceDetails', () => {
-    it('应该成功加密发票明细', async () => {
+    it('should successfully encrypt invoice details', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -201,7 +201,7 @@ describe('CryptoService', () => {
         total: 110,
         currency: 'USD'
       };
-      const masterKey = 'test-master-key-12345678901234567890'; // 32+ 字符
+      const masterKey = 'test-master-key-12345678901234567890'; // 32+ characters
 
       // Act
       const encrypted = await service.encryptInvoiceDetails(details, masterKey);
@@ -215,7 +215,7 @@ describe('CryptoService', () => {
       expect(typeof encrypted.ciphertext).toBe('string');
     });
 
-    it('应该为相同的明细和密钥生成不同的密文（因为 IV 随机）', async () => {
+    it('should generate different ciphertexts for the same details and key (because IV is random)', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -233,13 +233,13 @@ describe('CryptoService', () => {
       const encrypted2 = await service.encryptInvoiceDetails(details, masterKey);
 
       // Assert
-      // IV 应该不同（随机生成）
+      // IVs should be different (randomly generated)
       expect(encrypted1.iv).not.toBe(encrypted2.iv);
-      // 密文也应该不同（因为 IV 不同）
+      // Ciphertexts should also be different (because IVs are different)
       expect(encrypted1.ciphertext).not.toBe(encrypted2.ciphertext);
     });
 
-    it('应该处理不同长度的密钥', async () => {
+    it('should handle keys of different lengths', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -259,7 +259,7 @@ describe('CryptoService', () => {
       await expect(service.encryptInvoiceDetails(details, longKey)).resolves.toBeDefined();
     });
 
-    it('应该在加密失败时抛出 CryptoServiceError', async () => {
+    it('should throw CryptoServiceError when encryption fails', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -271,18 +271,18 @@ describe('CryptoService', () => {
         currency: 'USD'
       };
 
-      // 创建一个会导致加密失败的场景（例如传入 null）
-      // 注意：这取决于实际的加密实现，可能需要调整
+      // Create a scenario that causes encryption to fail (e.g., passing null)
+      // Note: This depends on the actual encryption implementation and may need adjustment
 
-      // Act & Assert - 测试错误类型
-      // 这里我们测试正常情况，因为很难模拟加密失败
+      // Act & Assert - test error type
+      // Here we test the normal case since it is difficult to simulate encryption failure
       const result = await service.encryptInvoiceDetails(details, 'valid-key');
       expect(result).toBeDefined();
     });
   });
 
   describe('decryptInvoiceDetails', () => {
-    it('应该成功解密之前加密的发票明细', async () => {
+    it('should successfully decrypt previously encrypted invoice details', async () => {
       // Arrange
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -306,7 +306,7 @@ describe('CryptoService', () => {
       expect(decrypted).toEqual(originalDetails);
     });
 
-    it('应该处理包含复杂数据的发票', async () => {
+    it('should handle invoices with complex data', async () => {
       // Arrange
       const complexDetails: InvoiceDetails = {
         invoiceNumber: 'INV-COMPLEX-001',
@@ -332,7 +332,7 @@ describe('CryptoService', () => {
       expect(decrypted).toEqual(complexDetails);
     });
 
-    it('应该在使用错误密钥时抛出 DECRYPTION_FAILED 错误', async () => {
+    it('should throw DECRYPTION_FAILED error when using the wrong key', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -362,7 +362,7 @@ describe('CryptoService', () => {
       }
     });
 
-    it('应该在密文损坏时抛出错误', async () => {
+    it('should throw an error when the ciphertext is corrupted', async () => {
       // Arrange
       const corruptedPayload: EncryptedPayload = {
         iv: 'invalid-base64!!!',
@@ -376,7 +376,7 @@ describe('CryptoService', () => {
       ).rejects.toThrow(CryptoServiceError);
     });
 
-    it('应该在 IV 或密文为空时抛出错误', async () => {
+    it('should throw an error when IV or ciphertext is empty', async () => {
       // Arrange
       const emptyIvPayload: EncryptedPayload = {
         iv: '',
@@ -401,20 +401,20 @@ describe('CryptoService', () => {
 
   describe('parseAleoRecord', () => {
     /**
-     * parseAleoRecord 是解析链上 Record 的推荐方法
-     * 
-     * 完整的发票验证流程：
-     * 1. 开票时：computeInvoiceHash(details) → invoice_hash 存入链上
-     * 2. 查看时：parseAleoRecord(jsonString) → 提取链上 invoice_hash
-     * 3. 验证时：verifyInvoiceIntegrity(localDetails, chainHash) → 确认数据完整性
+     * parseAleoRecord is the recommended method for parsing on-chain Records
+     *
+     * Complete invoice verification flow:
+     * 1. At invoice creation: computeInvoiceHash(details) -> invoice_hash is stored on-chain
+     * 2. At viewing: parseAleoRecord(jsonString) -> extract on-chain invoice_hash
+     * 3. At verification: verifyInvoiceIntegrity(localDetails, chainHash) -> confirm data integrity
      */
 
-    it('应该能够解析来自 wallet.requestRecords() 的已解密 InvoiceRecord', async () => {
-      // Arrange - 模拟 wallet.requestRecords('zk_invoice.aleo') 返回的已解密数据
+    it('should be able to parse a decrypted InvoiceRecord from wallet.requestRecords()', async () => {
+      // Arrange - simulate decrypted data returned by wallet.requestRecords('zk_invoice.aleo')
       const mockChainRecord: AleoInvoiceRecord = {
         owner: 'aleo1test123',
         invoice_id: '12345field',
-        invoice_hash: '9876543210field',  // 关键字段：用于验证数据完整性
+        invoice_hash: '9876543210field',  // Key field: used to verify data integrity
         amount: '1000000',
         seller: 'aleo1seller',
         buyer: 'aleo1buyer',
@@ -423,7 +423,7 @@ describe('CryptoService', () => {
         created_at: 1234567800
       };
       const jsonString = JSON.stringify(mockChainRecord);
-     
+
       // Act
       const result = await service.parseAleoRecord<AleoInvoiceRecord>(jsonString);
 
@@ -434,8 +434,8 @@ describe('CryptoService', () => {
       expect(result.owner).toBe('aleo1test123');
     });
 
-    it('应该支持泛型类型推断', async () => {
-      // Arrange - 测试泛型支持
+    it('should support generic type inference', async () => {
+      // Arrange - test generic support
       interface CustomRecord {
         owner: string;
         custom_field: string;
@@ -454,7 +454,7 @@ describe('CryptoService', () => {
       expect(result.custom_field).toBe('test-value');
     });
 
-    it('应该能够解析数组格式的已解密 Records（批量返回）', async () => {
+    it('should be able to parse decrypted Records in array format (batch return)', async () => {
       // Arrange
       const mockRecords: AleoInvoiceRecord[] = [
         {
@@ -492,8 +492,8 @@ describe('CryptoService', () => {
       expect(result[1].invoice_hash).toBe('222hash222field');
     });
 
-    it('应该对 record1... 加密格式提示使用 wallet.requestRecords()', async () => {
-      // Arrange - 模拟直接传入加密的 Record（错误用法）
+    it('should suggest using wallet.requestRecords() for record1... encrypted format', async () => {
+      // Arrange - simulate directly passing an encrypted Record (incorrect usage)
       const encryptedRecord = 'record1qvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
 
       // Act & Assert
@@ -512,7 +512,7 @@ describe('CryptoService', () => {
       }
     });
 
-    it('应该对空字符串抛出错误', async () => {
+    it('should throw an error for an empty string', async () => {
       // Arrange
       const emptyString = '';
 
@@ -530,7 +530,7 @@ describe('CryptoService', () => {
       }
     });
 
-    it('应该对无效的 JSON 格式抛出错误', async () => {
+    it('should throw an error for invalid JSON format', async () => {
       // Arrange
       const invalidJson = '{ invalid json }';
 
@@ -548,7 +548,7 @@ describe('CryptoService', () => {
       }
     });
 
-    it('应该对未知格式抛出清晰的错误提示', async () => {
+    it('should throw a clear error message for unknown formats', async () => {
       // Arrange
       const unknownFormat = 'unknown-format-data-12345';
 
@@ -568,16 +568,16 @@ describe('CryptoService', () => {
     });
   });
 
-  describe('verifyInvoiceIntegrity (防篡改验证)', () => {
+  describe('verifyInvoiceIntegrity (tamper-proof verification)', () => {
     /**
-     * 这是发票系统的核心安全功能：
-     * - 链上存储invoice_hash（不可篡改）
-     * - 本地存储加密的发票明细
-     * - 查看时通过重新计算哈希验证数据完整性
+     * This is the core security feature of the invoice system:
+     * - The invoice_hash is stored on-chain (immutable)
+     * - Encrypted invoice details are stored locally
+     * - At viewing time, data integrity is verified by recomputing the hash
      */
 
-    it('应该验证未被篡改的发票数据为有效', async () => {
-      // Arrange - 创建发票明细
+    it('should verify untampered invoice data as valid', async () => {
+      // Arrange - create invoice details
       const invoiceDetails: InvoiceDetails = {
         invoiceNumber: 'INV-VERIFY-001',
         lineItems: [
@@ -591,21 +591,21 @@ describe('CryptoService', () => {
         notes: 'Test verification'
       };
 
-      // Act - 计算哈希（模拟开票时的操作）
+      // Act - compute hash (simulating the operation at invoice creation)
       const computedHash = await service.computeInvoiceHash(invoiceDetails);
-      
-      // 模拟从链上 Record 获取的 invoice_hash
+
+      // Simulate the invoice_hash obtained from the on-chain Record
       const chainInvoiceHash = computedHash;
 
-      // 验证完整性
+      // Verify integrity
       const isValid = await service.verifyInvoiceIntegrity(invoiceDetails, chainInvoiceHash);
 
       // Assert
       expect(isValid).toBe(true);
     });
 
-    it('应该检测到被篡改的发票数据', async () => {
-      // Arrange - 创建原始发票明细
+    it('should detect tampered invoice data', async () => {
+      // Arrange - create original invoice details
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-VERIFY-002',
         lineItems: [
@@ -618,27 +618,27 @@ describe('CryptoService', () => {
         currency: 'USD'
       };
 
-      // 计算原始哈希（模拟链上存储的哈希）
+      // Compute original hash (simulating the hash stored on-chain)
       const chainInvoiceHash = await service.computeInvoiceHash(originalDetails);
 
-      // Act - 篡改本地数据（修改金额）
+      // Act - tamper with local data (modify the amount)
       const tamperedDetails: InvoiceDetails = {
         ...originalDetails,
         lineItems: [
-          { description: 'Item A', quantity: 1, unitPrice: 50, amount: 50 }  // 金额被篡改
+          { description: 'Item A', quantity: 1, unitPrice: 50, amount: 50 }  // Amount tampered
         ],
         subtotal: 50,
         total: 55
       };
 
-      // 验证被篡改的数据
+      // Verify the tampered data
       const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainInvoiceHash);
 
       // Assert
       expect(isValid).toBe(false);
     });
 
-    it('应该检测到部分字段被篡改的情况', async () => {
+    it('should detect partial field tampering', async () => {
       // Arrange
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-VERIFY-003',
@@ -655,7 +655,7 @@ describe('CryptoService', () => {
 
       const chainInvoiceHash = await service.computeInvoiceHash(originalDetails);
 
-      // Act - 只篡改备注字段
+      // Act - tamper with only the notes field
       const tamperedDetails: InvoiceDetails = {
         ...originalDetails,
         notes: 'Tampered note - amount modified'
@@ -667,8 +667,8 @@ describe('CryptoService', () => {
       expect(isValid).toBe(false);
     });
 
-    it('应该对字段顺序不敏感（JSON 规范化）', async () => {
-      // Arrange - 创建两个字段顺序不同但内容相同的对象
+    it('should be insensitive to field order (JSON normalization)', async () => {
+      // Arrange - create two objects with different field order but same content
       const details1: InvoiceDetails = {
         invoiceNumber: 'INV-ORDER-001',
         lineItems: [
@@ -681,12 +681,12 @@ describe('CryptoService', () => {
         currency: 'USD'
       };
 
-      // 注意：虽然 TypeScript 对象的键顺序在某些情况下是确定的，
-      // 但 computeInvoiceHash 内部使用了 Object.keys(details).sort()
-      // 确保不同顺序产生相同哈希
+      // Note: Although TypeScript object key order is deterministic in some cases,
+      // computeInvoiceHash internally uses Object.keys(details).sort()
+      // to ensure different orders produce the same hash
       const hash1 = await service.computeInvoiceHash(details1);
-      
-      // 创建内容相同的对象（实际上 TS 对象键顺序会保持，这里主要验证算法的规范化）
+
+      // Create an object with the same content (in practice TS object key order is preserved; this mainly verifies algorithm normalization)
       const details2: InvoiceDetails = {
         currency: 'USD',
         total: 110,
@@ -699,12 +699,12 @@ describe('CryptoService', () => {
         invoiceNumber: 'INV-ORDER-001'
       };
 
-      // Act & Assert - 验证哈希相同
+      // Act & Assert - verify hashes are the same
       const isValid = await service.verifyInvoiceIntegrity(details2, hash1);
       expect(isValid).toBe(true);
     });
 
-    it('应该处理验证过程中的错误', async () => {
+    it('should handle errors during verification', async () => {
       // Arrange
       const invalidDetails = null as any;
       const chainHash = '12345field' as AleoField;
@@ -716,17 +716,17 @@ describe('CryptoService', () => {
     });
   });
 
-  describe('完整的发票验证流程（集成测试）', () => {
+  describe('Complete invoice verification flow (integration test)', () => {
     /**
-     * 这个测试模拟真实的发票生命周期：
-     * 1. 开票 → 计算哈希 → 存入链上
-     * 2. 本地加密存储明细 → IndexedDB
-     * 3. 查看 → 解析链上 Record → 获取 invoice_hash
-     * 4. 解密本地明细 → 验证完整性
+     * This test simulates the real invoice lifecycle:
+     * 1. Create invoice -> compute hash -> store on-chain
+     * 2. Encrypt details locally -> IndexedDB
+     * 3. View -> parse on-chain Record -> get invoice_hash
+     * 4. Decrypt local details -> verify integrity
      */
 
-    it('应该完成从开票到验证的完整流程', async () => {
-      // ===== 阶段 1: 开票 =====
+    it('should complete the full flow from invoice creation to verification', async () => {
+      // ===== Phase 1: Invoice Creation =====
       const invoiceDetails: InvoiceDetails = {
         invoiceNumber: 'INV-FULL-FLOW-001',
         lineItems: [
@@ -741,23 +741,23 @@ describe('CryptoService', () => {
         notes: 'Complete flow test'
       };
 
-      // 计算发票哈希（用于链上存证）
+      // Compute invoice hash (for on-chain proof)
       const invoiceHash = await service.computeInvoiceHash(invoiceDetails);
       expect(invoiceHash).toMatch(/^\d+field$/);
 
-      // ===== 阶段 2: 本地加密存储 =====
+      // ===== Phase 2: Local Encrypted Storage =====
       const masterKey = 'user-master-key-for-encryption';
       const encryptedPayload = await service.encryptInvoiceDetails(invoiceDetails, masterKey);
-      
+
       expect(encryptedPayload.iv).toBeTruthy();
       expect(encryptedPayload.ciphertext).toBeTruthy();
-      // 在真实场景中，这里会存入 IndexedDB
+      // In a real scenario, this would be stored in IndexedDB
 
-      // ===== 阶段 3: 模拟链上 Record（钱包已解密） =====
+      // ===== Phase 3: Simulate on-chain Record (wallet-decrypted) =====
       const mockChainRecord: AleoInvoiceRecord = {
         owner: 'aleo1qwerty123',
         invoice_id: '98765field',
-        invoice_hash: invoiceHash,  // 链上存储的哈希
+        invoice_hash: invoiceHash,  // Hash stored on-chain
         amount: '1469000000',  // microcredits
         seller: 'aleo1seller',
         buyer: 'aleo1buyer',
@@ -766,17 +766,17 @@ describe('CryptoService', () => {
         created_at: Date.now()
       };
 
-      // 解析链上 Record
+      // Parse on-chain Record
       const parsedRecord = await service.parseAleoRecord<AleoInvoiceRecord>(
         JSON.stringify(mockChainRecord)
       );
       expect(parsedRecord.invoice_hash).toBe(invoiceHash);
 
-      // ===== 阶段 4: 解密本地明细并验证 =====
-      // 从 IndexedDB 读取并解密
+      // ===== Phase 4: Decrypt local details and verify =====
+      // Read from IndexedDB and decrypt
       const decryptedDetails = await service.decryptInvoiceDetails(encryptedPayload, masterKey);
-      
-      // 验证完整性：对比本地明细的哈希与链上哈希
+
+      // Verify integrity: compare the hash of local details with the on-chain hash
       const isValid = await service.verifyInvoiceIntegrity(
         decryptedDetails,
         parsedRecord.invoice_hash as AleoField
@@ -787,8 +787,8 @@ describe('CryptoService', () => {
       expect(decryptedDetails).toEqual(invoiceDetails);
     });
 
-    it('应该检测到本地数据被篡改的情况', async () => {
-      // ===== 阶段 1: 开票 =====
+    it('should detect when local data has been tampered with', async () => {
+      // ===== Phase 1: Invoice Creation =====
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-TAMPER-TEST-001',
         lineItems: [
@@ -803,34 +803,34 @@ describe('CryptoService', () => {
 
       const chainInvoiceHash = await service.computeInvoiceHash(originalDetails);
 
-      // ===== 阶段 2: 加密存储（正常流程） =====
+      // ===== Phase 2: Encrypted storage (normal flow) =====
       const masterKey = 'test-master-key';
       const encryptedPayload = await service.encryptInvoiceDetails(originalDetails, masterKey);
 
-      // ===== 阶段 3: 模拟攻击者篡改存储的数据 =====
-      // 解密后手动修改金额
+      // ===== Phase 3: Simulate attacker tampering with stored data =====
+      // Decrypt and then manually modify the amount
       const decryptedDetails = await service.decryptInvoiceDetails(encryptedPayload, masterKey);
       const tamperedDetails: InvoiceDetails = {
         ...decryptedDetails,
         lineItems: [
-          { description: 'Item', quantity: 1, unitPrice: 50, amount: 50 }  // 篡改金额
+          { description: 'Item', quantity: 1, unitPrice: 50, amount: 50 }  // Tampered amount
         ],
         subtotal: 50,
         total: 55
       };
 
-      // ===== 阶段 4: 验证检测到篡改 =====
+      // ===== Phase 4: Verification detects tampering =====
       const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainInvoiceHash);
 
       // Assert
       expect(isValid).toBe(false);
-      // 在真实应用中，这里应该：
-      // 1. 拒绝显示发票
-      // 2. 记录安全事件
-      // 3. 提示用户数据可能被篡改
+      // In a real application, this should:
+      // 1. Refuse to display the invoice
+      // 2. Log a security event
+      // 3. Alert the user that data may have been tampered with
     });
 
-    it('应该处理密钥错误的情况', async () => {
+    it('should handle the case of an incorrect key', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-KEY-ERROR-001',
@@ -847,18 +847,18 @@ describe('CryptoService', () => {
       const correctKey = 'correct-master-key';
       const wrongKey = 'wrong-master-key';
 
-      // 用正确密钥加密
+      // Encrypt with the correct key
       const encrypted = await service.encryptInvoiceDetails(details, correctKey);
 
-      // Act & Assert - 用错误密钥解密应该失败
+      // Act & Assert - decryption with the wrong key should fail
       await expect(
         service.decryptInvoiceDetails(encrypted, wrongKey)
       ).rejects.toThrow(CryptoServiceError);
     });
   });
 
-  describe('错误处理', () => {
-    it('CryptoServiceError 应该包含正确的服务名称', () => {
+  describe('Error handling', () => {
+    it('CryptoServiceError should contain the correct service name', () => {
       // Arrange & Act
       const error = new CryptoServiceError(
         CryptoError.ENCRYPTION_FAILED,
@@ -873,7 +873,7 @@ describe('CryptoService', () => {
       expect(error.details).toEqual({ testDetail: 'test' });
     });
 
-    it('CryptoServiceError 应该正确实现 is() 方法', () => {
+    it('CryptoServiceError should correctly implement the is() method', () => {
       // Arrange
       const error = new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
@@ -886,7 +886,7 @@ describe('CryptoService', () => {
       expect(error.is(CryptoError.HASH_MISMATCH)).toBe(false);
     });
 
-    it('CryptoServiceError 应该正确实现 isOneOf() 方法', () => {
+    it('CryptoServiceError should correctly implement the isOneOf() method', () => {
       // Arrange
       const error = new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
@@ -899,41 +899,41 @@ describe('CryptoService', () => {
     });
   });
 
-  describe('Field 验证', () => {
-    it('应该验证有效的 Field 值', () => {
+  describe('Field validation', () => {
+    it('should validate a valid Field value', () => {
       // Arrange
       const validField = '123456789field' as AleoField;
-      
+
       // Act & Assert
       expect(service.validateFieldValue(validField)).toBe(true);
     });
 
-    it('应该拒绝超出范围的 Field 值', () => {
-      // Arrange - 使用一个超过模数的值
+    it('should reject an out-of-range Field value', () => {
+      // Arrange - use a value exceeding the modulus
       const invalidField = '99999999999999999999999999999999999999999999999999999999999999999999999999999999field' as AleoField;
-      
+
       // Act & Assert
       expect(service.validateFieldValue(invalidField)).toBe(false);
     });
 
-    it('应该拒绝负数 Field 值', () => {
+    it('should reject a negative Field value', () => {
       // Arrange
       const invalidField = '-123field' as AleoField;
-      
+
       // Act & Assert
       expect(service.validateFieldValue(invalidField)).toBe(false);
     });
 
-    it('应该拒绝格式错误的 Field 值', () => {
+    it('should reject a malformed Field value', () => {
       // Arrange
       const invalidField = 'not-a-number-field' as AleoField;
-      
+
       // Act & Assert
       expect(service.validateFieldValue(invalidField)).toBe(false);
     });
 
-    it('computeInvoiceHash 生成的哈希应该始终在有效范围内', async () => {
-      // Arrange - 创建多个不同的发票来测试
+    it('hashes generated by computeInvoiceHash should always be within the valid range', async () => {
+      // Arrange - create multiple different invoices for testing
       const testCases: InvoiceDetails[] = [
         {
           invoiceNumber: 'INV-001',
@@ -977,7 +977,7 @@ describe('CryptoService', () => {
   });
 
   describe('deriveMasterKey', () => {
-    it('应该成功从签名派生主密钥', async () => {
+    it('should successfully derive a master key from a signature', async () => {
       // Arrange
       const signature = 'test_signature_123456789';
 
@@ -987,10 +987,10 @@ describe('CryptoService', () => {
       // Assert
       expect(masterKey).toBeDefined();
       expect(typeof masterKey).toBe('string');
-      expect(masterKey.length).toBe(64); // SHA-256 哈希的十六进制字符串长度为 64
+      expect(masterKey.length).toBe(64); // SHA-256 hash hex string length is 64
     });
 
-    it('相同签名应该产生相同的主密钥（确定性）', async () => {
+    it('the same signature should produce the same master key (deterministic)', async () => {
       // Arrange
       const signature = 'test_signature_123456789';
 
@@ -1002,7 +1002,7 @@ describe('CryptoService', () => {
       expect(masterKey1).toBe(masterKey2);
     });
 
-    it('不同签名应该产生不同的主密钥', async () => {
+    it('different signatures should produce different master keys', async () => {
       // Arrange
       const signature1 = 'test_signature_123456789';
       const signature2 = 'test_signature_987654321';
@@ -1015,20 +1015,20 @@ describe('CryptoService', () => {
       expect(masterKey1).not.toBe(masterKey2);
     });
 
-    it('签名为空时应该抛出错误', async () => {
+    it('should throw an error when the signature is empty', async () => {
       // Act & Assert
       await expect(service.deriveMasterKey('')).rejects.toThrow('Signature cannot be empty');
       await expect(service.deriveMasterKey('   ')).rejects.toThrow('Signature cannot be empty');
     });
 
-    it('应该正确处理各种签名格式', async () => {
+    it('should correctly handle various signature formats', async () => {
       // Arrange
       const signatures = [
         'simple_signature',
         'signature_with_special_chars_!@#$%^&*()',
         'signature_with_numbers_1234567890',
-        'signature_with_unicode_测试签名',
-        'a'.repeat(100), // 长签名
+        'signature_with_unicode_test_signature',
+        'a'.repeat(100), // Long signature
       ];
 
       // Act & Assert
@@ -1036,11 +1036,11 @@ describe('CryptoService', () => {
         const masterKey = await service.deriveMasterKey(signature);
         expect(masterKey).toBeDefined();
         expect(typeof masterKey).toBe('string');
-        expect(masterKey.length).toBe(64); // SHA-256 哈希的十六进制字符串长度为 64
+        expect(masterKey.length).toBe(64); // SHA-256 hash hex string length is 64
       }
     });
 
-    it('主密钥应该是有效的十六进制字符串', async () => {
+    it('the master key should be a valid hexadecimal string', async () => {
       // Arrange
       const signature = 'test_signature';
 
@@ -1048,13 +1048,12 @@ describe('CryptoService', () => {
       const masterKey = await service.deriveMasterKey(signature);
 
       // Assert
-      expect(masterKey).toMatch(/^[0-9a-f]{64}$/); // 64 个十六进制字符
+      expect(masterKey).toMatch(/^[0-9a-f]{64}$/); // 64 hexadecimal characters
     });
 
-    it('应该抛出 CryptoServiceError 类型的错误', async () => {
+    it('should throw a CryptoServiceError type error', async () => {
       // Act & Assert
       await expect(service.deriveMasterKey('')).rejects.toThrow(CryptoServiceError);
     });
   });
 });
-

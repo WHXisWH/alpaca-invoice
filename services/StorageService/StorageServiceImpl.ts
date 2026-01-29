@@ -4,10 +4,10 @@ import { createServiceError } from '@/lib/service-errors';
 const StorageServiceError = createServiceError<StorageError>('StorageService');
 
 const DB_NAME = 'zk_invoice_db';
-const DB_VERSION = 3;  // 升级版本号以支持通用存储
+const DB_VERSION = 3;  // Upgraded version number to support generic storage
 
 /**
- * 序列化数据（处理 bigint 和 Date）
+ * Serialize data (handles bigint and Date)
  */
 function serializeData<T>(data: T): any {
   if (data === null || data === undefined) {
@@ -38,14 +38,14 @@ function serializeData<T>(data: T): any {
 }
 
 /**
- * 反序列化数据（处理 bigint 和 Date）
+ * Deserialize data (handles bigint and Date)
  */
 function deserializeData<T>(data: any): T {
   if (data === null || data === undefined) {
     return data;
   }
 
-  // 检查是否是特殊类型标记
+  // Check if it is a special type marker
   if (typeof data === 'object' && data.__type) {
     if (data.__type === 'BigInt') {
       return BigInt(data.value) as any;
@@ -71,26 +71,26 @@ function deserializeData<T>(data: any): T {
 }
 
 /**
- * 通用存储服务实现类
- * 使用 IndexedDB 存储任意类型的数据
+ * Generic storage service implementation class
+ * Uses IndexedDB to store arbitrary types of data
  */
 export class StorageService implements IStorageService {
   private db: IDBDatabase | null = null;
-  private tableNames = new Set<string>(); // 跟踪已创建的表
+  private tableNames = new Set<string>(); // Track created tables
 
   /**
-   * 初始化数据库连接
+   * Initialize database connection
    */
   private async getDB(): Promise<IDBDatabase> {
-    // ✅ 如果连接已存在，检查是否有效（未关闭）
+    // If connection already exists, check if it's valid (not closed)
     if (this.db) {
       try {
-        // 尝试访问 objectStoreNames 来检查连接是否有效
-        // 如果连接已关闭，访问会抛出异常
+        // Try to access objectStoreNames to check if the connection is valid
+        // If the connection is closed, access will throw an exception
         this.db.objectStoreNames.length;
         return this.db;
       } catch (error) {
-        // 连接已关闭，重置为 null 并重新打开
+        // Connection is closed, reset to null and reopen
         console.warn('⚠️ [StorageService.getDB] Database connection is closed, reopening...');
         this.db = null;
       }
@@ -102,13 +102,13 @@ export class StorageService implements IStorageService {
         return;
       }
 
-      // ✅ 先获取当前数据库版本，然后打开
+      // First get the current database version, then open
       const versionRequest = indexedDB.open(DB_NAME);
       versionRequest.onsuccess = () => {
         const currentVersion = versionRequest.result.version;
         versionRequest.result.close();
 
-        // ✅ 使用当前版本或 DB_VERSION 中的较大值
+        // Use the larger value between current version and DB_VERSION
         const targetVersion = Math.max(currentVersion, DB_VERSION);
         const request = indexedDB.open(DB_NAME, targetVersion);
 
@@ -123,7 +123,7 @@ export class StorageService implements IStorageService {
 
         request.onsuccess = () => {
           this.db = request.result;
-          // 记录已存在的表
+          // Record existing tables
           for (let i = 0; i < this.db.objectStoreNames.length; i++) {
             this.tableNames.add(this.db.objectStoreNames[i]);
           }
@@ -132,7 +132,7 @@ export class StorageService implements IStorageService {
 
         request.onupgradeneeded = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
-          // 在升级时，记录所有已存在的表
+          // During upgrade, record all existing tables
           for (let i = 0; i < db.objectStoreNames.length; i++) {
             this.tableNames.add(db.objectStoreNames[i]);
           }
@@ -151,70 +151,70 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 确保表存在（如果不存在则创建）
-   * 注意：IndexedDB 只能在 onupgradeneeded 中创建表
-   * 这里使用动态版本升级的方式来实现动态表创建
-   * ✅ 如果表已存在但 keyPath 不正确，先备份数据，删除并重新创建表，然后恢复数据
+   * Ensure table exists (create if it doesn't)
+   * Note: IndexedDB can only create tables during onupgradeneeded
+   * Dynamic version upgrade is used here to implement dynamic table creation
+   * If the table already exists but the keyPath is incorrect, back up data, delete and recreate the table, then restore data
    */
   private async ensureTable(tableName: string): Promise<void> {
-    // ✅ 先获取数据库连接，检查表是否真的存在
+    // First get the database connection and check if the table truly exists
     const db = await this.getDB();
     const tableExists = db.objectStoreNames.contains(tableName);
-    
-    // ✅ 如果表已存在且在 tableNames 中，直接返回（不需要升级）
+
+    // If the table already exists and is in tableNames, return directly (no upgrade needed)
     if (tableExists && this.tableNames.has(tableName)) {
       return;
     }
 
-    // ✅ 如果表已存在但不在 tableNames 中，尝试读取数据来验证表是否可用
-    // 如果表可用，只需要添加到 tableNames，不需要升级
+    // If the table exists but is not in tableNames, try reading data to verify the table is usable
+    // If the table is usable, just add it to tableNames without needing an upgrade
     if (tableExists && !this.tableNames.has(tableName)) {
       try {
-        // 尝试读取一条数据来验证表是否可用（keyPath 是否正确）
+        // Try reading a record to verify the table is usable (keyPath is correct)
         const testTransaction = db.transaction([tableName], 'readonly');
         const testStore = testTransaction.objectStore(tableName);
         const testRequest = testStore.getAll();
-        
+
         await new Promise<void>((resolve, reject) => {
           testRequest.onsuccess = () => {
-            // 表可用，只需要添加到 tableNames
+            // Table is usable, just add it to tableNames
             this.tableNames.add(tableName);
             resolve();
           };
           testRequest.onerror = () => {
-            // 表不可用（可能是 keyPath 不正确），需要升级
+            // Table is not usable (keyPath may be incorrect), need to upgrade
             reject(testRequest.error);
           };
         });
-        
-        // 如果成功，表可用，直接返回
+
+        // If successful, table is usable, return directly
         return;
       } catch (error) {
-        // 表不可用，需要备份数据并重新创建
+        // Table is not usable, need to back up data and recreate
         console.warn(`⚠️ [StorageService.ensureTable] Table ${tableName} exists but may have incorrect keyPath. Will backup data and recreate...`);
       }
     }
-    
-    // ✅ 如果需要创建新表或重新创建表，先备份数据
+
+    // If a new table needs to be created or recreated, first back up data
     let backupData: any[] = [];
     if (tableExists) {
       try {
-        // 尝试读取所有数据作为备份
+        // Try to read all data as a backup
         const backupTransaction = db.transaction([tableName], 'readonly');
         const backupStore = backupTransaction.objectStore(tableName);
         const backupRequest = backupStore.getAll();
-        
+
         backupData = await new Promise<any[]>((resolve, reject) => {
           backupRequest.onsuccess = () => {
             resolve(backupRequest.result || []);
           };
           backupRequest.onerror = () => {
-            // 如果读取失败，说明表确实有问题，备份为空数组
+            // If reading fails, the table indeed has issues, backup as empty array
             console.warn(`⚠️ [StorageService.ensureTable] Failed to backup data from ${tableName}, will create empty table`);
             resolve([]);
           };
         });
-        
+
         if (backupData.length > 0) {
           console.log(`📦 [StorageService.ensureTable] Backed up ${backupData.length} records from ${tableName}`);
         }
@@ -223,22 +223,22 @@ export class StorageService implements IStorageService {
         backupData = [];
       }
     }
-    
-    // 表不存在或需要重新创建，触发升级
+
+    // Table does not exist or needs to be recreated, trigger upgrade
     return new Promise((resolve, reject) => {
-      // 关闭当前连接
+      // Close current connection
       if (this.db) {
         this.db.close();
         this.db = null;
       }
 
-      // 获取当前版本并升级
+      // Get current version and upgrade
       const versionRequest = indexedDB.open(DB_NAME);
       versionRequest.onsuccess = () => {
         const currentVersion = versionRequest.result.version;
         versionRequest.result.close();
 
-        // 重新打开并升级
+        // Reopen and upgrade
         const upgradeRequest = indexedDB.open(DB_NAME, currentVersion + 1);
 
         upgradeRequest.onerror = () => {
@@ -253,22 +253,22 @@ export class StorageService implements IStorageService {
         upgradeRequest.onsuccess = () => {
           this.db = upgradeRequest.result;
           this.tableNames.add(tableName);
-          
-          // ✅ 如果有备份数据，恢复数据
+
+          // If there is backup data, restore it
           if (backupData.length > 0) {
             const restoreTransaction = this.db.transaction([tableName], 'readwrite');
             const restoreStore = restoreTransaction.objectStore(tableName);
-            
+
             let restoredCount = 0;
             let failedCount = 0;
-            
+
             for (const record of backupData) {
               try {
-                // ✅ 确保记录有 'key' 字段（因为新的 keyPath 是 'key'）
+                // Ensure the record has a 'key' field (since the new keyPath is 'key')
                 if (record && typeof record === 'object') {
-                  // 如果记录没有 'key' 字段，尝试从其他字段推断
+                  // If the record doesn't have a 'key' field, try to infer from other fields
                   if (!record.key) {
-                    // 尝试从 id 字段推断（对于发票数据）
+                    // Try to infer from the id field (for invoice data)
                     if (record.data && record.data.id) {
                       record.key = record.data.id;
                     } else if (record.id) {
@@ -279,7 +279,7 @@ export class StorageService implements IStorageService {
                       continue;
                     }
                   }
-                  
+
                   restoreStore.put(record);
                   restoredCount++;
                 }
@@ -288,7 +288,7 @@ export class StorageService implements IStorageService {
                 failedCount++;
               }
             }
-            
+
             restoreTransaction.oncomplete = () => {
               if (restoredCount > 0) {
                 console.log(`✅ [StorageService.ensureTable] Restored ${restoredCount} records to ${tableName}`);
@@ -298,10 +298,10 @@ export class StorageService implements IStorageService {
               }
               resolve();
             };
-            
+
             restoreTransaction.onerror = () => {
               console.error('❌ [StorageService.ensureTable] Failed to restore data:', restoreTransaction.error);
-              resolve(); // 即使恢复失败，也继续（表已创建）
+              resolve(); // Even if restore fails, continue (table has been created)
             };
           } else {
             resolve();
@@ -310,18 +310,18 @@ export class StorageService implements IStorageService {
 
         upgradeRequest.onupgradeneeded = (event) => {
           const upgradeDB = (event.target as IDBOpenDBRequest).result;
-          
-          // ✅ 如果表已存在，删除它（因为无法修改 keyPath）
+
+          // If the table already exists, delete it (since keyPath cannot be modified)
           if (upgradeDB.objectStoreNames.contains(tableName)) {
             console.warn(`⚠️ [StorageService.ensureTable] Deleting and recreating table ${tableName}...`);
             upgradeDB.deleteObjectStore(tableName);
           }
-          
-          // ✅ 重新创建表，确保 keyPath 正确
+
+          // Recreate table with correct keyPath
           upgradeDB.createObjectStore(tableName, { keyPath: 'key' });
           console.log(`✅ [StorageService.ensureTable] Created table ${tableName} with keyPath: 'key'`);
-          
-          // 记录所有表
+
+          // Record all tables
           for (let i = 0; i < upgradeDB.objectStoreNames.length; i++) {
             this.tableNames.add(upgradeDB.objectStoreNames[i]);
           }
@@ -340,7 +340,7 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 添加数据到指定表（支持单个或批量）
+   * Add data to specified table (supports single or batch)
    */
   async addData<T>(
     tableName: string,
@@ -353,18 +353,18 @@ export class StorageService implements IStorageService {
       const transaction = db.transaction([tableName], 'readwrite');
       const store = transaction.objectStore(tableName);
 
-      // 判断是批量模式还是单个模式
+      // Determine if it's batch mode or single mode
       const isBatch = Array.isArray(keyOrList);
       const items: Array<{ key: string; data: T }> = isBatch
         ? keyOrList
         : [{ key: keyOrList, data: data! }];
 
-      // 批量操作：使用 Promise.all 并行执行
+      // Batch operation: use Promise.all for parallel execution
       const promises = items.map((item) => {
         return new Promise<void>((resolve, reject) => {
-          // 序列化数据
+          // Serialize data
           const serialized = serializeData(item.data);
-          
+
           const request = store.put({
             key: item.key,
             data: serialized,
@@ -392,7 +392,7 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 通过 key 获取数据
+   * Get data by key
    */
   async getData<T>(tableName: string, key: string): Promise<T | undefined> {
     try {
@@ -407,7 +407,7 @@ export class StorageService implements IStorageService {
         request.onsuccess = () => {
           const result = request.result;
           if (result && result.data) {
-            // 反序列化数据
+            // Deserialize data
             const deserialized = deserializeData<T>(result.data);
             resolve(deserialized);
           } else {
@@ -432,7 +432,7 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 获取指定表的所有数据
+   * Get all data from a specified table
    */
   async getAllData<T>(tableName: string): Promise<T[]> {
     try {
@@ -446,8 +446,8 @@ export class StorageService implements IStorageService {
 
         request.onsuccess = () => {
           const results = request.result || [];
-          // 反序列化所有数据
-          const deserialized = results.map((result: any) => 
+          // Deserialize all data
+          const deserialized = results.map((result: any) =>
             deserializeData<T>(result.data)
           );
           resolve(deserialized);
@@ -470,7 +470,7 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 更新部分数据
+   * Update partial data
    */
   async updateData<T>(tableName: string, key: string, updates: Partial<T>): Promise<void> {
     try {
@@ -479,7 +479,7 @@ export class StorageService implements IStorageService {
         throw new Error(`Data not found: ${key} in table ${tableName}`);
       }
 
-      // 合并更新
+      // Merge updates
       const updated = { ...existing, ...updates };
       await this.addData(tableName, key, updated);
     } catch (error) {
@@ -491,9 +491,9 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 全量重置表数据
-   * @param tableName 表名
-   * @param dataList 数据列表，每个数据项必须包含唯一标识字段（key/id/invoiceHash 等）
+   * Full reset of table data
+   * @param tableName Table name
+   * @param dataList Data list; each data item must contain a unique identifier field (key/id/invoiceHash, etc.)
    */
   async resetAllData<T extends { [key: string]: any }>(tableName: string, dataList: T[]): Promise<void> {
     try {
@@ -502,15 +502,15 @@ export class StorageService implements IStorageService {
       const transaction = db.transaction([tableName], 'readwrite');
       const store = transaction.objectStore(tableName);
 
-      // 先清空表
+      // Clear the table first
       await new Promise<void>((resolve, reject) => {
         const clearRequest = store.clear();
         clearRequest.onsuccess = () => resolve();
         clearRequest.onerror = () => reject(new Error('Failed to clear table'));
       });
 
-      // 然后批量添加新数据
-      // 从数据中提取 key：优先使用 key，然后是 id，然后是 invoiceHash，最后使用索引
+      // Then batch add new data
+      // Extract key from data: prefer key, then id, then invoiceHash, finally use index
       for (const data of dataList) {
         const key = data.key || data.id || data.invoiceHash || String(dataList.indexOf(data));
         await this.addData(tableName, key, data);
@@ -524,7 +524,7 @@ export class StorageService implements IStorageService {
   }
 
   /**
-   * 删除指定数据（支持单个或批量）
+   * Delete specified data (supports single or batch)
    */
   async deleteData(tableName: string, keyOrKeys: string | string[]): Promise<void> {
     try {
@@ -533,10 +533,10 @@ export class StorageService implements IStorageService {
       const transaction = db.transaction([tableName], 'readwrite');
       const store = transaction.objectStore(tableName);
 
-      // 判断是批量模式还是单个模式
+      // Determine if it's batch mode or single mode
       const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
 
-      // 批量操作：使用 Promise.all 并行执行
+      // Batch operation: use Promise.all for parallel execution
       const promises = keys.map((key) => {
         return new Promise<void>((resolve, reject) => {
           const request = store.delete(key);

@@ -4,13 +4,13 @@ import { AleoAddress } from '@/lib/types';
 import type { WalletContextState } from '@demox-labs/aleo-wallet-adapter-react';
 
 /**
- * WalletService 单元测试
- * 
- * 重要说明：
- * 1. Mock 对象基于真实的 WalletContextState 类型（来自 @demox-labs/aleo-wallet-adapter-react）
- * 2. 这与 useWalletController 中使用的 useWallet() 返回类型一致
- * 3. 部分扩展方法（如 requestViewKey, network）使用 (as any) 添加，因为它们可能是钱包插件的扩展功能
- * 4. 这样的 mock 更接近真实的使用场景，提高测试的准确性
+ * WalletService Unit Tests
+ *
+ * Important notes:
+ * 1. Mock objects are based on the real WalletContextState type (from @demox-labs/aleo-wallet-adapter-react)
+ * 2. This is consistent with the useWallet() return type used in useWalletController
+ * 3. Some extension methods (e.g., requestViewKey, network) use (as any) because they may be wallet plugin extensions
+ * 4. Such mocks are closer to real usage scenarios, improving test accuracy
  */
 describe('WalletService', () => {
   let mockWallet: Partial<WalletContextState>;
@@ -18,8 +18,8 @@ describe('WalletService', () => {
   const mockAddress: AleoAddress = 'aleo1test123456789abcdefghijklmnopqrstuvwxyz' as AleoAddress;
 
   beforeEach(() => {
-    // 创建 mock 钱包实例，基于真实的 WalletContextState 类型
-    // 这与 useWallet() hook 返回的类型保持一致
+    // Create a mock wallet instance based on the real WalletContextState type
+    // This stays consistent with the type returned by the useWallet() hook
     mockWallet = {
       publicKey: null,
       connected: false,
@@ -39,14 +39,14 @@ describe('WalletService', () => {
     walletService = new WalletService(mockWallet as any);
   });
 
-  describe('构造函数', () => {
-    it('应该成功创建 WalletService 实例', () => {
+  describe('Constructor', () => {
+    it('should successfully create a WalletService instance', () => {
       expect(walletService).toBeInstanceOf(WalletService);
     });
   });
 
   describe('connect', () => {
-    it('应该成功连接钱包', async () => {
+    it('should successfully connect the wallet', async () => {
       // Arrange
       mockWallet.connect = vi.fn().mockResolvedValue(undefined);
 
@@ -57,7 +57,7 @@ describe('WalletService', () => {
       expect(mockWallet.connect).toHaveBeenCalledTimes(1);
     });
 
-    it('用户拒绝连接时应该抛出友好的错误信息', async () => {
+    it('should throw a friendly error message when the user rejects the connection', async () => {
       // Arrange
       mockWallet.connect = vi.fn().mockRejectedValue(new Error('User rejected the request'));
 
@@ -65,7 +65,7 @@ describe('WalletService', () => {
       await expect(walletService.connect()).rejects.toThrow('User rejected the connection request');
     });
 
-    it('用户拒绝连接（包含 denied）时应该抛出友好的错误信息', async () => {
+    it('should throw a friendly error message when the user rejects the connection (contains denied)', async () => {
       // Arrange
       mockWallet.connect = vi.fn().mockRejectedValue(new Error('Request denied'));
 
@@ -73,7 +73,7 @@ describe('WalletService', () => {
       await expect(walletService.connect()).rejects.toThrow('User rejected the connection request');
     });
 
-    it('其他错误时应该抛出详细的错误信息', async () => {
+    it('should throw a detailed error message for other errors', async () => {
       // Arrange
       mockWallet.connect = vi.fn().mockRejectedValue(new Error('Network timeout'));
 
@@ -83,7 +83,7 @@ describe('WalletService', () => {
   });
 
   describe('disconnect', () => {
-    it('应该成功断开钱包连接', async () => {
+    it('should successfully disconnect the wallet', async () => {
       // Arrange
       mockWallet.connected = true;
 
@@ -94,7 +94,7 @@ describe('WalletService', () => {
       expect(mockWallet.disconnect).toHaveBeenCalledTimes(1);
     });
 
-    it('断开连接失败时应该捕获错误并只记录日志（不抛出）', async () => {
+    it('should catch the error and only log it (not throw) when disconnection fails', async () => {
       // Arrange
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       mockWallet.disconnect = vi.fn().mockRejectedValue(new Error('Disconnect failed'));
@@ -105,19 +105,19 @@ describe('WalletService', () => {
       // Assert
       expect(mockWallet.disconnect).toHaveBeenCalledTimes(1);
       expect(consoleSpy).toHaveBeenCalledWith('Failed to disconnect wallet:', expect.any(Error));
-      
-      // 清理
+
+      // Cleanup
       consoleSpy.mockRestore();
     });
   });
 
   describe('getPrivateBalance', () => {
-    it('应该成功获取私有余额', async () => {
+    it('should successfully get the private balance', async () => {
       // Arrange
       const mockRecords = [
         { spent: false, data: { microcredits: '1000000u64.private' } },
         { spent: false, data: { microcredits: '2000000u64.private' } },
-        { spent: true, data: { microcredits: '500000u64.private' } }, // 已花费，不计入
+        { spent: true, data: { microcredits: '500000u64.private' } }, // Spent, not counted
       ];
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
@@ -129,7 +129,7 @@ describe('WalletService', () => {
       expect(mockWallet.requestRecords).toHaveBeenCalledWith('credits.aleo');
     });
 
-    it('应该过滤已花费的 Records', async () => {
+    it('should filter out spent Records', async () => {
       // Arrange
       const mockRecords = [
         { spent: false, data: { microcredits: '1000000u64.private' } },
@@ -141,16 +141,16 @@ describe('WalletService', () => {
       // Act
       const balance = await walletService.getPrivateBalance(mockAddress);
 
-      // Assert - 只计算未花费的 records
+      // Assert - only count unspent records
       expect(balance).toBe(3000000n);
     });
 
-    it('钱包未连接时应该抛出错误', async () => {
+    it('should throw an error when the wallet is not connected', async () => {
       // Act & Assert
       await expect(walletService.getPrivateBalance('')).rejects.toThrow('Wallet not connected');
     });
 
-    it('钱包不支持请求 Records 时应该返回 0', async () => {
+    it('should return 0 when the wallet does not support requesting Records', async () => {
       // Arrange
       mockWallet.requestRecords = undefined;
       mockWallet.requestRecordPlaintexts = undefined;
@@ -163,7 +163,7 @@ describe('WalletService', () => {
       expect(balance).toBe(0n);
     });
 
-    it('没有 Records 时应该返回 0', async () => {
+    it('should return 0 when there are no Records', async () => {
       // Arrange
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: [] });
 
@@ -174,7 +174,7 @@ describe('WalletService', () => {
       expect(balance).toBe(0n);
     });
 
-    it('应该使用 requestRecordPlaintexts 作为后备方案', async () => {
+    it('should use requestRecordPlaintexts as a fallback', async () => {
       // Arrange
       mockWallet.requestRecords = undefined;
       const mockRecords = [
@@ -193,41 +193,41 @@ describe('WalletService', () => {
   });
 
   describe('getFeeRecords', () => {
-    describe('策略1：最小满足法', () => {
-      it('应该返回单个刚好满足金额的最小Record', async () => {
+    describe('Strategy 1: Minimum Sufficient Method', () => {
+      it('should return a single smallest Record that just meets the amount', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
           { spent: false, data: { microcredits: '3000000u64.private' } },
-          { spent: false, data: { microcredits: '2000000u64.private' } }, // 最小且满足
+          { spent: false, data: { microcredits: '2000000u64.private' } }, // Smallest that satisfies
           { spent: false, data: { microcredits: '5000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 请求 1.5M，应该选择 2M（最小满足）
+        // Act - request 1.5M, should select 2M (minimum sufficient)
         const records = await walletService.getFeeRecords(1500000n, mockAddress);
 
         // Assert
         expect(records.length).toBe(1);
         expect(mockWallet.requestRecords).toHaveBeenCalledWith('credits.aleo');
-        
+
         const parsed = JSON.parse(records[0]);
         expect(parsed.data.microcredits).toBe('2000000u64.private');
       });
 
-      it('应该返回刚好等于所需金额的Record', async () => {
+      it('should return a Record that exactly matches the required amount', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: { microcredits: '1000000u64.private' } }, // 刚好满足
+          { spent: false, data: { microcredits: '1000000u64.private' } }, // Exact match
           { spent: false, data: { microcredits: '2000000u64.private' } },
           { spent: false, data: { microcredits: '3000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 请求 1M，应该选择刚好 1M 的
+        // Act - request 1M, should select the exact 1M one
         const records = await walletService.getFeeRecords(1000000n, mockAddress);
 
         // Assert
@@ -236,19 +236,19 @@ describe('WalletService', () => {
         expect(parsed.data.microcredits).toBe('1000000u64.private');
       });
 
-      it('当有多个满足的Record时，应该选择最小的', async () => {
+      it('should select the smallest Record when multiple satisfy the requirement', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
           { spent: false, data: { microcredits: '5000000u64.private' } },
-          { spent: false, data: { microcredits: '2000000u64.private' } }, // 最小满足
+          { spent: false, data: { microcredits: '2000000u64.private' } }, // Minimum sufficient
           { spent: false, data: { microcredits: '3000000u64.private' } },
           { spent: false, data: { microcredits: '10000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 请求 1.5M
+        // Act - request 1.5M
         const records = await walletService.getFeeRecords(1500000n, mockAddress);
 
         // Assert
@@ -257,13 +257,13 @@ describe('WalletService', () => {
         expect(parsed.data.microcredits).toBe('2000000u64.private');
       });
 
-      it('应该忽略已花费的Records', async () => {
+      it('should ignore spent Records', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: true, data: { microcredits: '2000000u64.private' } },  // 已花费，忽略
-          { spent: false, data: { microcredits: '3000000u64.private' } }, // 应该选这个
+          { spent: true, data: { microcredits: '2000000u64.private' } },  // Spent, ignore
+          { spent: false, data: { microcredits: '3000000u64.private' } }, // Should select this one
           { spent: false, data: { microcredits: '5000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
@@ -279,8 +279,8 @@ describe('WalletService', () => {
       });
     });
 
-    describe('策略2：多张合并法', () => {
-      it('当没有单张满足时，应该选择刚好满足金额的组合（不找零）', async () => {
+    describe('Strategy 2: Multi-Record Combination Method', () => {
+      it('should select a combination that exactly meets the amount (no change) when no single Record suffices', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -291,10 +291,10 @@ describe('WalletService', () => {
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 需要 1M，没有单张满足，需要合并
+        // Act - need 1M, no single Record suffices, need to combine
         const records = await walletService.getFeeRecords(1000000n, mockAddress);
 
-        // Assert - 应该选择 600000 + 400000 = 1000000（刚好，不找零）
+        // Assert - should select 600000 + 400000 = 1000000 (exact, no change)
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
@@ -302,9 +302,9 @@ describe('WalletService', () => {
             const match = r.data.microcredits.match(/^(\d+)/);
             return sum + (match ? BigInt(match[1]) : 0n);
           }, 0n);
-        expect(totalAmount).toBe(1000000n); // 刚好等于，不需要找零
-        
-        // 验证包含正确的组合
+        expect(totalAmount).toBe(1000000n); // Exact match, no change needed
+
+        // Verify the correct combination is included
         const amounts = records.map(r => {
           const parsed = JSON.parse(r);
           const match = parsed.data.microcredits.match(/^(\d+)/);
@@ -314,7 +314,7 @@ describe('WalletService', () => {
         expect(amounts).toContain(400000n);
       });
 
-      it('应该优先选择刚好满足的组合而不是找零的组合', async () => {
+      it('should prefer an exact-match combination over one requiring change', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -325,10 +325,10 @@ describe('WalletService', () => {
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 需要 900000
+        // Act - need 900000
         const records = await walletService.getFeeRecords(900000n, mockAddress);
 
-        // Assert - 应该选择 800000 + 100000 = 900000（刚好，不找零）
+        // Assert - should select 800000 + 100000 = 900000 (exact, no change)
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
@@ -336,8 +336,8 @@ describe('WalletService', () => {
             const match = r.data.microcredits.match(/^(\d+)/);
             return sum + (match ? BigInt(match[1]) : 0n);
           }, 0n);
-        expect(totalAmount).toBe(900000n); // 刚好等于
-        
+        expect(totalAmount).toBe(900000n); // Exact match
+
         const amounts = records.map(r => {
           const parsed = JSON.parse(r);
           const match = parsed.data.microcredits.match(/^(\d+)/);
@@ -347,7 +347,7 @@ describe('WalletService', () => {
         expect(amounts).toContain(100000n);
       });
 
-      it('应该累计多个Records直到满足所需金额', async () => {
+      it('should accumulate multiple Records until the required amount is met', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -358,10 +358,10 @@ describe('WalletService', () => {
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
-        // Act - 需要 1M
+        // Act - need 1M
         const records = await walletService.getFeeRecords(1000000n, mockAddress);
 
-        // Assert - 应该选择 500000 + 400000 + 300000
+        // Assert - should select 500000 + 400000 + 300000
         expect(records.length).toBe(3);
         const totalAmount = records
           .map(r => JSON.parse(r))
@@ -372,12 +372,12 @@ describe('WalletService', () => {
         expect(totalAmount).toBe(1200000n);
       });
 
-      it('应该过滤掉已花费的Records', async () => {
+      it('should filter out spent Records', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: true, data: { microcredits: '5000000u64.private' } },  // 已花费，忽略
+          { spent: true, data: { microcredits: '5000000u64.private' } },  // Spent, ignore
           { spent: false, data: { microcredits: '600000u64.private' } },
           { spent: false, data: { microcredits: '500000u64.private' } },
         ];
@@ -395,8 +395,8 @@ describe('WalletService', () => {
       });
     });
 
-    describe('边界情况和错误处理', () => {
-      it('应该正确处理 microcredits 为 0 的Records（忽略它们）', async () => {
+    describe('Edge cases and error handling', () => {
+      it('should correctly handle Records with 0 microcredits (ignore them)', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -410,7 +410,7 @@ describe('WalletService', () => {
         // Act
         const records = await walletService.getFeeRecords(1000000n, mockAddress);
 
-        // Assert - 应该选择 600000 + 500000 = 1100000，不应该包含金额为 0 的record
+        // Assert - should select 600000 + 500000 = 1100000, should not include the 0-amount record
         expect(records.length).toBe(2);
         const totalAmount = records
           .map(r => JSON.parse(r))
@@ -419,8 +419,8 @@ describe('WalletService', () => {
             return sum + (match ? BigInt(match[1]) : 0n);
           }, 0n);
         expect(totalAmount).toBe(1100000n);
-        
-        // 验证不包含金额为0的record
+
+        // Verify no 0-amount record is included
         records.forEach(record => {
           const parsed = JSON.parse(record);
           const match = parsed.data.microcredits.match(/^(\d+)/);
@@ -428,7 +428,7 @@ describe('WalletService', () => {
         });
       });
 
-      it('当所有Records金额都为0时应该抛出错误', async () => {
+      it('should throw an error when all Records have 0 amount', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -442,12 +442,12 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(1000000n, mockAddress)).rejects.toThrow('No unspent fee records available');
       });
 
-      it('应该处理缺少 microcredits 字段的Records', async () => {
+      it('should handle Records missing the microcredits field', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
         const mockRecords = [
-          { spent: false, data: {} }, // 缺少 microcredits
+          { spent: false, data: {} }, // Missing microcredits
           { spent: false, data: { microcredits: '1000000u64.private' } },
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
@@ -455,13 +455,13 @@ describe('WalletService', () => {
         // Act
         const records = await walletService.getFeeRecords(500000n, mockAddress);
 
-        // Assert - 应该选择 1000000 的那个
+        // Assert - should select the 1000000 one
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
         expect(parsed.data.microcredits).toBe('1000000u64.private');
       });
 
-      it('余额不足时应该抛出错误', async () => {
+      it('should throw an error when balance is insufficient', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -474,7 +474,7 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(2000000n, mockAddress)).rejects.toThrow('Insufficient fee records');
       });
 
-      it('没有可用Records时应该抛出错误', async () => {
+      it('should throw an error when no Records are available', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -484,7 +484,7 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(1000000n, mockAddress)).rejects.toThrow('No unspent fee records available');
       });
 
-      it('所有Records都已花费时应该抛出错误', async () => {
+      it('should throw an error when all Records are spent', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -498,7 +498,7 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(1000000n, mockAddress)).rejects.toThrow('No unspent fee records available');
       });
 
-      it('钱包未连接时应该抛出错误', async () => {
+      it('should throw an error when the wallet is not connected', async () => {
         // Arrange
         mockWallet.connected = false;
 
@@ -506,7 +506,7 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(1000000n, '')).rejects.toThrow('Wallet not connected');
       });
 
-      it('钱包没有publicKey时应该抛出错误', async () => {
+      it('should throw an error when the wallet has no publicKey', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = undefined;
@@ -515,7 +515,7 @@ describe('WalletService', () => {
         await expect(walletService.getFeeRecords(1000000n, '')).rejects.toThrow('Wallet not connected');
       });
 
-      it('钱包不支持请求 Records 时应该抛出错误', async () => {
+      it('should throw an error when the wallet does not support requesting Records', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -527,7 +527,7 @@ describe('WalletService', () => {
         await expect(serviceWithoutRecords.getFeeRecords(1000000n, mockAddress)).rejects.toThrow('No fee records available');
       });
 
-      it('应该在requestRecords不可用时尝试使用requestRecordPlaintexts', async () => {
+      it('should try requestRecordPlaintexts when requestRecords is unavailable', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -546,7 +546,7 @@ describe('WalletService', () => {
         expect(mockWallet.requestRecordPlaintexts).toHaveBeenCalledWith('credits.aleo');
       });
 
-      it('应该正确处理 requestRecords 返回 null 的情况', async () => {
+      it('should correctly handle requestRecords returning null', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -557,8 +557,8 @@ describe('WalletService', () => {
       });
     });
 
-    describe('返回格式验证', () => {
-      it('应该返回字符串格式的Records', async () => {
+    describe('Return format validation', () => {
+      it('should return Records in string format', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -576,7 +576,7 @@ describe('WalletService', () => {
         });
       });
 
-      it('返回的Records应该可以被JSON解析', async () => {
+      it('returned Records should be parseable as JSON', async () => {
         // Arrange
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
@@ -597,7 +597,7 @@ describe('WalletService', () => {
   });
 
   describe('signMessage', () => {
-    it('应该成功签名消息', async () => {
+    it('should successfully sign a message', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -613,7 +613,7 @@ describe('WalletService', () => {
       expect(mockWallet.signMessage).toHaveBeenCalledWith(message);
     });
 
-    it('钱包未连接时应该抛出错误', async () => {
+    it('should throw an error when the wallet is not connected', async () => {
       // Arrange
       mockWallet.connected = false;
 
@@ -621,7 +621,7 @@ describe('WalletService', () => {
       await expect(walletService.signMessage('test', '')).rejects.toThrow('Wallet not connected');
     });
 
-    it('消息为空时应该抛出错误', async () => {
+    it('should throw an error when the message is empty', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -631,7 +631,7 @@ describe('WalletService', () => {
       await expect(walletService.signMessage('   ', mockAddress)).rejects.toThrow('Message cannot be empty');
     });
 
-    it('钱包不支持 signMessage 时应该抛出错误', async () => {
+    it('should throw an error when the wallet does not support signMessage', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -644,7 +644,7 @@ describe('WalletService', () => {
       );
     });
 
-    it('返回空签名时应该抛出错误', async () => {
+    it('should throw an error when the returned signature is empty', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -654,7 +654,7 @@ describe('WalletService', () => {
       await expect(walletService.signMessage('test', mockAddress)).rejects.toThrow('Signature request returned empty result');
     });
 
-    it('用户拒绝签名时应该抛出友好的错误信息', async () => {
+    it('should throw a friendly error message when the user rejects the signature', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -667,13 +667,13 @@ describe('WalletService', () => {
 
   describe('requestTransaction', () => {
     beforeEach(() => {
-      // 设置默认的 requestTransaction mock
+      // Set up default requestTransaction mock
       mockWallet.requestTransaction = vi.fn().mockResolvedValue({
         transactionId: 'mock_transaction_id_123456'
       });
     });
 
-    it('应该成功请求交易', async () => {
+    it('should successfully request a transaction', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -701,7 +701,7 @@ describe('WalletService', () => {
       expect(callArgs.feePrivate).toBe(false);
     });
 
-    it('应该使用自定义 programId', async () => {
+    it('should use a custom programId', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -722,7 +722,7 @@ describe('WalletService', () => {
       expect(callArgs.transitions[0].program).toBe(customProgramId);
     });
 
-    it('应该使用自定义手续费金额', async () => {
+    it('should use a custom fee amount', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -744,7 +744,7 @@ describe('WalletService', () => {
       expect(callArgs.fee).toBe(customFee);
     });
 
-    it('应该使用自定义 chainId', async () => {
+    it('should use a custom chainId', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -767,7 +767,7 @@ describe('WalletService', () => {
       expect(callArgs.chainId).toBe(customChainId);
     });
 
-    it('钱包未连接时应该抛出错误', async () => {
+    it('should throw an error when the wallet is not connected', async () => {
       // Arrange
       mockWallet.connected = false;
 
@@ -781,7 +781,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Wallet not connected');
     });
 
-    it('钱包不存在时应该抛出错误', async () => {
+    it('should throw an error when the wallet does not exist', async () => {
       // Arrange
       const serviceWithoutWallet = new WalletService(null as any);
 
@@ -795,7 +795,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Wallet not found');
     });
 
-    it('钱包不支持 requestTransaction 时应该抛出错误', async () => {
+    it('should throw an error when the wallet does not support requestTransaction', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -812,7 +812,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Wallet does not support requestTransaction');
     });
 
-    it('返回空结果时应该抛出错误', async () => {
+    it('should throw an error when the result is empty', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -828,7 +828,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Transaction request returned empty result');
     });
 
-    it('用户拒绝交易时应该抛出友好的错误信息', async () => {
+    it('should throw a friendly error message when the user rejects the transaction', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -844,7 +844,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('User rejected the transaction request');
     });
 
-    it('用户拒绝交易（包含 denied）时应该抛出友好的错误信息', async () => {
+    it('should throw a friendly error message when the user rejects the transaction (contains denied)', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -860,7 +860,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('User rejected the transaction request');
     });
 
-    it('网络不匹配时应该抛出错误', async () => {
+    it('should throw an error when there is a network mismatch', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -876,7 +876,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Wallet network does not match required network');
     });
 
-    it('其他错误时应该抛出详细的错误信息', async () => {
+    it('should throw a detailed error message for other errors', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -892,7 +892,7 @@ describe('WalletService', () => {
       ).rejects.toThrow('Failed to request transaction');
     });
 
-    it('应该正确处理包含多个输入的复杂交易', async () => {
+    it('should correctly handle complex transactions with multiple inputs', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
@@ -922,51 +922,50 @@ describe('WalletService', () => {
     });
   });
 
-  describe('集成测试场景', () => {
-    it('完整流程: 连接 -> 签名消息 -> 断开', async () => {
+  describe('Integration test scenarios', () => {
+    it('Full flow: connect -> sign message -> disconnect', async () => {
       // Arrange
       mockWallet.publicKey = null;
       mockWallet.connected = false;
 
-      // Act - 连接
+      // Act - connect
       mockWallet.publicKey = mockAddress;
       mockWallet.connected = true;
       await walletService.connect();
 
-      // Assert - 连接
+      // Assert - connected
       expect(mockWallet.connected).toBe(true);
 
-      // Act - 签名消息
+      // Act - sign message
       const signature = await walletService.signMessage('test message', mockAddress);
       expect(signature).toBeDefined();
 
-      // Act - 断开
+      // Act - disconnect
       mockWallet.connected = false;
       await walletService.disconnect();
       expect(mockWallet.connected).toBe(false);
     });
 
-    it('应该正确计算复杂场景下的余额', async () => {
+    it('should correctly calculate balance in a complex scenario', async () => {
       // Arrange
       mockWallet.connected = true;
       mockWallet.publicKey = mockAddress;
       const mockRecords = [
         { spent: false, data: { microcredits: '1000000u64.private' } },
-        { spent: true, data: { microcredits: '500000u64.private' } },  // 已花费，不计入
+        { spent: true, data: { microcredits: '500000u64.private' } },  // Spent, not counted
         { spent: false, data: { microcredits: '2500000u64.private' } },
-        { spent: false, data: {} }, // 没有 microcredits，不计入
+        { spent: false, data: {} }, // No microcredits, not counted
         { spent: false, data: { microcredits: '1500000u64.private' } },
       ];
-      // 使用 requestRecords（优先级更高）
+      // Use requestRecords (higher priority)
       mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
 
       // Act
       const balances = await walletService.getPrivateBalance(mockAddress);
 
       // Assert
-      // 只计算未花费且有 microcredits 的记录: 1000000 + 2500000 + 1500000 = 5000000
+      // Only count unspent records with microcredits: 1000000 + 2500000 + 1500000 = 5000000
       expect(balances).toBe(5000000n);
     });
   });
 });
-

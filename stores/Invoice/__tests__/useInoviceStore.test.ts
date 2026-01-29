@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vitest';
 import { Invoice, InvoiceStatus, InvoiceDetails } from '@/lib/types';
 
-// Mock 服务（需要在导入 store 之前，使用 vi.hoisted 确保提升）
+// Mock services (must be before importing the store, using vi.hoisted to ensure hoisting)
 const { mockStorageService, mockCryptoService } = vi.hoisted(() => {
   const mockStorageService = {
     addData: vi.fn().mockResolvedValue(undefined),
@@ -34,14 +34,14 @@ vi.mock('@/services/CryptoService/CryptoServiceImpl', () => ({
   CryptoService: vi.fn().mockImplementation(() => mockCryptoService)
 }));
 
-// 在 mock 之后导入 store
+// Import store after mocks
 import { useInvoiceStore } from '../useInoviceStore';
 
 describe('useInvoiceStore', () => {
   const masterKey = 'test-master-key';
   const INVOICE_TABLE = 'invoices';
 
-  // 测试数据
+  // Test data
   const mockInvoiceDetails: InvoiceDetails = {
     invoiceNumber: 'INV-001',
     lineItems: [
@@ -73,13 +73,13 @@ describe('useInvoiceStore', () => {
   };
 
   beforeEach(() => {
-    // 重置 store 状态（包括 currentInvoice）
+    // Reset store state (including currentInvoice)
     useInvoiceStore.setState({ invoices: [], currentInvoice: null });
 
-    // 重置所有 mock
+    // Reset all mocks
     vi.clearAllMocks();
-    
-    // 重置 mock 返回值
+
+    // Reset mock return values
     mockStorageService.addData.mockResolvedValue(undefined);
     mockStorageService.getData.mockResolvedValue(undefined);
     mockStorageService.getAllData.mockResolvedValue([]);
@@ -93,15 +93,15 @@ describe('useInvoiceStore', () => {
   });
 
   describe('addInvoice', () => {
-    it('应该成功添加发票到内存和IndexedDB', async () => {
+    it('should successfully add an invoice to memory and IndexedDB', async () => {
       const store = useInvoiceStore.getState();
 
       await store.addInvoice(mockInvoice, { masterKey, persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
-      // ✅ 验证 invoice 的基本字段
+      // Verify basic invoice fields
       expect(state.invoices[0].id).toBe(mockInvoice.id);
       expect(state.invoices[0].invoiceHash).toBe(mockInvoice.invoiceHash);
       expect(state.invoices[0].seller).toBe(mockInvoice.seller);
@@ -109,19 +109,19 @@ describe('useInvoiceStore', () => {
       expect(state.invoices[0].amount).toBe(mockInvoice.amount);
       expect(state.invoices[0].status).toBe(mockInvoice.status);
       expect(state.invoices[0].details).toEqual(mockInvoice.details);
-      // ✅ 验证自动添加的 metadata
+      // Verify auto-added metadata
       expect(state.invoices[0].metadata).toBeDefined();
       expect(state.invoices[0].metadata?.confirmationStatus).toBe('SENDING');
       expect(state.invoices[0].metadata?.dataSource).toBe('local');
       expect(state.invoices[0].metadata?.lastUpdated).toBeInstanceOf(Date);
 
-      // 验证加密服务调用
+      // Verify crypto service call
       expect(mockCryptoService.encryptInvoiceDetails).toHaveBeenCalledWith(
         mockInvoiceDetails,
         masterKey
       );
 
-      // 验证存储服务调用
+      // Verify storage service call
       expect(mockStorageService.addData).toHaveBeenCalledWith(
         INVOICE_TABLE,
         mockInvoice.id,
@@ -140,40 +140,40 @@ describe('useInvoiceStore', () => {
       );
     });
 
-    it('应该在没有masterKey 时只更新内存', async () => {
+    it('should only update memory when masterKey is not provided', async () => {
       const store = useInvoiceStore.getState();
 
       await store.addInvoice(mockInvoice, { persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.addData).not.toHaveBeenCalled();
       expect(mockCryptoService.encryptInvoiceDetails).not.toHaveBeenCalled();
     });
 
-    it('应该在 persistFull 为 false 时只更新内存', async () => {
+    it('should only update memory when persistFull is false', async () => {
       const store = useInvoiceStore.getState();
 
       await store.addInvoice(mockInvoice, { masterKey, persistFull: false });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.addData).not.toHaveBeenCalled();
     });
 
-    it('应该处理没有 details 的发票', async () => {
+    it('should handle invoices without details', async () => {
       const invoiceWithoutDetails = { ...mockInvoice, details: undefined };
       const store = useInvoiceStore.getState();
 
       await store.addInvoice(invoiceWithoutDetails, { masterKey, persistFull: true });
 
-      // 验证存储时 encryptedDetails 为 null
+      // Verify encryptedDetails is null during storage
       expect(mockStorageService.addData).toHaveBeenCalledWith(
         INVOICE_TABLE,
         invoiceWithoutDetails.id,
@@ -183,7 +183,7 @@ describe('useInvoiceStore', () => {
       );
     });
 
-    it('应该在存储失败时抛出错误且不更新内存（保持数据库和内存同步）', async () => {
+    it('should throw an error on storage failure and not update memory (keep database and memory in sync)', async () => {
       const store = useInvoiceStore.getState();
       const error = new Error('Storage failed');
       mockStorageService.addData.mockRejectedValue(error);
@@ -192,7 +192,7 @@ describe('useInvoiceStore', () => {
         store.addInvoice(mockInvoice, { masterKey, persistFull: true })
       ).rejects.toThrow('Storage failed');
 
-      // 验证内存状态未更新（保持数据库和内存同步）
+      // Verify memory state was not updated (keep database and memory in sync)
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(0);
     });
@@ -200,7 +200,7 @@ describe('useInvoiceStore', () => {
 
   describe('updateInvoice', () => {
     beforeEach(() => {
-      // 先添加一个发票到内存（包含 metadata）
+      // First add an invoice to memory (with metadata)
       const invoiceWithMetadata = {
         ...mockInvoice,
         metadata: {
@@ -212,7 +212,7 @@ describe('useInvoiceStore', () => {
       useInvoiceStore.setState({ invoices: [invoiceWithMetadata] });
     });
 
-    it('应该成功更新发票', async () => {
+    it('should successfully update an invoice', async () => {
       const store = useInvoiceStore.getState();
       const existingStorageData = {
         id: mockInvoice.id,
@@ -236,11 +236,11 @@ describe('useInvoiceStore', () => {
       const updates = { status: InvoiceStatus.PAID };
       await store.updateInvoice(mockInvoice.id, updates, { masterKey, persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices[0].status).toBe(InvoiceStatus.PAID);
 
-      // 验证存储服务调用
+      // Verify storage service call
       expect(mockStorageService.getData).toHaveBeenCalledWith(INVOICE_TABLE, mockInvoice.id);
       expect(mockStorageService.updateData).toHaveBeenCalledWith(
         INVOICE_TABLE,
@@ -251,28 +251,28 @@ describe('useInvoiceStore', () => {
       );
     });
 
-    it('应该在发票不存在时返回', async () => {
+    it('should return early when the invoice does not exist', async () => {
       const store = useInvoiceStore.getState();
       const nonExistentId = '999field' as any;
 
       await store.updateInvoice(nonExistentId, { status: InvoiceStatus.PAID }, { masterKey });
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.getData).not.toHaveBeenCalled();
       expect(mockStorageService.updateData).not.toHaveBeenCalled();
     });
 
-    it('应该在 IndexedDB 中找不到发票时返回', async () => {
+    it('should return early when the invoice is not found in IndexedDB', async () => {
       const store = useInvoiceStore.getState();
       mockStorageService.getData.mockResolvedValue(undefined);
 
       await store.updateInvoice(mockInvoice.id, { status: InvoiceStatus.PAID }, { masterKey, persistFull: true });
 
-      // 验证没有调用 updateData
+      // Verify updateData was not called
       expect(mockStorageService.updateData).not.toHaveBeenCalled();
     });
 
-    it('应该更新 details 时重新加密', async () => {
+    it('should re-encrypt when updating details', async () => {
       const store = useInvoiceStore.getState();
       const existingStorageData = {
         id: mockInvoice.id,
@@ -300,24 +300,24 @@ describe('useInvoiceStore', () => {
 
       await store.updateInvoice(mockInvoice.id, { details: newDetails }, { masterKey, persistFull: true });
 
-      // 验证重新加密
+      // Verify re-encryption
       expect(mockCryptoService.encryptInvoiceDetails).toHaveBeenCalledWith(newDetails, masterKey);
     });
 
-    it('应该在没有 masterKey 时只更新内存', async () => {
+    it('should only update memory when masterKey is not provided', async () => {
       const store = useInvoiceStore.getState();
 
       await store.updateInvoice(mockInvoice.id, { status: InvoiceStatus.PAID }, { persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices[0].status).toBe(InvoiceStatus.PAID);
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.getData).not.toHaveBeenCalled();
     });
 
-    it('应该在存储失败时抛出错误且不更新内存（保持数据库和内存同步）', async () => {
+    it('should throw an error on storage failure and not update memory (keep database and memory in sync)', async () => {
       const store = useInvoiceStore.getState();
       const existingStorageData = {
         id: mockInvoice.id,
@@ -344,26 +344,26 @@ describe('useInvoiceStore', () => {
         store.updateInvoice(mockInvoice.id, { status: InvoiceStatus.PAID }, { masterKey, persistFull: true })
       ).rejects.toThrow('Storage update failed');
 
-      // 验证内存状态未更新（保持数据库和内存同步）
+      // Verify memory state was not updated (keep database and memory in sync)
       const state = useInvoiceStore.getState();
-      expect(state.invoices[0].status).toBe(InvoiceStatus.PENDING); // 保持原状态
+      expect(state.invoices[0].status).toBe(InvoiceStatus.PENDING); // Maintains original state
     });
 
-    it('应该优先使用 currentInvoice 而不是 invoices 中的数据', async () => {
-      // 设置 currentInvoice 和 invoices 中的数据不一致
+    it('should prioritize currentInvoice over data in invoices', async () => {
+      // Set up currentInvoice and invoices with inconsistent data
       const currentInvoiceWithMetadata = {
         ...mockInvoice,
-        status: InvoiceStatus.CANCELLED, // currentInvoice 中的状态是 CANCELLED
+        status: InvoiceStatus.CANCELLED, // Status in currentInvoice is CANCELLED
         metadata: {
           confirmationStatus: 'CONFIRMED' as const,
           lastUpdated: new Date('2024-01-02'),
           dataSource: 'chain' as const
         }
       };
-      
+
       const invoiceInList = {
         ...mockInvoice,
-        status: InvoiceStatus.PENDING, // invoices 中的状态是 PENDING
+        status: InvoiceStatus.PENDING, // Status in invoices is PENDING
         metadata: {
           confirmationStatus: 'SENDING' as const,
           lastUpdated: new Date('2024-01-01'),
@@ -385,7 +385,7 @@ describe('useInvoiceStore', () => {
         amount: mockInvoice.amount,
         dueDate: mockInvoice.dueDate,
         createdAt: mockInvoice.createdAt,
-        status: InvoiceStatus.CANCELLED, // IndexedDB 中的状态
+        status: InvoiceStatus.CANCELLED, // Status in IndexedDB
         encryptedDetails: mockEncryptedDetails,
         metadata: {
           confirmationStatus: 'CONFIRMED' as const,
@@ -396,10 +396,10 @@ describe('useInvoiceStore', () => {
 
       mockStorageService.getData.mockResolvedValue(existingStorageData);
 
-      // 更新 status 为 PAID
+      // Update status to PAID
       await store.updateInvoice(mockInvoice.id, { status: InvoiceStatus.PAID }, { masterKey, persistFull: true });
 
-      // 验证更新后的 invoice 是基于 currentInvoice 的（应该包含 currentInvoice 的 metadata）
+      // Verify updated invoice is based on currentInvoice (should contain currentInvoice's metadata)
       const state = useInvoiceStore.getState();
       expect(state.invoices[0].status).toBe(InvoiceStatus.PAID);
       expect(state.invoices[0].metadata).toEqual({
@@ -408,7 +408,7 @@ describe('useInvoiceStore', () => {
         dataSource: 'chain'
       });
 
-      // 验证 currentInvoice 也被正确更新
+      // Verify currentInvoice was also correctly updated
       expect(state.currentInvoice?.status).toBe(InvoiceStatus.PAID);
       expect(state.currentInvoice?.metadata).toEqual({
         confirmationStatus: 'CONFIRMED',
@@ -417,7 +417,7 @@ describe('useInvoiceStore', () => {
       });
     });
 
-    it('应该正确合并 metadata（updates 中的 metadata 应该覆盖现有的）', async () => {
+    it('should correctly merge metadata (metadata in updates should override existing)', async () => {
       const invoiceWithMetadata = {
         ...mockInvoice,
         metadata: {
@@ -452,7 +452,7 @@ describe('useInvoiceStore', () => {
 
       mockStorageService.getData.mockResolvedValue(existingStorageData);
 
-      // 更新 metadata
+      // Update metadata
       const newMetadata = {
         confirmationStatus: 'CONFIRMED' as const,
         lastUpdated: new Date(),
@@ -461,18 +461,18 @@ describe('useInvoiceStore', () => {
 
       await store.updateInvoice(mockInvoice.id, { metadata: newMetadata }, { masterKey, persistFull: true });
 
-      // 验证 metadata 被正确更新
+      // Verify metadata was correctly updated
       const state = useInvoiceStore.getState();
       expect(state.invoices[0].metadata?.confirmationStatus).toBe('CONFIRMED');
       expect(state.invoices[0].metadata?.dataSource).toBe('chain');
       expect(state.invoices[0].metadata?.lastUpdated).toBeInstanceOf(Date);
 
-      // 验证 currentInvoice 也被正确更新
+      // Verify currentInvoice was also correctly updated
       expect(state.currentInvoice?.metadata?.confirmationStatus).toBe('CONFIRMED');
       expect(state.currentInvoice?.metadata?.dataSource).toBe('chain');
     });
 
-    it('应该在没有 currentInvoice 时从 invoices 中查找', async () => {
+    it('should look up from invoices when currentInvoice is not available', async () => {
       useInvoiceStore.setState({
         invoices: [mockInvoice],
         currentInvoice: null
@@ -500,15 +500,15 @@ describe('useInvoiceStore', () => {
 
       await store.updateInvoice(mockInvoice.id, { status: InvoiceStatus.PAID }, { masterKey, persistFull: true });
 
-      // 验证更新成功
+      // Verify update succeeded
       const state = useInvoiceStore.getState();
       expect(state.invoices[0].status).toBe(InvoiceStatus.PAID);
-      expect(state.currentInvoice).toBeNull(); // currentInvoice 应该保持为 null
+      expect(state.currentInvoice).toBeNull(); // currentInvoice should remain null
     });
   });
 
   describe('getInvoiceByHash', () => {
-    it('应该从内存中返回发票', async () => {
+    it('should return an invoice from memory', async () => {
       useInvoiceStore.setState({ invoices: [mockInvoice] });
       const store = useInvoiceStore.getState();
 
@@ -518,7 +518,7 @@ describe('useInvoiceStore', () => {
       expect(mockStorageService.getAllData).not.toHaveBeenCalled();
     });
 
-    it('应该从 IndexedDB 加载发票（当内存中没有时）', async () => {
+    it('should load an invoice from IndexedDB (when not in memory)', async () => {
       const storageData = {
         id: mockInvoice.id,
         invoiceHash: mockInvoice.invoiceHash,
@@ -546,15 +546,15 @@ describe('useInvoiceStore', () => {
       expect(result?.invoiceHash).toBe(mockInvoice.invoiceHash);
       expect(result?.details).toEqual(mockInvoiceDetails);
 
-      // 验证解密调用
+      // Verify decryption call
       expect(mockCryptoService.decryptInvoiceDetails).toHaveBeenCalledWith(mockEncryptedDetails, masterKey);
 
-      // 验证内存状态更新
+      // Verify memory state update
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
     });
 
-    it('应该在找不到发票时返回 null', async () => {
+    it('should return null when the invoice is not found', async () => {
       mockStorageService.getAllData.mockResolvedValue([]);
       const store = useInvoiceStore.getState();
 
@@ -563,7 +563,7 @@ describe('useInvoiceStore', () => {
       expect(result).toBeNull();
     });
 
-    it('应该在 loadFromDB 为 false 时只从内存查找', async () => {
+    it('should only search in memory when loadFromDB is false', async () => {
       const store = useInvoiceStore.getState();
 
       const result = await store.getInvoiceByHash(mockInvoice.invoiceHash, { masterKey, loadFromDB: false });
@@ -572,7 +572,7 @@ describe('useInvoiceStore', () => {
       expect(mockStorageService.getAllData).not.toHaveBeenCalled();
     });
 
-    it('应该在没有 masterKey 时只从内存查找', async () => {
+    it('should only search in memory when masterKey is not provided', async () => {
       const store = useInvoiceStore.getState();
 
       const result = await store.getInvoiceByHash(mockInvoice.invoiceHash, { loadFromDB: true });
@@ -583,7 +583,7 @@ describe('useInvoiceStore', () => {
   });
 
   describe('getAllInvoices', () => {
-    it('应该从 IndexedDB 加载所有发票', async () => {
+    it('should load all invoices from IndexedDB', async () => {
       const storageData1 = {
         id: '1field' as any,
         invoiceHash: 'hash1field' as any,
@@ -629,12 +629,12 @@ describe('useInvoiceStore', () => {
       expect(result[1].id).toBe('2field');
       expect(result[1].details).toBeUndefined();
 
-      // 验证内存状态更新
+      // Verify memory state update
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(2);
     });
 
-    it('应该在 refreshMemory 为 false 时不更新内存', async () => {
+    it('should not update memory when refreshMemory is false', async () => {
       const storageData = {
         id: mockInvoice.id,
         invoiceHash: mockInvoice.invoiceHash,
@@ -658,12 +658,12 @@ describe('useInvoiceStore', () => {
 
       await store.getAllInvoices({ masterKey, refreshMemory: false });
 
-      // 验证内存状态没有更新
+      // Verify memory state was not updated
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(0);
     });
 
-    it('应该处理解密失败的情况', async () => {
+    it('should handle decryption failure', async () => {
       const storageData = {
         id: mockInvoice.id,
         invoiceHash: mockInvoice.invoiceHash,
@@ -687,12 +687,12 @@ describe('useInvoiceStore', () => {
 
       const result = await store.getAllInvoices({ masterKey });
 
-      // 验证即使解密失败，也返回基本信息
+      // Verify basic info is returned even if decryption fails
       expect(result).toHaveLength(1);
       expect(result[0].details).toBeUndefined();
     });
 
-    it('应该在没有 masterKey 时返回未解密的发票', async () => {
+    it('should return unencrypted invoices when masterKey is not provided', async () => {
       const storageData = {
         id: mockInvoice.id,
         invoiceHash: mockInvoice.invoiceHash,
@@ -722,7 +722,7 @@ describe('useInvoiceStore', () => {
   });
 
   describe('setInvoices', () => {
-    it('应该批量设置发票到内存和 IndexedDB', async () => {
+    it('should batch set invoices to memory and IndexedDB', async () => {
       const invoices = [
         mockInvoice,
         { ...mockInvoice, id: '2field' as any, invoiceHash: 'hash2field' as any }
@@ -732,11 +732,11 @@ describe('useInvoiceStore', () => {
 
       await store.setInvoices(invoices, { masterKey, persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(2);
 
-      // 验证批量添加调用
+      // Verify batch add call
       expect(mockStorageService.addData).toHaveBeenCalledWith(
         INVOICE_TABLE,
         expect.arrayContaining([
@@ -758,41 +758,41 @@ describe('useInvoiceStore', () => {
       );
     });
 
-    it('应该在没有 masterKey 时只更新内存', async () => {
+    it('should only update memory when masterKey is not provided', async () => {
       const invoices = [mockInvoice];
       const store = useInvoiceStore.getState();
 
       await store.setInvoices(invoices, { persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.addData).not.toHaveBeenCalled();
     });
 
-    it('应该在 persistFull 为 false 时只更新内存', async () => {
+    it('should only update memory when persistFull is false', async () => {
       const invoices = [mockInvoice];
       const store = useInvoiceStore.getState();
 
       await store.setInvoices(invoices, { masterKey, persistFull: false });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(1);
 
-      // 验证没有调用存储服务
+      // Verify storage service was not called
       expect(mockStorageService.addData).not.toHaveBeenCalled();
     });
 
-    it('应该处理部分发票加密失败的情况（继续处理其他发票）', async () => {
+    it('should handle partial invoice encryption failure (continue processing other invoices)', async () => {
       const invoices = [
         mockInvoice,
         { ...mockInvoice, id: '2field' as any, invoiceHash: 'hash2field' as any }
       ];
 
-      // 模拟第二个发票加密失败
+      // Simulate encryption failure for the second invoice
       mockCryptoService.encryptInvoiceDetails
         .mockResolvedValueOnce(mockEncryptedDetails)
         .mockRejectedValueOnce(new Error('Encryption failed'));
@@ -801,11 +801,11 @@ describe('useInvoiceStore', () => {
 
       await store.setInvoices(invoices, { masterKey, persistFull: true });
 
-      // 验证内存状态仍然更新（所有发票，因为加密失败不会导致整个操作失败）
+      // Verify memory state is still updated (all invoices, because encryption failure does not fail the entire operation)
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(2);
 
-      // 验证只成功存储了第一个发票（第二个发票因为加密失败被跳过）
+      // Verify only the first invoice was successfully stored (second was skipped due to encryption failure)
       expect(mockStorageService.addData).toHaveBeenCalledWith(
         INVOICE_TABLE,
         expect.arrayContaining([
@@ -814,7 +814,7 @@ describe('useInvoiceStore', () => {
       );
     });
 
-    it('应该在存储失败时抛出错误且不更新内存（保持数据库和内存同步）', async () => {
+    it('should throw an error on storage failure and not update memory (keep database and memory in sync)', async () => {
       const invoices = [
         mockInvoice,
         { ...mockInvoice, id: '2field' as any, invoiceHash: 'hash2field' as any }
@@ -828,23 +828,22 @@ describe('useInvoiceStore', () => {
         store.setInvoices(invoices, { masterKey, persistFull: true })
       ).rejects.toThrow('Storage failed');
 
-      // 验证内存状态未更新（保持数据库和内存同步）
+      // Verify memory state was not updated (keep database and memory in sync)
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(0);
     });
 
-    it('应该处理空数组', async () => {
+    it('should handle an empty array', async () => {
       const store = useInvoiceStore.getState();
 
       await store.setInvoices([], { masterKey, persistFull: true });
 
-      // 验证内存状态
+      // Verify memory state
       const state = useInvoiceStore.getState();
       expect(state.invoices).toHaveLength(0);
 
-      // 验证没有调用存储服务（因为 dataList 为空）
+      // Verify storage service was not called (because dataList is empty)
       expect(mockStorageService.addData).not.toHaveBeenCalled();
     });
   });
 });
-

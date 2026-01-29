@@ -1,23 +1,23 @@
 import { Microcredits } from '@/lib/types';
-import { 
-  IWalletService, 
-  WalletServiceError, 
+import {
+  IWalletService,
+  WalletServiceError,
   WalletError,
-  RequestTransactionParams 
+  RequestTransactionParams
 } from './IWalletService';
 
 /**
- * WalletService 实现类
- * 
- * 职责：封装钱包操作，提供业务层接口
- * 
- * 优势：
- * - 不使用复杂的 Adapter 模式
- * - 直接接收 wallet 实例（来自 useWallet）
- * - 可以管理内部状态（如事件监听器）
- * - 保持面向对象的架构风格
- * 
- * 使用方式：
+ * WalletService implementation class
+ *
+ * Responsibilities: Encapsulates wallet operations and provides a business-layer interface
+ *
+ * Advantages:
+ * - Does not use a complex Adapter pattern
+ * - Directly receives the wallet instance (from useWallet)
+ * - Can manage internal state (e.g., event listeners)
+ * - Maintains an object-oriented architectural style
+ *
+ * Usage:
  * ```typescript
  * const wallet = useWallet();
  * const walletService = new WalletService(wallet);
@@ -32,13 +32,13 @@ export class WalletService {
   }
 
   /**
-   * 连接钱包
-   * @throws {WalletServiceError} 可能抛出 NOT_INSTALLED, USER_REJECTED, NETWORK_MISMATCH
+   * Connect wallet
+   * @throws {WalletServiceError} May throw NOT_INSTALLED, USER_REJECTED, NETWORK_MISMATCH
    */
   async connect(): Promise<void> {
-    // 检查钱包是否安装
+    // Check if wallet is installed
     if (!this.wallet) {
-      console.error('❌ [WalletService] 钱包实例不存在');
+      console.error('❌ [WalletService] Wallet instance does not exist');
       throw new WalletServiceError(
         WalletError.NOT_INSTALLED,
         'Aleo wallet extension not detected. Please install Leo Wallet.',
@@ -46,7 +46,7 @@ export class WalletService {
       );
     }
 
-    console.log('🔍 [WalletService] 开始连接钱包', {
+    console.log('🔍 [WalletService] Starting wallet connection', {
       hasConnectMethod: typeof this.wallet.connect === 'function'
     });
 
@@ -54,9 +54,9 @@ export class WalletService {
       await this.wallet.connect();
       console.log('✅ [WalletService] this.wallet.connect() Promise resolved');
     } catch (error: any) {
-      // 已经是 WalletServiceError，直接抛出
+      // Already a WalletServiceError, rethrow directly
       if (error instanceof WalletServiceError) {
-        console.log('🔍 [WalletService] 捕获到 WalletServiceError，直接抛出:', {
+        console.log('🔍 [WalletService] Caught WalletServiceError, rethrowing:', {
           code: error.code,
           message: error.message,
           details: error.details
@@ -64,8 +64,8 @@ export class WalletService {
         throw error;
       }
 
-      // 🔍 记录原始错误的详细信息
-      console.error('❌ [WalletService] 捕获到未知错误，开始分析:', {
+      // 🔍 Log detailed information about the original error
+      console.error('❌ [WalletService] Caught unknown error, analyzing:', {
         error,
         errorType: error?.constructor?.name,
         message: error?.message,
@@ -76,12 +76,12 @@ export class WalletService {
         stringified: String(error)
       });
 
-      // 改进的用户拒绝检测（更全面的场景）
+      // Improved user rejection detection (more comprehensive scenarios)
       const errorMessage = error?.message?.toLowerCase() || '';
       const errorString = String(error).toLowerCase();
       const errorCode = error?.code || error?.error?.code;
-      
-      // 更全面的用户拒绝场景检测
+
+      // More comprehensive user rejection scenario detection
       if (
         errorMessage.includes('reject') ||
         errorMessage.includes('denied') ||
@@ -90,11 +90,11 @@ export class WalletService {
         errorString.includes('reject') ||
         errorString.includes('denied') ||
         errorString.includes('cancel') ||
-        errorCode === 4001 || // EIP-1193 拒绝代码
+        errorCode === 4001 || // EIP-1193 rejection code
         errorCode === 'ACTION_REJECTED' ||
         errorCode === 'USER_REJECTED'
       ) {
-        console.log('🔍 [WalletService] 识别为用户拒绝');
+        console.log('🔍 [WalletService] Identified as user rejection');
         throw new WalletServiceError(
           WalletError.USER_REJECTED,
           'User rejected the connection request',
@@ -102,9 +102,9 @@ export class WalletService {
         );
       }
 
-      // 网络不匹配
+      // Network mismatch
       if (error?.message?.includes('network')) {
-        console.log('🔍 [WalletService] 识别为网络不匹配');
+        console.log('🔍 [WalletService] Identified as network mismatch');
         throw new WalletServiceError(
           WalletError.NETWORK_MISMATCH,
           'Wallet network does not match required network',
@@ -112,12 +112,12 @@ export class WalletService {
         );
       }
 
-      // 未知错误 - 但提供更详细的错误信息
-      console.error('❌ [WalletService] 无法识别错误类型，归类为 UNAUTHORIZED');
+      // Unknown error - but provide more detailed error information
+      console.error('❌ [WalletService] Unable to identify error type, classifying as UNAUTHORIZED');
       throw new WalletServiceError(
         WalletError.UNAUTHORIZED,
         'Failed to connect wallet',
-        { 
+        {
           originalError: error,
           hint: error?.message || 'Please check your wallet and try again'
         }
@@ -126,38 +126,38 @@ export class WalletService {
   }
 
   /**
-   * 断开钱包连接
+   * Disconnect wallet
    */
   async disconnect(): Promise<void> {
     try {
       await this.wallet.disconnect();
     } catch (error: any) {
-      // 断开连接失败通常不是致命错误，只记录日志
+      // Disconnect failure is usually not fatal, just log it
       console.warn('Failed to disconnect wallet:', error);
     }
   }
 
   /**
-   * 解析 microcredits 值
-   * 支持格式：
-   * - "5000000" (纯数字字符串)
-   * - "5000000u64.private" (Aleo 私有类型格式)
-   * @param microcredits 原始 microcredits 值
-   * @returns 解析后的 BigInt 值
+   * Parse microcredits value
+   * Supported formats:
+   * - "5000000" (plain numeric string)
+   * - "5000000u64.private" (Aleo private type format)
+   * @param microcredits Raw microcredits value
+   * @returns Parsed BigInt value
    */
   private parseMicrocredits(microcredits: string | undefined): bigint {
     if (!microcredits) {
       return 0n;
     }
 
-    // 如果是 "5000000u64.private" 格式，提取数字部分
-    // 匹配模式：数字 + 可选的类型后缀（如 u64.private）
+    // If in "5000000u64.private" format, extract the numeric part
+    // Pattern: digits + optional type suffix (e.g., u64.private)
     const match = microcredits.match(/^(\d+)/);
     if (match) {
       return BigInt(match[1]);
     }
 
-    // 如果无法解析，尝试直接转换
+    // If parsing fails, try direct conversion
     try {
       return BigInt(microcredits);
     } catch {
@@ -166,14 +166,14 @@ export class WalletService {
   }
 
   /**
-   * 获取私有余额（从钱包 Records 计算）
-   * @param publicKey 钱包公钥地址
-   * @returns 私有余额（Microcredits）
-   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, DECRYPTION_FAILED
-   * 
-   * 说明：
-   * 不需要自己管理 ViewKey，钱包适配器的 requestRecords 会自动利用钱包内部的 ViewKey
-   * 解密属于当前用户的 credits Record。
+   * Get private balance (calculated from wallet Records)
+   * @param publicKey Wallet public key address
+   * @returns Private balance (Microcredits)
+   * @throws {WalletServiceError} May throw UNAUTHORIZED, DECRYPTION_FAILED
+   *
+   * Note:
+   * No need to manage ViewKey yourself; the wallet adapter's requestRecords automatically
+   * uses the wallet's internal ViewKey to decrypt credits Records belonging to the current user.
    */
   async getPrivateBalance(publicKey: string): Promise<Microcredits> {
     if (!publicKey) {
@@ -190,11 +190,11 @@ export class WalletService {
         return 0n;
       }
 
-      // 请求 credits.aleo 的 Records
+      // Request Records for credits.aleo
       const creditsResponse = await requestRecords('credits.aleo');
       const records = creditsResponse?.records || [];
 
-      // 计算私有余额
+      // Calculate private balance
       let privateBalance = 0n;
       for (const record of records) {
         if (!record.spent && record.data?.microcredits) {
@@ -214,15 +214,15 @@ export class WalletService {
   }
 
   /**
-   * 获取手续费 Records
-   * @param amount 所需最小金额
-   * @param publicKey 钱包公钥地址
-   * @returns 符合条件的 Record 字符串列表
-   * @throws 余额不足等错误
-   * 
-   * 策略：
-   * 1. 策略1：最小满足法 - 找一个面值刚好大于等于手续费且最小的 Record
-   * 2. 策略2：多张合并法 - 找到刚好满足或最接近所需金额的组合（减少找零）
+   * Get fee Records
+   * @param amount Minimum required amount
+   * @param publicKey Wallet public key address
+   * @returns List of Record strings that meet the criteria
+   * @throws Errors such as insufficient balance
+   *
+   * Strategy:
+   * 1. Strategy 1: Minimum satisfaction - find a single Record with the smallest denomination >= the fee
+   * 2. Strategy 2: Multi-record combination - find a combination that just meets or is closest to the required amount (minimizing change)
    */
   async getFeeRecords(amount: Microcredits, publicKey: string): Promise<string[]> {
     if (!publicKey) {
@@ -245,7 +245,7 @@ export class WalletService {
       const creditsResponse = await requestRecords('credits.aleo');
       const records = creditsResponse?.records || [];
 
-      // 筛选未花费且金额大于0的 Records 并转换为带金额的对象
+      // Filter unspent Records with amount > 0 and convert to objects with amount info
       const unspentRecords = records
         .filter((r: any) => !r.spent)
         .map((r: any) => ({
@@ -253,7 +253,7 @@ export class WalletService {
           amount: this.parseMicrocredits(r.data?.microcredits),
           recordString: typeof r === 'string' ? r : JSON.stringify(r)
         }))
-        .filter((r: any) => r.amount > 0n); // 过滤掉金额为0的records
+        .filter((r: any) => r.amount > 0n); // Filter out records with zero amount
 
       if (unspentRecords.length === 0) {
         throw new WalletServiceError(
@@ -263,25 +263,25 @@ export class WalletService {
         );
       }
 
-      // 策略1：最小满足法 - 找一个面值刚好大于等于手续费且最小的 Record
+      // Strategy 1: Minimum satisfaction - find a single Record with the smallest denomination >= the fee
       const suitableRecords = unspentRecords.filter(r => r.amount >= amount);
       if (suitableRecords.length > 0) {
-        // 找到最小的满足条件的 Record
-        const minRecord = suitableRecords.reduce((min, current) => 
+        // Find the smallest qualifying Record
+        const minRecord = suitableRecords.reduce((min, current) =>
           current.amount < min.amount ? current : min
         );
         return [minRecord.recordString];
       }
 
-      // 策略2：多张合并法 - 寻找最优组合（总和最接近所需金额）
+      // Strategy 2: Multi-record combination - find the optimal combination (total closest to the required amount)
       const bestCombination = this.findBestRecordCombination(unspentRecords, amount);
-      
+
       if (bestCombination.length === 0) {
         const totalAvailable = unspentRecords.reduce((sum, r) => sum + r.amount, 0n);
         throw new WalletServiceError(
           WalletError.INSUFFICIENT_FEE,
           'Insufficient fee records',
-          { 
+          {
             requiredAmount: amount.toString(),
             availableAmount: totalAvailable.toString()
           }
@@ -290,11 +290,11 @@ export class WalletService {
 
       return bestCombination.map(r => r.recordString);
     } catch (error: any) {
-      // 已经是 WalletServiceError，直接抛出
+      // Already a WalletServiceError, rethrow directly
       if (error instanceof WalletServiceError) {
         throw error;
       }
-      
+
       throw new WalletServiceError(
         WalletError.DECRYPTION_FAILED,
         'Failed to get fee records',
@@ -304,8 +304,8 @@ export class WalletService {
   }
 
   /**
-   * 寻找最优的 Records 组合
-   * 使用动态规划找到总和 >= amount 且最接近 amount 的组合
+   * Find the optimal combination of Records
+   * Uses dynamic programming to find the combination with total >= amount and closest to amount
    */
   private findBestRecordCombination(
     records: Array<{ record: any; amount: bigint; recordString: string }>,
@@ -315,7 +315,7 @@ export class WalletService {
     let bestSum = BigInt(0);
     let minExcess = BigInt(Number.MAX_SAFE_INTEGER);
 
-    // 尝试所有可能的组合（使用位掩码）
+    // Try all possible combinations (using bitmask)
     const n = records.length;
     const maxMask = 1 << n; // 2^n
 
@@ -330,11 +330,11 @@ export class WalletService {
         }
       }
 
-      // 如果这个组合满足条件（总和 >= 目标金额）
+      // If this combination meets the condition (total >= target amount)
       if (sum >= targetAmount) {
         const excess = sum - targetAmount;
-        
-        // 如果这是第一个满足的组合，或者找零更少，或者找零相同但使用的Records更少
+
+        // If this is the first qualifying combination, or has less change, or same change but uses fewer Records
         if (
           bestCombination.length === 0 ||
           excess < minExcess ||
@@ -343,8 +343,8 @@ export class WalletService {
           bestCombination = combination;
           bestSum = sum;
           minExcess = excess;
-          
-          // 如果刚好满足（不需要找零），直接返回
+
+          // If it exactly meets the requirement (no change needed), return immediately
           if (excess === BigInt(0)) {
             break;
           }
@@ -356,11 +356,11 @@ export class WalletService {
   }
 
   /**
-   * 签名消息（用于身份校验或审计授权）
-   * @param message 要签名的消息
-   * @param publicKey 钱包公钥地址
-   * @returns 签名字符串
-   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, USER_REJECTED
+   * Sign a message (used for identity verification or audit authorization)
+   * @param message The message to sign
+   * @param publicKey Wallet public key address
+   * @returns Signature string
+   * @throws {WalletServiceError} May throw UNAUTHORIZED, USER_REJECTED
    */
   async signMessage(message: string, publicKey: string): Promise<string> {
     if (!publicKey) {
@@ -396,12 +396,12 @@ export class WalletService {
 
       return signature;
     } catch (error: any) {
-      // 已经是 WalletServiceError，直接抛出
+      // Already a WalletServiceError, rethrow directly
       if (error instanceof WalletServiceError) {
         throw error;
       }
 
-      // 用户拒绝
+      // User rejection
       if (error?.message?.includes('reject') || error?.message?.includes('denied')) {
         throw new WalletServiceError(
           WalletError.USER_REJECTED,
@@ -419,15 +419,15 @@ export class WalletService {
   }
 
   /**
-   * 请求 Records（封装钱包适配器的 requestRecords 方法）
-   * @param program 程序ID（如 'zk_invoice.aleo' 或 'credits.aleo'）
-   * @returns 返回包含 records 数组的对象
-   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, DECRYPTION_FAILED
-   * 
-   * 说明：
-   * - 封装钱包适配器的 requestRecords 或 requestRecordPlaintexts 方法
-   * - 自动处理返回格式，统一返回 { records: any[] }
-   * - 钱包适配器会自动利用钱包内部的 ViewKey 解密属于当前用户的 Records
+   * Request Records (wraps the wallet adapter's requestRecords method)
+   * @param program Program ID (e.g., 'zk_invoice.aleo' or 'credits.aleo')
+   * @returns An object containing a records array
+   * @throws {WalletServiceError} May throw UNAUTHORIZED, DECRYPTION_FAILED
+   *
+   * Note:
+   * - Wraps the wallet adapter's requestRecords or requestRecordPlaintexts method
+   * - Automatically handles return format, uniformly returning { records: any[] }
+   * - The wallet adapter automatically uses the wallet's internal ViewKey to decrypt Records belonging to the current user
    */
   async requestRecords(program: string): Promise<{ records: any[] }> {
     if (!this.wallet) {
@@ -448,7 +448,7 @@ export class WalletService {
 
     try {
       const response = await requestRecords(program);
-      // 统一返回格式：确保返回 { records: any[] }
+      // Unify return format: ensure { records: any[] } is returned
       if (Array.isArray(response)) {
         return { records: response };
       }
@@ -463,15 +463,15 @@ export class WalletService {
   }
 
   /**
-   * 请求创建交易
-   * @param params 交易参数对象
-   * @returns 交易结果（包含 transactionId 等）
-   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED, USER_REJECTED, NOT_INSTALLED
-   * 
-   * 说明：
-   * - 这是一个简化的接口，封装了钱包适配器的 requestTransaction 方法
-   * - 如果提供了 feeRecord，会使用该 Record 支付手续费（feePrivate: true）
-   * - 如果没有提供 feeRecord，钱包会自动选择 Record 支付手续费（feePrivate: false）
+   * Request transaction creation
+   * @param params Transaction parameters object
+   * @returns Transaction result (includes transactionId, etc.)
+   * @throws {WalletServiceError} May throw UNAUTHORIZED, USER_REJECTED, NOT_INSTALLED
+   *
+   * Note:
+   * - This is a simplified interface wrapping the wallet adapter's requestTransaction method
+   * - If feeRecord is provided, it will be used to pay the fee (feePrivate: true)
+   * - If feeRecord is not provided, the wallet will automatically select a Record to pay the fee (feePrivate: false)
    */
   async requestTransaction(params: RequestTransactionParams): Promise<any> {
     const {
@@ -506,7 +506,7 @@ export class WalletService {
       );
     }
 
-    // 如果没有提供 chainId，从环境变量获取
+    // If chainId is not provided, get it from environment variables
     let finalChainId = chainId;
     if (!finalChainId) {
       const { getChainIdFromNetwork, getNetworkFromEnv } = await import('@/lib/network');
@@ -514,9 +514,9 @@ export class WalletService {
     }
 
     try {
-      // 构建交易请求参数
-      // 注意：如果提供了 feeRecord，设置 feePrivate: true 让钱包使用私有手续费
-      // feeRecord 本身不需要作为参数传递，钱包会自动选择合适的 Record
+      // Build transaction request parameters
+      // Note: If feeRecord is provided, set feePrivate: true so the wallet uses private fee
+      // The feeRecord itself doesn't need to be passed as a parameter; the wallet will automatically select an appropriate Record
       const transactionRequest = {
         address: publicKey,
         chainId: finalChainId,
@@ -526,11 +526,11 @@ export class WalletService {
           inputs: inputs
         }],
         fee: fee,
-        feePrivate: feeRecord !== undefined // 如果提供了 feeRecord，使用私有手续费
+        feePrivate: feeRecord !== undefined // If feeRecord is provided, use private fee
       };
 
-      // 调用钱包适配器的 requestTransaction 方法
-      // 注意：钱包适配器会根据 feePrivate 标志自动选择合适的 Record 支付手续费
+      // Call the wallet adapter's requestTransaction method
+      // Note: The wallet adapter will automatically select an appropriate Record to pay the fee based on the feePrivate flag
       const result = await this.wallet.requestTransaction(transactionRequest);
 
       if (!result) {
@@ -542,12 +542,12 @@ export class WalletService {
 
       return result;
     } catch (error: any) {
-      // 已经是 WalletServiceError，直接抛出
+      // Already a WalletServiceError, rethrow directly
       if (error instanceof WalletServiceError) {
         throw error;
       }
 
-      // 用户拒绝
+      // User rejection
       const errorMessage = error?.message?.toLowerCase() || '';
       const errorString = String(error).toLowerCase();
       const errorCode = error?.code || error?.error?.code;
@@ -571,7 +571,7 @@ export class WalletService {
         );
       }
 
-      // 网络不匹配（不区分大小写）
+      // Network mismatch (case-insensitive)
       if (
         errorMessage.includes('network') ||
         errorString.includes('network')
@@ -583,11 +583,11 @@ export class WalletService {
         );
       }
 
-      // 未知错误
+      // Unknown error
       throw new WalletServiceError(
         WalletError.UNAUTHORIZED,
         'Failed to request transaction',
-        { 
+        {
           originalError: error,
           hint: error?.message || 'Please check your wallet and try again'
         }
@@ -596,14 +596,14 @@ export class WalletService {
   }
 
   /**
-   * 查询交易状态
-   * @param transactionId 交易ID
-   * @returns 交易状态字符串
-   * @throws {WalletServiceError} 可能抛出 UNAUTHORIZED
-   * 
-   * 说明：
-   * - 封装钱包适配器的 transactionStatus 方法
-   * - 用于查询已提交交易的状态
+   * Query transaction status
+   * @param transactionId Transaction ID
+   * @returns Transaction status string
+   * @throws {WalletServiceError} May throw UNAUTHORIZED
+   *
+   * Note:
+   * - Wraps the wallet adapter's transactionStatus method
+   * - Used to query the status of submitted transactions
    */
   async transactionStatus(transactionId: string): Promise<string> {
     if (!this.wallet) {
@@ -631,7 +631,7 @@ export class WalletService {
       const status = await this.wallet.transactionStatus(transactionId);
       return status;
     } catch (error: any) {
-      // 已经是 WalletServiceError，直接抛出
+      // Already a WalletServiceError, rethrow directly
       if (error instanceof WalletServiceError) {
         throw error;
       }
