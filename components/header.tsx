@@ -12,6 +12,10 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
   '/invoices/create': { title: 'Create Invoice', subtitle: 'Create a new privacy-preserving invoice' },
   '/receipts': { title: 'Receipts', subtitle: 'View your payment receipts' },
   '/audit': { title: 'Audit Center', subtitle: 'Generate and manage audit keys' },
+  '/docs': { title: 'Documentation', subtitle: 'Guides, architecture, and workflows' },
+  '/docs/architecture': { title: 'Architecture', subtitle: 'Technical architecture overview' },
+  '/docs/business-flow': { title: 'Business Flow', subtitle: 'Business logic and workflows' },
+  '/docs/handbook': { title: 'Handbook', subtitle: 'Quick start guide and FAQ' },
 };
 
 export default function Header() {
