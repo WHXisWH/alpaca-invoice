@@ -84,20 +84,26 @@ export default function MarkdownRenderer({ content, title }: MarkdownRendererPro
                 </blockquote>
               ),
               code: ({ className, children }) => {
-                const isBlock = className?.includes('language-');
-                if (isBlock) {
-                  return (
-                    <code className={className}>{children}</code>
-                  );
+                // Block code (inside <pre>) is styled by the pre component via [&>code].
+                // Here we only need to handle inline code and language-tagged blocks.
+                const isLanguageBlock = className?.includes('language-');
+                if (isLanguageBlock) {
+                  return <code className={className}>{children}</code>;
                 }
+                // Inline code styling — will be overridden by pre's [&>code] when inside a block.
                 return (
-                  <code className="rounded bg-primary-100 px-1.5 py-0.5 text-sm font-mono text-primary-800">
+                  <code className="rounded bg-primary-100 px-1.5 py-0.5 text-[0.85em] text-primary-800"
+                    style={{ fontFamily: "'Courier New', Courier, monospace" }}
+                  >
                     {children}
                   </code>
                 );
               },
               pre: ({ children }) => (
-                <pre className="my-4 overflow-x-auto rounded-xl border border-primary-200/60 bg-primary-950 p-4 text-sm leading-relaxed text-primary-100 font-mono">
+                <pre
+                  className="my-4 overflow-x-auto rounded-xl border border-primary-200/60 bg-primary-950 p-5 text-[13px] leading-[1.6] text-primary-300 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[inherit] [&>code]:rounded-none [&>code]:leading-[inherit]"
+                  style={{ fontFamily: "'Courier New', Courier, monospace" }}
+                >
                   {children}
                 </pre>
               ),

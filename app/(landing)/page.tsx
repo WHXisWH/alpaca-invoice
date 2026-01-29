@@ -177,13 +177,13 @@ export default function LandingPage() {
         </div>
 
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid w-full grid-cols-[minmax(0,1fr)] items-center gap-10 sm:gap-12 lg:grid-cols-[minmax(0,1.1fr)_560px] lg:gap-20">
+          <div className="grid w-full grid-cols-[minmax(0,1fr)] items-center gap-10 sm:gap-12 lg:grid-cols-[1fr_360px] lg:gap-10 xl:grid-cols-[1fr_480px] xl:gap-14">
             {/* Left: headline + CTA */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
-              className="min-w-0"
+              className="relative z-10"
             >
               <div className="mb-6 sm:mb-8 flex flex-wrap justify-start gap-2 sm:gap-3">
                 <div className="inline-flex items-center space-x-2 rounded-full border border-accent-500/20 bg-accent-500/10 px-3 py-1 sm:px-4 sm:py-1.5 animate-shiny">
@@ -204,7 +204,7 @@ export default function LandingPage() {
                   initial={{ opacity: 0, y: 20, filter: "blur(10px)" }}
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                   transition={{ duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                  className="block whitespace-nowrap bg-gradient-to-r from-accent-400 via-white to-amber-600 bg-clip-text text-transparent italic font-black tracking-tighter 
+                  className="block whitespace-nowrap bg-gradient-to-r from-accent-400 via-white to-amber-600 bg-clip-text text-transparent italic font-black tracking-tighter
                              text-[clamp(1.75rem,6vw+0.5rem,8rem)] leading-[1.1]
                              animate-title-shimmer animate-title-glow"
                 >
@@ -255,7 +255,7 @@ export default function LandingPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 1, delay: 0.2 }}
-              className="relative h-auto w-full [perspective:1500px] lg:h-[700px]"
+              className="relative z-0 h-auto w-full [perspective:1500px] lg:h-[700px]"
             >
               {/* Marquee: horizontal on mobile/tablet, vertical on desktop */}
               {/* Mobile/tablet: horizontal scroll */}
@@ -277,7 +277,7 @@ export default function LandingPage() {
               >
                 <Marquee pauseOnHover vertical className="h-full [--duration:30s]">
                   {MOCK_INVOICES_HERO.map((inv, idx) => (
-                    <div key={`v-${inv.invoiceHash}-${idx}`} className="mb-8 w-[420px] flex-shrink-0 transition-all hover:scale-105">
+                    <div key={`v-${inv.invoiceHash}-${idx}`} className="mb-8 w-[340px] xl:w-[420px] flex-shrink-0 transition-all hover:scale-105">
                       <InvoiceCard invoice={inv} role="BUYER" onPay={() => {}} />
                     </div>
                   ))}
