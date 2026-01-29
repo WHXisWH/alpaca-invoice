@@ -10,6 +10,7 @@ import {
   FilePlus,
   Receipt,
   ShieldCheck,
+  BookOpen,
   HelpCircle,
   X,
 } from 'lucide-react';
@@ -40,6 +41,11 @@ const navItems = [
     title: 'Audit Center',
     href: '/audit',
     icon: ShieldCheck,
+  },
+  {
+    title: 'Documentation',
+    href: '/docs',
+    icon: BookOpen,
   },
 ];
 
@@ -102,8 +108,11 @@ export default function Sidebar() {
             Menu
           </div>
           {navItems.map((item) => {
-            // Exact match only - no startsWith to avoid parent routes being highlighted
-            const isActive = pathname === item.href;
+            // Exact match for most items; prefix match for /docs so sub-pages stay highlighted
+            const isActive =
+              item.href === '/docs'
+                ? pathname.startsWith('/docs')
+                : pathname === item.href;
             const Icon = item.icon;
 
             return (
