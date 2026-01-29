@@ -9,18 +9,19 @@ import { getStatusConfig, determineInvoiceRole } from '@/lib/invoice';
  * 
  * 职责：
  * - 根据用户地址判断发票角色（SELLER/BUYER/BOTH）
- * - 添加链上确认状态和状态配置
+ * - 计算链上确认状态（从 sendingInvoiceHashes 和 metadata）
+ * - 添加状态配置
  * - 可被详情页和列表页复用
  */
 export function useInvoiceListRole(
   invoices: Invoice[],
-  chainStatusMap: Map<AleoField, ChainConfirmationStatus>
+  sendingInvoiceHashes: Record<AleoField, true>
 ) {
   const { publicKey } = useUserStore();
 
   /**
    * 根据当前用户地址判断发票角色（SELLER/BUYER/BOTH）
-   * ✅ 添加链上确认状态和状态配置
+   * ✅ 直接计算链上确认状态（Single Source of Truth）
    */
   const invoicesWithRole = useMemo(() => {
     if (!publicKey) return [];
@@ -35,8 +36,13 @@ export function useInvoiceListRole(
         role === 'seller' ? 'SELLER' :
         role === 'buyer' ? 'BUYER' : 'SELLER';
       
-      // ✅ 从本地状态映射获取链上确认状态
-      const chainStatus: ChainConfirmationStatus = chainStatusMap.get(invoice.invoiceHash) || 'SENDING';
+      // ✅ 直接计算 chainStatus（Single Source of Truth）
+      const isInSendingIndex = sendingInvoiceHashes[invoice.invoiceHash] === true;
+      const hasConfirmedMetadata = invoice.metadata?.confirmationStatus === 'CONFIRMED';
+      const chainStatus: ChainConfirmationStatus = 
+        hasConfirmedMetadata ? 'CONFIRMED' : 
+        isInSendingIndex ? 'SENDING' : 
+        'SENDING'; // 默认 SENDING（等待首次确认）
       
       return { 
         invoice, 
@@ -45,7 +51,7 @@ export function useInvoiceListRole(
         statusConfig: getStatusConfig(invoice.status)
       };
     });
-  }, [invoices, publicKey, chainStatusMap]);
+  }, [invoices, publicKey, sendingInvoiceHashes]);
 
   return {
     invoicesWithRole

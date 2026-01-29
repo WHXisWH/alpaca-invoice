@@ -13,6 +13,11 @@ export type { StatusConfig };
 /**
  * IInvoiceDetail Controller 接口
  * 实现场景B & C：查看详情与Record自动对账
+ * 
+ * ✅ 统一轮询架构：
+ * - 自动轮询：由全局 AutoPoller 统一管理
+ * - isSyncing：从全局 sendingInvoiceHashes 派生
+ * - 手动同步：通过 handleSyncStatus 触发
  */
 export interface IInvoiceDetail {
   /** 发票对象 */
@@ -24,7 +29,7 @@ export interface IInvoiceDetail {
   /** 当前链上确认状态（null 表示尚未加载） */
   currentStatus: ChainConfirmationStatus | null;
   
-  /** 是否正在同步链上记录 */
+  /** ✅ 是否正在同步链上记录（从全局 sendingInvoiceHashes 派生） */
   isSyncing: boolean;
   
   /** 是否已确认（在链上找到） */
@@ -51,10 +56,6 @@ export interface IInvoiceDetail {
   /** 手动同步发票状态（从链上获取最新 record） */
   handleSyncStatus: () => Promise<void>;
   
-  /** 开始轮询扫描链上Record */
-  startPolling: () => void;
-  
-  /** 停止轮询扫描 */
-  stopPolling: () => void;
+  // ✅ 移除：startPolling/stopPolling 由全局 AutoPoller 统一管理
 }
 

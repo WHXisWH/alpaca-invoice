@@ -41,17 +41,20 @@ export function useInvoiceListPolling(
     // ✅ 从 store 获取最新的 invoice
     const invoice = getLatestInvoice(invoiceHash);
     
-    if (!invoice || !masterKey || !publicKey) {
-      console.warn(`⚠️ [ListPolling] Missing data for: ${invoiceHash}`, {
+    // ✅ 只需要 invoice 和 publicKey；masterKey 是可选的（影响是否能持久化）
+    if (!invoice || !publicKey) {
+      console.warn(`⚠️ [ListPolling] Missing required data for: ${invoiceHash}`, {
         hasInvoice: !!invoice,
-        hasMasterKey: !!masterKey,
         hasPublicKey: !!publicKey,
         invoiceAction: invoice?.metadata?.action
       });
       return;
     }
 
-    console.log(`🔄 [ListPolling] Starting polling for: ${invoiceHash}`);
+    console.log(`🔄 [ListPolling] Starting polling for: ${invoiceHash}`, {
+      hasMasterKey: !!masterKey,
+      canPersist: !!masterKey
+    });
 
     // ✅ 使用核心逻辑创建 PollingService
     const pollingService = createPollingService(invoiceHash, invoice, {

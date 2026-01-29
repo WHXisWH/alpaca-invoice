@@ -227,7 +227,8 @@ export default function InvoicesPage() {
         <MotionContainer className="grid gap-4 md:grid-cols-2" stagger={0.06}>
           {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }) => {
             const isProcessing = isInvoiceProcessing(invoice.id);
-            const isSyncingInvoice = isInvoiceSyncing ? isInvoiceSyncing(invoice) : chainStatus === 'SENDING';
+            // ✅ 统一架构：直接从 sendingInvoiceHashes 判断（Single Source of Truth）
+            const isSyncingInvoice = isInvoiceSyncing(invoice);
 
             return (
               <MotionItem key={invoice.id} className="space-y-2">

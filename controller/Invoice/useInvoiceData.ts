@@ -53,8 +53,9 @@ export function useInvoiceData(invoiceHash: AleoField | null) {
   return { 
     invoice: currentInvoice, 
     isLoading, 
-    // ✅ 只有当 invoice 存在时才返回 confirmationStatus，否则返回 null
-    confirmationStatus: currentInvoice ? (confirmationStatus || 'SENDING') : null
+    // ✅ 只返回实际的 confirmationStatus，不做默认假设
+    // 让上层根据 sendingInvoiceHashes 决定实际状态
+    confirmationStatus: currentInvoice ? confirmationStatus : null
   };
 }
 

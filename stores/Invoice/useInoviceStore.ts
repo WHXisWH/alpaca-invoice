@@ -58,6 +58,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   // 初始状态
   invoices: [],
   currentInvoice: null,  // ✅ 新增：当前选中的 invoice
+  sendingInvoiceHashes: {},  // ✅ 新增：全局 SENDING 索引
 
   /**
    * ✅ 添加发票：接收发票 → 保存到 IndexedDB → 更新内存
@@ -113,9 +114,17 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       }
     };
     
-    set((state) => ({
-      invoices: [...state.invoices, invoiceWithMetadata]
-    }));
+    set((state) => {
+      // ✅ 如果是 SENDING 状态，同时更新 sending 索引
+      const newSending = invoiceWithMetadata.metadata?.confirmationStatus === 'SENDING'
+        ? { ...state.sendingInvoiceHashes, [invoiceWithMetadata.invoiceHash]: true as const }
+        : state.sendingInvoiceHashes;
+      
+      return {
+        invoices: [...state.invoices, invoiceWithMetadata],
+        sendingInvoiceHashes: newSending
+      };
+    });
   },
 
   /**
@@ -125,15 +134,34 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     const { masterKey, persistFull = true } = options;
     const state = get();
     
-    // ✅ 优先使用 currentInvoice（如果存在且 id 匹配），否则从 invoices 中查找
-    let currentInvoice = state.currentInvoice?.id === id 
-      ? state.currentInvoice 
-      : state.invoices.find(inv => inv.id === id);
+    // ✅ 优先使用 currentInvoice（如果存在且匹配），否则从 invoices 中查找
+    // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+    const updatesInvoiceHash = (updates as any).invoiceHash;
+    
+    let currentInvoice = 
+      (state.currentInvoice?.id === id || 
+       (updatesInvoiceHash && state.currentInvoice?.invoiceHash === updatesInvoiceHash))
+        ? state.currentInvoice 
+        : state.invoices.find(inv => 
+            inv.id === id || 
+            (updatesInvoiceHash && inv.invoiceHash === updatesInvoiceHash)
+          );
     
     if (!currentInvoice) {
-      console.warn('⚠️ [Store.updateInvoice] Invoice not found:', id);
+      console.warn('⚠️ [Store.updateInvoice] Invoice not found:', id, {
+        updateInvoiceHash: updatesInvoiceHash,
+        availableInvoiceIds: state.invoices.map(inv => inv.id).slice(0, 5)
+      });
       return;
     }
+    
+    console.log('✅ [Store.updateInvoice] Found invoice:', {
+      searchId: id,
+      foundById: currentInvoice.id === id,
+      foundByHash: updatesInvoiceHash && currentInvoice.invoiceHash === updatesInvoiceHash,
+      currentId: currentInvoice.id,
+      invoiceHash: currentInvoice.invoiceHash
+    });
 
     // ✅ 正确合并 metadata（如果 updates 中有 metadata，使用它；否则保持现有的）
     const updatedInvoice = { 
@@ -211,18 +239,35 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
     // 2. 更新内存（仅在持久化成功或不需要持久化时）
     set((state) => {
+      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+      // 如果 id 不匹配，但 invoiceHash 匹配，说明发生了 key 迁移，需要更新
       const updatedInvoices = state.invoices.map((inv) =>
-        inv.id === id ? updatedInvoice : inv
+        (inv.id === id || inv.invoiceHash === updatedInvoice.invoiceHash) 
+          ? updatedInvoice 
+          : inv
       );
       
       // ✅ 如果更新的是当前 invoice，同步更新 currentInvoice
-      const newCurrentInvoice = state.currentInvoice?.id === id 
+      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+      const newCurrentInvoice = (state.currentInvoice?.id === id || 
+                                 state.currentInvoice?.invoiceHash === updatedInvoice.invoiceHash)
         ? updatedInvoice 
         : state.currentInvoice;
 
+      // ✅ 同步更新 sending 索引
+      let newSending = { ...state.sendingInvoiceHashes };
+      const newStatus = updatedInvoice.metadata?.confirmationStatus;
+      
+      if (newStatus === 'SENDING') {
+        newSending[updatedInvoice.invoiceHash] = true;
+      } else if (newStatus === 'CONFIRMED') {
+        delete newSending[updatedInvoice.invoiceHash];
+      }
+
       return {
         invoices: updatedInvoices,
-        currentInvoice: newCurrentInvoice
+        currentInvoice: newCurrentInvoice,
+        sendingInvoiceHashes: newSending
       };
     });
   },
@@ -321,9 +366,18 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           ? updatedInvoiceFull
           : state.currentInvoice;
 
+        // ✅ 更新 sending 索引（通常迁移后状态变为 CONFIRMED）
+        const newSending = { ...state.sendingInvoiceHashes };
+        if (finalMetadata.confirmationStatus === 'CONFIRMED') {
+          delete newSending[updatedInvoiceFull.invoiceHash];
+        } else if (finalMetadata.confirmationStatus === 'SENDING') {
+          newSending[updatedInvoiceFull.invoiceHash] = true;
+        }
+
         return {
           invoices: updatedInvoices,
-          currentInvoice: newCurrentInvoice
+          currentInvoice: newCurrentInvoice,
+          sendingInvoiceHashes: newSending
         };
       });
 
@@ -479,11 +533,26 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       // 3. ✅ 更新内存状态（如果 refreshMemory 为 true）
       if (refreshMemory) {
         // ✅ 使用函数式更新确保状态正确更新
-        set((state) => ({
-          ...state,
-          invoices: invoices
-        }));
+        set((state) => {
+          // ✅ 重建 sending 索引
+          const newSending: Record<AleoField, true> = {};
+          for (const invoice of invoices) {
+            if (invoice.metadata?.confirmationStatus === 'SENDING') {
+              newSending[invoice.invoiceHash] = true;
+            }
+          }
+          
+          return {
+            ...state,
+            invoices: invoices,
+            sendingInvoiceHashes: newSending
+          };
+        });
         console.log(`✅ [Store.getAllInvoices] Updated memory state with ${invoices.length} invoices`);
+        const sendingCount = Object.keys(get().sendingInvoiceHashes).length;
+        if (sendingCount > 0) {
+          console.log(`📤 [Store.getAllInvoices] Found ${sendingCount} SENDING invoice(s)`);
+        }
         if (!masterKey && invoices.length > 0) {
           console.log(`💡 [Store.getAllInvoices] Details not decrypted (no masterKey)`);
         }
@@ -574,11 +643,24 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     }
     
     // 2. ✅ 更新内存状态（仅在持久化成功或不需要持久化时）
+    // ✅ 同时重建 sending 索引
+    const newSending: Record<AleoField, true> = {};
+    for (const invoice of invoices) {
+      if (invoice.metadata?.confirmationStatus === 'SENDING') {
+        newSending[invoice.invoiceHash] = true;
+      }
+    }
+    
     set({
-      invoices: invoices
+      invoices: invoices,
+      sendingInvoiceHashes: newSending
     });
     
+    const sendingCount = Object.keys(newSending).length;
     console.log(`✅ [Store.setInvoices] Updated memory state with ${invoices.length} invoices`);
+    if (sendingCount > 0) {
+      console.log(`📤 [Store.setInvoices] Rebuilt sending index with ${sendingCount} SENDING invoice(s)`);
+    }
   },
 
   /**
@@ -676,5 +758,81 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       set({ currentInvoice: null });
       console.warn('⚠️ [Store.setCurrentInvoice] Invoice not found:', hash);
     }
+  },
+
+  // ---------------------------------------------------------------------------
+  // ✅ SENDING 管理（统一入口：用户操作后立即写入，轮询确认后移除）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * ✅ 标记发票进入 SENDING（只更新内存索引；是否持久化由调用方 updateInvoice 决定）
+   */
+  markInvoiceSending: (invoiceHash: AleoField) => {
+    set((state) => {
+      // 如果已经在 sending 列表中，不重复添加
+      if (state.sendingInvoiceHashes[invoiceHash]) {
+        return state;
+      }
+      
+      console.log(`📤 [Store.markInvoiceSending] Adding to sending: ${invoiceHash}`);
+      return {
+        sendingInvoiceHashes: {
+          ...state.sendingInvoiceHashes,
+          [invoiceHash]: true
+        }
+      };
+    });
+  },
+
+  /**
+   * ✅ 标记发票已确认（从 sending 索引移除）
+   */
+  markInvoiceConfirmed: (invoiceHash: AleoField) => {
+    set((state) => {
+      if (!state.sendingInvoiceHashes[invoiceHash]) {
+        return state;
+      }
+      
+      console.log(`✅ [Store.markInvoiceConfirmed] Removing from sending: ${invoiceHash}`);
+      const newSending = { ...state.sendingInvoiceHashes };
+      delete newSending[invoiceHash];
+      
+      return {
+        sendingInvoiceHashes: newSending
+      };
+    });
+  },
+
+  /**
+   * ✅ 获取当前所有 SENDING 发票 hash 列表
+   */
+  getSendingInvoiceHashes: () => {
+    const state = get();
+    return Object.keys(state.sendingInvoiceHashes) as AleoField[];
+  },
+
+  /**
+   * ✅ 基于 invoices 重新构建 sending 索引（初始化/批量覆盖时使用）
+   * 扫描所有 invoices，将 confirmationStatus === 'SENDING' 的发票加入索引
+   */
+  rebuildSendingIndex: () => {
+    const state = get();
+    const newSending: Record<AleoField, true> = {};
+    
+    for (const invoice of state.invoices) {
+      if (invoice.metadata?.confirmationStatus === 'SENDING') {
+        newSending[invoice.invoiceHash] = true;
+      }
+    }
+    
+    // 同时检查 currentInvoice
+    if (state.currentInvoice?.metadata?.confirmationStatus === 'SENDING') {
+      newSending[state.currentInvoice.invoiceHash] = true;
+    }
+    
+    const count = Object.keys(newSending).length;
+    console.log(`🔄 [Store.rebuildSendingIndex] Rebuilt index with ${count} SENDING invoice(s)`);
+    
+    set({ sendingInvoiceHashes: newSending });
   }
 }));
