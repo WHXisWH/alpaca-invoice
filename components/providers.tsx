@@ -14,10 +14,10 @@ type Props = {
 };
 
 /**
- * Wallet Provider 配置
- * 
- * 网络由环境变量 NEXT_PUBLIC_ALEO_NETWORK 控制
- * 当用户在钱包插件中切换网络时，会触发 disconnect 事件
+ * Wallet Provider configuration
+ *
+ * Network is controlled by the NEXT_PUBLIC_ALEO_NETWORK environment variable
+ * When the user switches networks in the wallet extension, a disconnect event is triggered
  */
 export default function Providers({ children }: Props) {
   const wallets = useMemo(

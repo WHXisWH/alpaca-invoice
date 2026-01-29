@@ -1,81 +1,81 @@
 /**
- * 通用轮询服务接口
- * 职责：管理任意类型的轮询任务
- * 
- * 使用场景：
- * - 发票状态轮询
- * - 交易确认轮询
- * - 余额更新轮询
- * - 其他需要定期检查的场景
+ * Generic polling service interface
+ * Responsibility: manage arbitrary types of polling tasks
+ *
+ * Use cases:
+ * - Invoice status polling
+ * - Transaction confirmation polling
+ * - Balance update polling
+ * - Other scenarios requiring periodic checks
  */
 export interface ValidationResult {
-  /** 是否应该停止轮询并确认 */
+  /** Whether polling should stop and confirm */
   shouldStop: boolean;
-  /** 原因说明（用于日志和用户提示） */
+  /** Reason description (used for logging and user prompts) */
   reason: string;
-  /** 是否应该继续轮询（即使不符合预期） */
+  /** Whether polling should continue (even if expectations are not met) */
   shouldContinue?: boolean;
 }
 
 export interface PollingConfig<TScanResult = any> {
-  /** 轮询间隔（毫秒） */
+  /** Polling interval (milliseconds) */
   pollInterval: number;
-  /** 轮询超时时间（毫秒） */
+  /** Polling timeout duration (milliseconds) */
   pollTimeout: number;
-  /** 轮询任务名称（用于日志） */
+  /** Polling task name (used for logging) */
   taskName?: string;
 }
 
 export interface PollingCallbacks<TScanResult> {
   /**
-   * 执行扫描操作
-   * @returns 扫描结果
+   * Execute the scan operation
+   * @returns Scan result
    */
   scan: () => Promise<TScanResult>;
-  
+
   /**
-   * 验证扫描结果是否符合预期
-   * @param result 扫描结果
-   * @returns 验证结果，包含是否应该停止轮询
+   * Validate whether the scan result meets expectations
+   * @param result Scan result
+   * @returns Validation result, including whether polling should stop
    */
   validate: (result: TScanResult) => ValidationResult;
-  
+
   /**
-   * 当找到符合预期的结果时调用
-   * @param result 扫描结果
+   * Called when a result matching expectations is found
+   * @param result Scan result
    */
   onSuccess: (result: TScanResult) => Promise<void>;
-  
+
   /**
-   * 当轮询超时时调用
+   * Called when polling times out
    */
   onTimeout: () => Promise<void>;
-  
+
   /**
-   * 当扫描失败时调用（可选，默认继续轮询）
-   * @param error 错误对象
+   * Called when the scan fails (optional, defaults to continuing polling)
+   * @param error Error object
    */
   onError?: (error: Error) => void;
 }
 
 export interface IPollingService {
   /**
-   * 开始轮询
+   * Start polling
    */
   start(): void;
-  
+
   /**
-   * 停止轮询
+   * Stop polling
    */
   stop(): void;
-  
+
   /**
-   * 检查是否正在运行
+   * Check whether polling is currently running
    */
   isRunning(): boolean;
-  
+
   /**
-   * 获取轮询状态
+   * Get polling status
    */
   getStatus(): {
     isRunning: boolean;

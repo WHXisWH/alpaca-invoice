@@ -11,7 +11,7 @@ export default function AppLayout({
 }) {
   return (
     <SidebarProvider>
-      {/* ✅ 全局自动轮询组件：监听 SENDING 发票并自动启动轮询 */}
+      {/* Global auto-polling component: listens for SENDING invoices and automatically starts polling */}
       <InvoiceAutoPoller />
 
       {/* Sidebar */}

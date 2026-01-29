@@ -1,138 +1,138 @@
 // services/CryptoService.ts
 import { InvoiceDetails, AleoField, EncryptedPayload } from '@/lib/types';
 
-/** * Crypto 异常枚举 */
+/** * Crypto error enum */
 export enum CryptoError {
-  HASH_MISMATCH = 'HASH_MISMATCH',       // 计算出的哈希与链上存证不符
-  DECRYPTION_FAILED = 'DECRYPTION_FAILED', // 解密失败（通常是 ViewKey 错误）
-  ENCRYPTION_FAILED = 'ENCRYPTION_FAILED'  // 加密失败
+  HASH_MISMATCH = 'HASH_MISMATCH',       // Computed hash does not match the on-chain attestation
+  DECRYPTION_FAILED = 'DECRYPTION_FAILED', // Decryption failed (usually an incorrect ViewKey)
+  ENCRYPTION_FAILED = 'ENCRYPTION_FAILED'  // Encryption failed
 }
 
 /**
- * 链上 InvoiceRecord 的结构（wallet.requestRecords() 解密后的数据）
+ * Structure of on-chain InvoiceRecord (data decrypted by wallet.requestRecords())
  */
 export interface AleoInvoiceRecord {
-  owner: string;           // Record 所有者地址
-  invoice_id: string;      // 发票唯一ID (Field 格式)
-  invoice_hash: string;    // 发票明细哈希 (Field 格式，用于完整性验证)
-  amount: string;          // 发票金额 (microcredits)
-  seller: string;          // 卖方地址
-  buyer: string;           // 买方地址
-  due_date: number;        // 到期日期 (Unix timestamp)
-  status: number;          // 状态 (0=待支付, 1=已支付, 2=已取消)
-  created_at: number;      // 创建时间 (Unix timestamp)
-  _nonce?: string;         // Record nonce (可选)
+  owner: string;           // Record owner address
+  invoice_id: string;      // Unique invoice ID (Field format)
+  invoice_hash: string;    // Invoice details hash (Field format, used for integrity verification)
+  amount: string;          // Invoice amount (microcredits)
+  seller: string;          // Seller address
+  buyer: string;           // Buyer address
+  due_date: number;        // Due date (Unix timestamp)
+  status: number;          // Status (0=pending, 1=paid, 2=cancelled)
+  created_at: number;      // Creation time (Unix timestamp)
+  _nonce?: string;         // Record nonce (optional)
 }
 
 /**
- * 链上 PaymentRecord 的结构（支付后生成的收据记录）
+ * Structure of on-chain PaymentRecord (receipt record generated after payment)
  */
 export interface AleoPaymentRecord {
-  owner: string;           // Record 所有者地址
-  payment_id: string;      // 支付唯一ID (Field 格式)
-  invoice_id: string;      // 关联的发票ID (Field 格式)
-  payer: string;           // 付款人地址
-  payee: string;           // 收款人地址
-  amount: string;          // 支付金额 (microcredits)
-  paid_at: number;         // 支付时间 (Unix timestamp)
-  _nonce?: string;         // Record nonce (可选)
+  owner: string;           // Record owner address
+  payment_id: string;      // Unique payment ID (Field format)
+  invoice_id: string;      // Associated invoice ID (Field format)
+  payer: string;           // Payer address
+  payee: string;           // Payee address
+  amount: string;          // Payment amount (microcredits)
+  paid_at: number;         // Payment time (Unix timestamp)
+  _nonce?: string;         // Record nonce (optional)
 }
 
 /**
- * 链上 Record 的联合类型（InvoiceRecord 或 PaymentRecord）
+ * Union type for on-chain Records (InvoiceRecord or PaymentRecord)
  */
 export type AleoRecord = AleoInvoiceRecord | AleoPaymentRecord;
 
 export interface ICryptoService {
   /**
-   * 核心业务哈希：将 InvoiceDetails 按照合约逻辑计算出唯一哈希
-   * 
-   * 使用场景：
-   * 1. 开票时：计算发票明细的哈希，存入链上 InvoiceRecord.invoice_hash
-   * 2. 验证时：重新计算本地明细的哈希，与链上哈希对比
-   * 
-   * 使用 SHA-256 算法并应用模运算确保结果在 Aleo Field 范围内
-   * 
-   * @param details 发票明细对象
-   * @returns 对应合约字段的 AleoField (格式: "123...field")
+   * Core business hash: compute a unique hash from InvoiceDetails following the contract logic
+   *
+   * Use cases:
+   * 1. When creating an invoice: compute the hash of invoice details and store it in the on-chain InvoiceRecord.invoice_hash
+   * 2. When verifying: recompute the hash of local details and compare it with the on-chain hash
+   *
+   * Uses SHA-256 algorithm with modular arithmetic to ensure the result is within the Aleo Field range
+   *
+   * @param details Invoice details object
+   * @returns AleoField corresponding to the contract field (format: "123...field")
    */
   computeInvoiceHash(details: InvoiceDetails): Promise<AleoField>;
 
   /**
-   * 解析来自 wallet.requestRecords() 的已解密 InvoiceRecord
-   * 
-   * 完整的发票验证流程：
+   * Parse a decrypted InvoiceRecord from wallet.requestRecords()
+   *
+   * Complete invoice verification flow:
    * ```typescript
-   * // 1. 从钱包获取已解密的链上 Record
+   * // 1. Get decrypted on-chain Records from the wallet
    * const records = await wallet.requestRecords('zk_invoice.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );
-   * 
-   * // 2. 从 IndexedDB 取出本地加密存储的明细
+   *
+   * // 2. Retrieve locally encrypted details from IndexedDB
    * const encryptedPayload = await storageService.getInvoice(chainRecord.invoice_id);
    * const localDetails = await cryptoService.decryptInvoiceDetails(encryptedPayload, masterKey);
-   * 
-   * // 3. 验证完整性：重新计算哈希并与链上哈希对比
+   *
+   * // 3. Verify integrity: recompute the hash and compare it with the on-chain hash
    * const isValid = await cryptoService.verifyInvoiceIntegrity(localDetails, chainRecord.invoice_hash);
    * ```
-   * 
-   * @param jsonString 已解密的 JSON 字符串（来自 wallet.requestRecords()）
-   * @returns 解析后的 Record 数据对象
-   * @throws {CryptoServiceError} 如果 JSON 格式无效或为 record1... 加密格式
+   *
+   * @param jsonString Decrypted JSON string (from wallet.requestRecords())
+   * @returns Parsed Record data object
+   * @throws {CryptoServiceError} If the JSON format is invalid or is in record1... encrypted format
    */
   parseAleoRecord<T = AleoInvoiceRecord>(jsonString: string): Promise<T>;
 
   /**
-   * 验证发票完整性：对比本地明细的哈希与链上存储的哈希
-   * 
-   * @param localDetails 本地存储的发票明细（从 IndexedDB 解密获取）
-   * @param chainInvoiceHash 链上 Record 中的 invoice_hash 字段
-   * @returns true 表示数据完整未被篡改，false 表示数据不一致
+   * Verify invoice integrity: compare the hash of local details with the on-chain stored hash
+   *
+   * @param localDetails Locally stored invoice details (decrypted from IndexedDB)
+   * @param chainInvoiceHash The invoice_hash field from the on-chain Record
+   * @returns true indicates data is intact and untampered, false indicates data inconsistency
    */
   verifyInvoiceIntegrity(localDetails: InvoiceDetails, chainInvoiceHash: AleoField): Promise<boolean>;
 
   /**
-   * 本地加密：将发票明细加密后存入 IndexedDB
-   * 使用 PBKDF2 派生密钥 + AES-GCM 对称加密
-   * 
-   * @param details 原始发票明细
-   * @param masterKey 用户的本地推导密钥（字符串格式）
-   * @returns 加密载荷 (包含 iv 和 ciphertext)
+   * Local encryption: encrypt invoice details and store them in IndexedDB
+   * Uses PBKDF2 key derivation + AES-GCM symmetric encryption
+   *
+   * @param details Original invoice details
+   * @param masterKey User's locally derived key (string format)
+   * @returns Encrypted payload (containing iv and ciphertext)
    */
   encryptInvoiceDetails(details: InvoiceDetails, masterKey: string): Promise<EncryptedPayload>;
 
   /**
-   * 本地解密：从 IndexedDB 读取并解密发票明细
-   * 
-   * @param payload 加密载荷
-   * @param masterKey 用户的本地推导密钥
-   * @returns 解密后的发票明细
-   * @throws {CryptoServiceError} DECRYPTION_FAILED 如果密钥错误或数据损坏
+   * Local decryption: read and decrypt invoice details from IndexedDB
+   *
+   * @param payload Encrypted payload
+   * @param masterKey User's locally derived key
+   * @returns Decrypted invoice details
+   * @throws {CryptoServiceError} DECRYPTION_FAILED if the key is incorrect or data is corrupted
    */
   decryptInvoiceDetails(payload: EncryptedPayload, masterKey: string): Promise<InvoiceDetails>;
 
   /**
-   * 从签名派生主密钥（用于本地加密发票明细）
-   * 
-   * 使用场景：
-   * - 用户首次创建发票时，需要授权访问私有发票数据
-   * - 通过签名消息获取签名，然后从此签名派生主密钥
-   * - 主密钥用于加密/解密存储在 IndexedDB 中的发票明细
-   * 
-   * 实现说明：
-   * 1. 使用 SHA-256 对签名进行哈希
-   * 2. 将哈希结果转换为十六进制字符串
-   * 3. 返回该字符串作为 masterKey（后续会使用 PBKDF2 进一步派生加密密钥）
-   * 
-   * 安全性：
-   * - 签名是用户钱包私钥对特定消息的签名，具有唯一性和不可伪造性
-   * - 使用 SHA-256 确保密钥的随机性和安全性
-   * - 相同的签名总是产生相同的主密钥（确定性派生）
-   * 
-   * @param signature 钱包签名的消息（来自 signMessage）
-   * @returns 主密钥字符串（用于后续加密/解密）
-   * @throws {CryptoServiceError} 可能抛出 ENCRYPTION_FAILED
+   * Derive a master key from a signature (used for local encryption of invoice details)
+   *
+   * Use cases:
+   * - When the user creates an invoice for the first time, authorization is needed to access private invoice data
+   * - Obtain a signature by signing a message, then derive the master key from the signature
+   * - The master key is used to encrypt/decrypt invoice details stored in IndexedDB
+   *
+   * Implementation notes:
+   * 1. Hash the signature using SHA-256
+   * 2. Convert the hash result to a hexadecimal string
+   * 3. Return the string as the masterKey (PBKDF2 will further derive the encryption key)
+   *
+   * Security:
+   * - The signature is the user's wallet private key signing a specific message, providing uniqueness and non-forgeability
+   * - SHA-256 ensures randomness and security of the key
+   * - The same signature always produces the same master key (deterministic derivation)
+   *
+   * @param signature Wallet-signed message (from signMessage)
+   * @returns Master key string (used for subsequent encryption/decryption)
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
    */
   deriveMasterKey(signature: string): Promise<string>;
 }

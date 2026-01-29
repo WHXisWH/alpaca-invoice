@@ -1,88 +1,88 @@
 import { createServiceError } from '@/lib/service-errors';
 
 /**
- * 钱包服务错误码
+ * Wallet service error codes
  */
 export enum WalletError {
-  NOT_INSTALLED = 'NOT_INSTALLED',             // 未检测到插件
-  USER_REJECTED = 'USER_REJECTED',            // 用户在插件弹窗中点击了"拒绝"或关闭了弹窗
-  INSUFFICIENT_FEE = 'INSUFFICIENT_FEE',     // 钱包内没有足够的 credits Record 用于支付手续费
-  NETWORK_MISMATCH = 'NETWORK_MISMATCH',    // 钱包当前网络与应用要求不符（如应为 Testnet3）
-  UNAUTHORIZED = 'UNAUTHORIZED',           // 在未连接状态下调用了需要授权的接口
-  DECRYPTION_FAILED = 'DECRYPTION_FAILED' // 用户拒绝了解密请求或ViewKey派生失败
+  NOT_INSTALLED = 'NOT_INSTALLED',             // Wallet extension not detected
+  USER_REJECTED = 'USER_REJECTED',            // User clicked "Reject" or closed the extension popup
+  INSUFFICIENT_FEE = 'INSUFFICIENT_FEE',     // Wallet does not have enough credits Records to pay the fee
+  NETWORK_MISMATCH = 'NETWORK_MISMATCH',    // Wallet's current network does not match the application requirement (e.g., should be Testnet3)
+  UNAUTHORIZED = 'UNAUTHORIZED',           // Called an authorized API without being connected
+  DECRYPTION_FAILED = 'DECRYPTION_FAILED' // User rejected the decryption request or ViewKey derivation failed
 }
 
 /**
- * 钱包服务错误类
- * 使用工厂函数创建，自动带有类型提示
+ * Wallet service error class
+ * Created using a factory function, with automatic type hints
  */
 export const WalletServiceError = createServiceError<WalletError>('WalletService');
 export type WalletServiceError = InstanceType<typeof WalletServiceError>;
 
 /**
- * requestTransaction 方法的参数接口（简化版）
- * 用于 WalletService.requestTransaction 方法
+ * Parameter interface for the requestTransaction method (simplified version)
+ * Used by the WalletService.requestTransaction method
  */
 export interface RequestTransactionParams {
-  /** 要调用的函数名 */
+  /** Function name to call */
   functionName: string;
-  /** 函数输入参数数组 */
+  /** Array of function input parameters */
   inputs: string[];
-  /** 钱包公钥地址 */
+  /** Wallet public key address */
   publicKey: string;
-  /** 程序ID（默认为 "zk_invoice.aleo"） */
+  /** Program ID (defaults to "zk_invoice.aleo") */
   programId?: string;
-  /** 可选的手续费 Record（如果不提供，钱包会自动选择） */
+  /** Optional fee Record (if not provided, wallet will auto-select) */
   feeRecord?: string;
-  /** 手续费金额（默认为 250000 microcredits） */
+  /** Fee amount (defaults to 250000 microcredits) */
   fee?: number;
-  /** 链ID（可选，默认从环境变量获取） */
+  /** Chain ID (optional, defaults to value from environment variable) */
   chainId?: string;
 }
 
 /**
- * WalletService 接口
- * 职责：封装钱包操作，处理连接、签名和解密授权
- * 
- * 注意：
- * - 当前使用纯函数实现（见 WalletServiceImpl.ts）
- * - 此接口既可作为服务层接口，也可作为钱包实例的类型约束
+ * WalletService interface
+ * Responsibility: encapsulate wallet operations, handle connection, signing, and decryption authorization
+ *
+ * Notes:
+ * - Currently implemented as pure functions (see WalletServiceImpl.ts)
+ * - This interface serves both as a service layer interface and as a type constraint for wallet instances
  */
 export interface IWalletService {
-  // 钱包连接方法
+  // Wallet connection methods
   /**
-   * 申请连接钱包
-   * @throws {WalletServiceError} 可能抛出 NOT_INSTALLED, USER_REJECTED, NETWORK_MISMATCH
+   * Request wallet connection
+   * @throws {WalletServiceError} May throw NOT_INSTALLED, USER_REJECTED, NETWORK_MISMATCH
    */
   connect(): Promise<void>;
 
   /**
-   * 断开钱包连接并重置授权状态
+   * Disconnect wallet and reset authorization state
    */
   disconnect(): Promise<void>;
 
   /**
-   * 对消息进行签名（用于身份校验或审计授权）
-   * @param message 要签名的消息
-   * @returns 签名后的字符串
-   * @throws {WalletServiceError} 可能抛出 USER_REJECTED, UNAUTHORIZED
+   * Sign a message (used for identity verification or audit authorization)
+   * @param message Message to sign
+   * @returns Signed string
+   * @throws {WalletServiceError} May throw USER_REJECTED, UNAUTHORIZED
    */
   signMessage?(message: string): Promise<string>;
 
   /**
-   * 请求 Records
+   * Request Records
    */
   requestRecords?(program: string): Promise<{ records: any[] }>;
-  
+
   /**
-   * 请求 Record 明文
+   * Request Record plaintexts
    */
   requestRecordPlaintexts?(program: string): Promise<{ records: any[] }>;
 
   /**
-   * 请求创建交易（钱包适配器的原始方法）
-   * @param params 交易参数
-   * @returns 交易结果（返回 transactionId 字符串）
+   * Request transaction creation (raw method of the wallet adapter)
+   * @param params Transaction parameters
+   * @returns Transaction result (returns transactionId string)
    */
   requestTransaction?(params: {
     address: string;
@@ -97,9 +97,9 @@ export interface IWalletService {
   }): Promise<string>;
 
   /**
-   * 查询交易状态
-   * @param transactionId 交易ID
-   * @returns 交易状态字符串
+   * Query transaction status
+   * @param transactionId Transaction ID
+   * @returns Transaction status string
    */
   transactionStatus?(transactionId: string): Promise<string>;
 }

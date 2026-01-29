@@ -45,7 +45,7 @@ export default function InvoicesPage() {
     isInvoiceSyncing
   } = useInvoices();
 
-  // 仅在链上确认后允许操作
+  // Only allow actions after on-chain confirmation
   const guardActionByChainStatus = (
     chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined,
     actionName: 'pay' | 'cancel'
@@ -227,7 +227,7 @@ export default function InvoicesPage() {
         <MotionContainer className="grid gap-4 md:grid-cols-2" stagger={0.06}>
           {filteredInvoices.map(({ invoice, role, chainStatus, statusConfig }) => {
             const isProcessing = isInvoiceProcessing(invoice.id);
-            // ✅ 统一架构：直接从 sendingInvoiceHashes 判断（Single Source of Truth）
+            // Unified architecture: determine directly from sendingInvoiceHashes (Single Source of Truth)
             const isSyncingInvoice = isInvoiceSyncing(invoice);
 
             return (

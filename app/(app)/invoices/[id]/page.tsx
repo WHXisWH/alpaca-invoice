@@ -16,11 +16,11 @@ export default function InvoiceDetailPage() {
     [params]
   );
 
-  // ✅ 授权检查（独立调用）
+  // Authorization check (independent call)
   const { isAuthRequired, handleUnlock } = useAuthCheck();
 
-  // ✅ 详情页逻辑（统一轮询架构）
-  // 自动轮询由全局 AutoPoller 管理，手动同步通过 handleSyncStatus 触发
+  // Detail page logic (unified polling architecture)
+  // Automatic polling is managed by the global AutoPoller; manual sync is triggered via handleSyncStatus
   const { 
     invoice, 
     isLoadingInvoice,
@@ -35,7 +35,7 @@ export default function InvoiceDetailPage() {
     handleSyncStatus
   } = useInvoiceDetail(invoiceHash);
 
-  // 显示授权遮罩
+  // Display authorization overlay
   if (isAuthRequired) {
     return (
       <div className="space-y-4">
@@ -60,7 +60,7 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // ✅ 显示加载状态（从 IndexedDB 加载）
+  // Display loading state (loading from IndexedDB)
   if (isLoadingInvoice) {
     return (
       <div className="space-y-4">
@@ -72,7 +72,7 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // ✅ 发票不存在 - 显示更友好的提示（可能是正在上链）
+  // Invoice not found - display a user-friendly message (may still be processing on-chain)
   if (!invoice) {
     return (
       <div className="space-y-4">
@@ -128,7 +128,7 @@ export default function InvoiceDetailPage() {
         </div>
       </div>
 
-      {/* 发票详情卡片 */}
+      {/* Invoice detail card */}
       <div className="rounded-xl border-2 border-amber-200 bg-white p-5">
         {/* Header with Status */}
         <div className="flex items-start justify-between mb-4">
