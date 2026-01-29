@@ -3,24 +3,24 @@ import { useErrorStore } from '@/stores/Error/useErrorStore';
 import { toAppError } from '@/lib/errors';
 
 /**
- * 错误处理 Controller
- * 
- * 职责：
- * 1. 提供统一的错误处理接口
- * 2. 将原始错误转换为用户友好的提示
- * 3. 更新 ErrorStore
+ * Error Handler Controller
+ *
+ * Responsibilities:
+ * 1. Provide a unified error handling interface
+ * 2. Convert raw errors to user-friendly messages
+ * 3. Update ErrorStore
  */
 export function useErrorHandler() {
   const { showError } = useErrorStore();
 
   /**
-   * 处理错误
-   * 自动将任何错误转换为 AppError 并显示
+   * Handle error
+   * Automatically converts any error to AppError and displays it
    */
   const handleError = useCallback((error: any) => {
     const appError = toAppError(error);
-    
-    // 记录到控制台（开发时便于调试）
+
+    // Log to console (convenient for debugging during development)
     console.error('❌ Error caught:', {
       type: appError.type,
       title: appError.title,
@@ -28,7 +28,7 @@ export function useErrorHandler() {
       original: appError.originalError
     });
 
-    // 更新 Store，触发 Toast 显示
+    // Update Store, trigger Toast display
     showError(appError.title, appError.description);
   }, [showError]);
 

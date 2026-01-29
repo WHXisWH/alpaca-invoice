@@ -5,29 +5,29 @@ import { useErrorStore } from '@/stores/Error/useErrorStore';
 import { toast } from 'sonner';
 
 /**
- * 全局错误处理组件
- * 
- * 职责：
- * 1. 监听 ErrorStore 中的错误状态
- * 2. 自动使用 toast 组件展示错误
- * 3. 符合架构原则：作为 View 层组件，从 Store 读取状态
+ * Global error handling component
+ *
+ * Responsibilities:
+ * 1. Listen for error states in the ErrorStore
+ * 2. Automatically display errors using the toast component
+ * 3. Follows architectural principles: as a View layer component, reads state from the Store
  */
 export function ErrorHandler() {
   const { currentError, clearError } = useErrorStore();
 
   useEffect(() => {
     if (currentError) {
-      // 使用 sonner toast 显示错误
+      // Display error using sonner toast
       toast.error(currentError.title, {
         description: currentError.description,
         duration: 5000,
         action: {
-          label: '关闭',
+          label: 'Close',
           onClick: () => clearError()
         }
       });
 
-      // 自动清除错误（避免重复显示）
+      // Automatically clear error (to avoid repeated display)
       const timer = setTimeout(() => {
         clearError();
       }, 100);
@@ -36,7 +36,7 @@ export function ErrorHandler() {
     }
   }, [currentError, clearError]);
 
-  // 这个组件不渲染任何 UI，仅负责错误处理逻辑
+  // This component does not render any UI; it only handles error processing logic
   return null;
 }
 

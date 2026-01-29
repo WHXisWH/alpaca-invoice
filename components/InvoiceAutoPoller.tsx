@@ -6,53 +6,53 @@ import { useInvoiceListPolling } from '@/controller/Invoice/useInvoiceListPollin
 import { AleoField, Invoice } from '@/lib/types';
 
 /**
- * InvoiceAutoPoller 全局自动轮询组件
- * 
- * 职责：
- * - 监听 store 的 sendingInvoiceHashes
- * - 当发现新的 SENDING 发票时，自动启动轮询
- * - 轮询完成后，自动更新 store（移除 SENDING 状态）
- * 
- * 特点：
- * - 全局单例：放在 app/(app)/layout.tsx 中，确保只运行一个实例
- * - 自动响应：无论哪个页面触发 markInvoiceSending，都会自动启动轮询
- * - 跨页面同步：所有页面共享同一轮询状态
+ * InvoiceAutoPoller - Global automatic polling component
+ *
+ * Responsibilities:
+ * - Listens to sendingInvoiceHashes in the store
+ * - Automatically starts polling when new SENDING invoices are detected
+ * - Automatically updates the store after polling completes (removes SENDING status)
+ *
+ * Features:
+ * - Global singleton: placed in app/(app)/layout.tsx to ensure only one instance runs
+ * - Auto-responsive: automatically starts polling regardless of which page triggers markInvoiceSending
+ * - Cross-page sync: all pages share the same polling state
  */
 export function InvoiceAutoPoller() {
   const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
   const markInvoiceConfirmed = useInvoiceStore((state) => state.markInvoiceConfirmed);
   const updateInvoice = useInvoiceStore((state) => state.updateInvoice);
   
-  // ✅ 使用 ref 追踪已经启动轮询的发票（避免重复启动）
+  // Use ref to track invoices that have already started polling (to avoid duplicate starts)
   const pollingHashesRef = useRef<Set<AleoField>>(new Set());
 
-  // ✅ 轮询完成回调：更新发票状态并从 sending 索引移除
+  // Polling complete callback: update invoice status and remove from sending index
   const handlePollingComplete = (invoiceHash: AleoField, updatedInvoice: Invoice) => {
     console.log(`✅ [AutoPoller] Polling complete for: ${invoiceHash}`);
     
-    // 更新发票到 store（updateInvoice 会自动更新 sending 索引）
+    // Update invoice to store (updateInvoice will automatically update the sending index)
     updateInvoice(updatedInvoice.id, updatedInvoice, {
-      masterKey: undefined, // Auto-poller 不处理加密，由具体页面决定
-      persistFull: false     // 只更新内存，不持久化（避免覆盖用户数据）
+      masterKey: undefined, // Auto-poller does not handle encryption; determined by the specific page
+      persistFull: false     // Only update in memory, do not persist (to avoid overwriting user data)
     }).catch((error) => {
       console.error(`❌ [AutoPoller] Failed to update invoice ${invoiceHash}:`, error);
     });
     
-    // 标记为已确认（从 sending 索引移除）
+    // Mark as confirmed (remove from sending index)
     markInvoiceConfirmed(invoiceHash);
     
-    // 从追踪集合移除
+    // Remove from tracking set
     pollingHashesRef.current.delete(invoiceHash);
   };
 
-  // ✅ 使用轮询 hook
+  // Use the polling hook
   const { startPolling } = useInvoiceListPolling(handlePollingComplete);
 
-  // ✅ 监听 sendingInvoiceHashes 变化，自动启动轮询
+  // Listen for changes to sendingInvoiceHashes and automatically start polling
   useEffect(() => {
     const currentSendingHashes = Object.keys(sendingInvoiceHashes) as AleoField[];
     
-    // 找出新增的 SENDING 发票（还未启动轮询的）
+    // Find newly added SENDING invoices (those that have not started polling yet)
     const newHashes = currentSendingHashes.filter(
       hash => !pollingHashesRef.current.has(hash)
     );
@@ -60,14 +60,14 @@ export function InvoiceAutoPoller() {
     if (newHashes.length > 0) {
       console.log(`🔄 [AutoPoller] Detected ${newHashes.length} new SENDING invoice(s), starting polling...`);
       
-      // 标记为已启动轮询
+      // Mark as polling started
       newHashes.forEach(hash => pollingHashesRef.current.add(hash));
       
-      // 启动轮询
+      // Start polling
       startPolling(newHashes);
     }
     
-    // 清理：移除已不在 sending 列表中的 hash
+    // Cleanup: remove hashes that are no longer in the sending list
     const currentHashSet = new Set(currentSendingHashes);
     for (const hash of pollingHashesRef.current) {
       if (!currentHashSet.has(hash)) {
@@ -76,6 +76,6 @@ export function InvoiceAutoPoller() {
     }
   }, [sendingInvoiceHashes, startPolling]);
 
-  // ✅ 这是一个无 UI 的后台组件
+  // This is a background component with no UI
   return null;
 }

@@ -12,50 +12,50 @@ import { WalletServiceError, WalletError } from '@/services/WalletService/IWalle
 import type { AleoAddress } from '@/lib/types';
 
 /**
- * Wallet Controller 实现
- * 
- * 职责：处理钱包连接、余额轮询
- * 
- * 架构流程：View -> Controller -> Service（类） -> Store
- * 
- * 网络策略：
- * - 应用网络配置从环境变量读取（静态）
- * - 用户钱包应适应应用网络，而非反过来
- * - 当用户在钱包中切换网络时，会触发 disconnect 事件
- * - 用户重新连接时，Leo Wallet 会自动提示切换到应用要求的网络
+ * Wallet Controller Implementation
+ *
+ * Responsibilities: Handle wallet connection and balance polling
+ *
+ * Architecture flow: View -> Controller -> Service (class) -> Store
+ *
+ * Network strategy:
+ * - Application network config is read from environment variables (static)
+ * - User wallet should adapt to the application network, not the other way around
+ * - When user switches network in wallet, a disconnect event is triggered
+ * - When user reconnects, Leo Wallet automatically prompts to switch to the application's required network
  */
 export function useWalletController(): IWalletController {
   const wallet = useWallet();
   const [isConnecting, setIsConnecting] = useState(false);
   const [networkChanged, setNetworkChanged] = useState(false);
   const [aleoProtocolService, setAleoProtocolService] = useState<AleoProtocolService | null>(null);
-  
-  // 从 Store 获取状态
-  const { 
+
+  // Get state from Store
+  const {
     publicKey,
     connected,
-    publicBalance, 
-    privateBalance, 
-    setAccount, 
-    updateBalances, 
-    clearUser 
+    publicBalance,
+    privateBalance,
+    setAccount,
+    updateBalances,
+    clearUser
   } = useUserStore();
 
-  // 错误处理
+  // Error handling
   const { handleError } = useErrorHandler();
 
-  // 创建 WalletService 实例（通过适配器）
+  // Create WalletService instance (via adapter)
   const walletService = useMemo(() => {
     if (!wallet) return null;
     const adapter = createWalletAdapter(wallet);
     return new WalletService(adapter);
   }, [wallet]);
 
-  // 🔧 异步加载 AleoProtocolService（避免在 Server Component 中加载 WASM）
+  // Async load AleoProtocolService (avoid loading WASM in Server Component)
   useEffect(() => {
     const network = getNetworkFromEnv();
-    
-    // 动态导入 AleoProtocolService，只在客户端执行
+
+    // Dynamically import AleoProtocolService, only executed on client side
     import('@/services/AleoProtocolService/AleoProtocolServiceImpl')
       .then((module) => {
         const service = new module.AleoProtocolService(network);
@@ -65,10 +65,10 @@ export function useWalletController(): IWalletController {
       .catch((error) => {
         console.error('❌ Failed to initialize AleoProtocolService:', error);
       });
-  }, []); // 只在组件挂载时执行一次
+  }, []); // Only execute once on component mount
 
   /**
-   * 将 Microcredits (bigint) 转换为可读字符串
+   * Convert Microcredits (bigint) to a readable string
    */
   const formatBalance = (microcredits: bigint): string => {
     const credits = Number(microcredits) / 1_000_000;
@@ -76,26 +76,26 @@ export function useWalletController(): IWalletController {
   };
 
   /**
-   * 同步余额（并行获取公开和私有余额）
+   * Sync balances (fetch public and private balances in parallel)
    */
   const syncBalances = useCallback(async () => {
     if (!walletService || !publicKey || !aleoProtocolService) return;
 
     try {
-      // 并行获取两种余额
+      // Fetch both balance types in parallel
       const [privateBalance, publicBalance] = await Promise.all([
-        walletService.getPrivateBalance(publicKey), 
+        walletService.getPrivateBalance(publicKey),
         aleoProtocolService.getPublicBalance(publicKey)
       ]);
-      
+
       updateBalances(publicBalance, privateBalance);
     } catch (error) {
       console.error('Failed to sync balances:', error);
     }
-  }, [walletService, aleoProtocolService, publicKey, updateBalances]); 
+  }, [walletService, aleoProtocolService, publicKey, updateBalances]);
 
   /**
-   * 处理连接钱包
+   * Handle wallet connection
    */
   const handleConnect = useCallback(async () => {
     if (!walletService) {
@@ -107,16 +107,16 @@ export function useWalletController(): IWalletController {
     }
 
     setIsConnecting(true);
-    setNetworkChanged(false); // 重置网络变化标志
+    setNetworkChanged(false); // Reset network change flag
 
     try {
-      // 1. 调用 Service 层连接钱包
-      // Leo Wallet 会自动检测并提示用户切换到 WalletProvider 配置的网络
+      // 1. Call Service layer to connect wallet
+      // Leo Wallet automatically detects and prompts user to switch to the network configured in WalletProvider
       await walletService.connect();
-      // ✅ 地址和连接状态由 useEffect 监听 wallet 状态后更新
+      // Address and connection state are updated by useEffect monitoring wallet state
       console.log('✅ Wallet connect() called, waiting for wallet state update...');
     } catch (error: any) {
-      // 使用统一的错误处理
+      // Use unified error handling
       handleError(error);
     } finally {
       setIsConnecting(false);
@@ -124,19 +124,19 @@ export function useWalletController(): IWalletController {
   }, [walletService, handleError]);
 
   /**
-   * 处理登出
+   * Handle logout
    */
   const handleLogout = useCallback(async () => {
     if (!walletService) return;
 
-    // 重置连接状态
+    // Reset connection state
     setIsConnecting(false);
 
     try {
-      // 1. 清理 Store
+      // 1. Clear Store
       clearUser();
-      
-      // 2. 断开钱包连接
+
+      // 2. Disconnect wallet
       await walletService.disconnect();
 
       console.log('✅ Wallet disconnected');
@@ -146,23 +146,23 @@ export function useWalletController(): IWalletController {
   }, [walletService, clearUser]);
 
   /**
-   * 监听钱包事件
-   * 当用户在钱包插件中切换网络时，钱包会断开连接
+   * Listen for wallet events
+   * When user switches network in the wallet plugin, the wallet disconnects
    */
   useEffect(() => {
     if (!wallet?.wallet?.adapter) return;
 
     const adapter = wallet.wallet.adapter as LeoWalletAdapter;
 
-    // 监听断开连接事件
+    // Listen for disconnect event
     const handleDisconnect = () => {
       console.warn('⚠️ Wallet disconnected - User may have switched network in wallet');
       setNetworkChanged(true);
-      setIsConnecting(false); // 重置连接状态
+      setIsConnecting(false); // Reset connection state
       clearUser();
     };
 
-    // 监听错误事件
+    // Listen for error event
     const handleWalletError = (error: any) => {
       console.error('❌ Wallet error:', error);
     };
@@ -170,7 +170,7 @@ export function useWalletController(): IWalletController {
     adapter.on('disconnect', handleDisconnect);
     adapter.on('error', handleWalletError);
 
-    // 清理事件监听器
+    // Clean up event listeners
     return () => {
       adapter.off('disconnect', handleDisconnect);
       adapter.off('error', handleWalletError);
@@ -178,21 +178,21 @@ export function useWalletController(): IWalletController {
   }, [wallet, clearUser]);
 
   /**
-   * ✅ 监听 wallet 状态变化，同步到 userStore
-   * 当钱包连接成功后，自动更新 store 并同步余额
+   * Monitor wallet state changes and sync to userStore
+   * After wallet connects successfully, automatically update store and sync balances
    */
   useEffect(() => {
     const walletPublicKey = wallet?.publicKey || null;
     const walletConnected = wallet?.connected || false;
 
-    // 如果 wallet 状态与 store 不一致，更新 store
+    // If wallet state differs from store, update store
     if (walletPublicKey !== publicKey || walletConnected !== connected) {
       if (walletPublicKey && walletConnected) {
-        // 钱包已连接，更新 store
+        // Wallet connected, update store
         setAccount(walletPublicKey as AleoAddress, walletConnected);
         console.log('✅ Wallet state synced to store:', walletPublicKey);
       } else if (!walletConnected && publicKey) {
-        // 钱包已断开，清理 store
+        // Wallet disconnected, clear store
         clearUser();
         console.log('✅ Wallet disconnected, store cleared');
       }
@@ -200,21 +200,21 @@ export function useWalletController(): IWalletController {
   }, [wallet?.publicKey, wallet?.connected, publicKey, connected, setAccount, clearUser, syncBalances]);
 
   useEffect(() => {
-    // 连接账户成功后，同步余额（页面加载时同步一次）
+    // After account connection succeeds, sync balances (sync once on page load)
     if (publicKey && connected) {
       syncBalances()
     }
-  }, [publicKey, connected, syncBalances]) 
+  }, [publicKey, connected, syncBalances])
 
   return {
-    // 状态
-    address: publicKey, 
+    // State
+    address: publicKey,
     publicBalance: formatBalance(publicBalance),
     privateBalance: formatBalance(privateBalance),
     isConnecting,
     networkChanged,
 
-    // 方法
+    // Methods
     handleConnect,
     handleLogout,
     syncBalances

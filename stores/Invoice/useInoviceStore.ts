@@ -4,7 +4,7 @@ import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus } from
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 
-// ✅ 服务实例（单例模式，延迟初始化）
+// Service instances (singleton pattern, lazy initialization)
 let storageServiceInstance: StorageService | null = null;
 let cryptoServiceInstance: CryptoService | null = null;
 
@@ -22,15 +22,15 @@ const getCryptoService = (): CryptoService => {
   return cryptoServiceInstance;
 };
 
-// ✅ 表名常量
+// Table name constant
 const INVOICE_TABLE = 'invoices';
 
 /**
- * 发票存储数据结构（IndexedDB 中存储的格式）
- * 直接使用 Invoice 的基本字段，不需要嵌套 basicInfo
+ * Invoice storage data structure (format stored in IndexedDB)
+ * Directly uses Invoice's basic fields without nesting in basicInfo
  */
 interface InvoiceStorageData {
-  // Invoice 的基本字段
+  // Invoice basic fields
   id: AleoField;
   invoiceHash: AleoField;
   seller: AleoAddress;
@@ -39,42 +39,42 @@ interface InvoiceStorageData {
   dueDate: Date;
   createdAt: Date;
   status: InvoiceStatus;
-  // 加密的 details
+  // Encrypted details
   encryptedDetails: EncryptedPayload | null;
-  // 元数据
+  // Metadata
   metadata: {
     confirmationStatus: ChainConfirmationStatus;
     lastUpdated: Date;
     dataSource: 'local' | 'chain';
-    action?: 'create' | 'cancel' | 'pay'; // ✅ 标识当前操作类型
+    action?: 'create' | 'cancel' | 'pay'; // Identifies the current action type
   };
 }
 
 /**
- * Invoice Store 实现
- * 所有方法都直接与 IndexedDB 交互（使用通用存储接口）
+ * Invoice Store implementation
+ * All methods interact directly with IndexedDB (using the generic storage interface)
  */
 export const useInvoiceStore = create<InvoiceState>((set, get) => ({
-  // 初始状态
+  // Initial state
   invoices: [],
-  currentInvoice: null,  // ✅ 新增：当前选中的 invoice
-  sendingInvoiceHashes: {},  // ✅ 新增：全局 SENDING 索引
+  currentInvoice: null,  // Currently selected invoice
+  sendingInvoiceHashes: {},  // Global SENDING index
 
   /**
-   * ✅ 添加发票：接收发票 → 保存到 IndexedDB → 更新内存
+   * Add invoice: receive invoice -> save to IndexedDB -> update memory
    */
   addInvoice: async (invoice, options = {}) => {
     const { masterKey, persistFull = true } = options;
-    
-    // 1. ✅ 持久化完整发票信息到 IndexedDB（如果启用）
+
+    // 1. Persist full invoice information to IndexedDB (if enabled)
     if (persistFull && masterKey) {
       try {
-        // 加密 details（如果存在）
+        // Encrypt details (if present)
         const encryptedDetails = invoice.details
           ? await getCryptoService().encryptInvoiceDetails(invoice.details, masterKey)
           : null;
-        
-        // 构建存储数据（直接使用 Invoice 的基本字段）
+
+        // Build storage data (directly using Invoice's basic fields)
         const storageData: InvoiceStorageData = {
           id: invoice.id,
           invoiceHash: invoice.invoiceHash,
@@ -92,19 +92,19 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           }
         };
 
-        // ✅ 使用通用存储接口（使用 invoiceId 作为 key）
+        // Use generic storage interface (using invoiceId as key)
         await getStorageService().addData(INVOICE_TABLE, invoice.id, storageData);
 
-        console.log('✅ [Store.addInvoice] Persisted full invoice to IndexedDB:', invoice.invoiceHash);
+        console.log('[Store.addInvoice] Persisted full invoice to IndexedDB:', invoice.invoiceHash);
       } catch (error) {
-        console.error('❌ [Store.addInvoice] Failed to persist:', error);
-        // 持久化失败时抛出错误，不更新内存，保持数据库和内存同步
+        console.error('[Store.addInvoice] Failed to persist:', error);
+        // Throw error on persistence failure, do not update memory, keep DB and memory in sync
         throw error;
       }
     }
 
-    // 2. 更新内存状态（仅在持久化成功或不需要持久化时）
-    // ✅ 确保 invoice 包含 metadata（如果没有，添加默认值）
+    // 2. Update memory state (only when persistence succeeds or is not required)
+    // Ensure invoice includes metadata (if missing, add default values)
     const invoiceWithMetadata = invoice.metadata ? invoice : {
       ...invoice,
       metadata: {
@@ -113,13 +113,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         dataSource: 'local' as const
       }
     };
-    
+
     set((state) => {
-      // ✅ 如果是 SENDING 状态，同时更新 sending 索引
+      // If in SENDING status, also update the sending index
       const newSending = invoiceWithMetadata.metadata?.confirmationStatus === 'SENDING'
         ? { ...state.sendingInvoiceHashes, [invoiceWithMetadata.invoiceHash]: true as const }
         : state.sendingInvoiceHashes;
-      
+
       return {
         invoices: [...state.invoices, invoiceWithMetadata],
         sendingInvoiceHashes: newSending
@@ -128,34 +128,34 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 更新发票：接收更新 → 保存到 IndexedDB → 更新内存
+   * Update invoice: receive updates -> save to IndexedDB -> update memory
    */
   updateInvoice: async (id, updates, options = {}) => {
     const { masterKey, persistFull = true } = options;
     const state = get();
-    
-    // ✅ 优先使用 currentInvoice（如果存在且匹配），否则从 invoices 中查找
-    // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
+
+    // Prefer using currentInvoice (if it exists and matches), otherwise search in invoices
+    // Also check both id and invoiceHash (to handle key migration cases)
     const updatesInvoiceHash = (updates as any).invoiceHash;
-    
-    let currentInvoice = 
-      (state.currentInvoice?.id === id || 
+
+    let currentInvoice =
+      (state.currentInvoice?.id === id ||
        (updatesInvoiceHash && state.currentInvoice?.invoiceHash === updatesInvoiceHash))
-        ? state.currentInvoice 
-        : state.invoices.find(inv => 
-            inv.id === id || 
+        ? state.currentInvoice
+        : state.invoices.find(inv =>
+            inv.id === id ||
             (updatesInvoiceHash && inv.invoiceHash === updatesInvoiceHash)
           );
-    
+
     if (!currentInvoice) {
-      console.warn('⚠️ [Store.updateInvoice] Invoice not found:', id, {
+      console.warn('[Store.updateInvoice] Invoice not found:', id, {
         updateInvoiceHash: updatesInvoiceHash,
         availableInvoiceIds: state.invoices.map(inv => inv.id).slice(0, 5)
       });
       return;
     }
-    
-    console.log('✅ [Store.updateInvoice] Found invoice:', {
+
+    console.log('[Store.updateInvoice] Found invoice:', {
       searchId: id,
       foundById: currentInvoice.id === id,
       foundByHash: updatesInvoiceHash && currentInvoice.invoiceHash === updatesInvoiceHash,
@@ -163,24 +163,24 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       invoiceHash: currentInvoice.invoiceHash
     });
 
-    // ✅ 正确合并 metadata（如果 updates 中有 metadata，使用它；否则保持现有的）
-    const updatedInvoice = { 
-      ...currentInvoice, 
+    // Correctly merge metadata (if updates contain metadata, use it; otherwise keep existing)
+    const updatedInvoice = {
+      ...currentInvoice,
       ...updates,
-      // ✅ 确保 metadata 正确合并：如果 updates 中有 metadata，使用它；否则保持 currentInvoice 的 metadata
+      // Ensure metadata is correctly merged: if updates contain metadata, use it; otherwise keep currentInvoice's metadata
       metadata: (updates as any).metadata || currentInvoice.metadata
     };
 
-    // 1. ✅ 同步更新 IndexedDB
+    // 1. Synchronously update IndexedDB
     if (persistFull && masterKey) {
       try {
-        // ✅ 尝试查找现有记录：先使用传入的 id，如果找不到则尝试添加 .private 后缀
+        // Try to find existing record: first use the provided id, if not found try adding .private suffix
         let existing = await getStorageService().getData<InvoiceStorageData>(
           INVOICE_TABLE,
           id
         );
 
-        // ✅ 如果找不到，尝试使用带 .private 后缀的 id
+        // If not found, try using id with .private suffix
         let dbKey = id;
         if (!existing && !id.endsWith('.private')) {
           const idWithPrivate = `${id}.private` as AleoField;
@@ -188,26 +188,26 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             INVOICE_TABLE,
             idWithPrivate
           );
-          
-          // ✅ 如果找到了，更新 dbKey 为带 .private 后缀的版本，以便后续更新操作使用正确的 key
+
+          // If found, update dbKey to the version with .private suffix for subsequent update operations
           if (existing) {
             dbKey = idWithPrivate;
-            console.log('✅ [Store.updateInvoice] Found record with .private suffix, using:', dbKey);
+            console.log('[Store.updateInvoice] Found record with .private suffix, using:', dbKey);
           }
         }
 
         if (!existing) {
-          console.warn('⚠️ [Store.updateInvoice] Invoice not found in IndexedDB:', id);
+          console.warn('[Store.updateInvoice] Invoice not found in IndexedDB:', id);
           return;
         }
 
-        // 加密更新的 details（如果存在）
+        // Encrypt updated details (if present)
         const encryptedDetails = updatedInvoice.details
           ? await getCryptoService().encryptInvoiceDetails(updatedInvoice.details, masterKey)
           : existing.encryptedDetails;
 
-        // 构建更新数据（直接使用 Invoice 的基本字段）
-        // ✅ 使用 updatedInvoice.metadata（已经正确合并），如果没有则使用 existing.metadata
+        // Build update data (directly using Invoice's basic fields)
+        // Use updatedInvoice.metadata (already correctly merged), fall back to existing.metadata if absent
         const finalMetadata = updatedInvoice.metadata || existing.metadata;
         const storageUpdates: Partial<InvoiceStorageData> = {
           id: updatedInvoice.id,
@@ -226,38 +226,38 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           }
         };
 
-        // ✅ 使用通用存储接口更新（使用正确的 dbKey，可能是带 .private 后缀的）
+        // Use generic storage interface to update (using the correct dbKey, which may have .private suffix)
         await getStorageService().updateData(INVOICE_TABLE, dbKey, storageUpdates);
 
-        console.log('✅ [Store.updateInvoice] Updated in IndexedDB:', dbKey);
+        console.log('[Store.updateInvoice] Updated in IndexedDB:', dbKey);
       } catch (error) {
-        console.error('❌ [Store.updateInvoice] Failed to update IndexedDB:', error);
-        // 持久化失败时抛出错误，不更新内存，保持数据库和内存同步
+        console.error('[Store.updateInvoice] Failed to update IndexedDB:', error);
+        // Throw error on persistence failure, do not update memory, keep DB and memory in sync
         throw error;
       }
     }
 
-    // 2. 更新内存（仅在持久化成功或不需要持久化时）
+    // 2. Update memory (only when persistence succeeds or is not required)
     set((state) => {
-      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
-      // 如果 id 不匹配，但 invoiceHash 匹配，说明发生了 key 迁移，需要更新
+      // Also check both id and invoiceHash (to handle key migration cases)
+      // If id doesn't match but invoiceHash matches, a key migration occurred and needs updating
       const updatedInvoices = state.invoices.map((inv) =>
-        (inv.id === id || inv.invoiceHash === updatedInvoice.invoiceHash) 
-          ? updatedInvoice 
+        (inv.id === id || inv.invoiceHash === updatedInvoice.invoiceHash)
+          ? updatedInvoice
           : inv
       );
-      
-      // ✅ 如果更新的是当前 invoice，同步更新 currentInvoice
-      // ✅ 同时检查 id 和 invoiceHash（处理 key 迁移的情况）
-      const newCurrentInvoice = (state.currentInvoice?.id === id || 
+
+      // If the updated invoice is the current invoice, synchronize currentInvoice
+      // Also check both id and invoiceHash (to handle key migration cases)
+      const newCurrentInvoice = (state.currentInvoice?.id === id ||
                                  state.currentInvoice?.invoiceHash === updatedInvoice.invoiceHash)
-        ? updatedInvoice 
+        ? updatedInvoice
         : state.currentInvoice;
 
-      // ✅ 同步更新 sending 索引
+      // Synchronize the sending index
       let newSending = { ...state.sendingInvoiceHashes };
       const newStatus = updatedInvoice.metadata?.confirmationStatus;
-      
+
       if (newStatus === 'SENDING') {
         newSending[updatedInvoice.invoiceHash] = true;
       } else if (newStatus === 'CONFIRMED') {
@@ -273,7 +273,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 迁移发票 key：删除旧记录，创建新记录（用于 create action 的 key 迁移）
+   * Migrate invoice key: delete old record, create new record (used for key migration in create action)
    */
   migrateInvoiceKey: async (oldId: AleoField, newId: AleoField, updatedInvoice: Partial<Invoice>, options: {
     masterKey?: string;
@@ -281,42 +281,42 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   } = {}) => {
     const { masterKey, persistFull = true } = options;
     const state = get();
-    
-    // ✅ 查找当前发票
-    let currentInvoice = state.currentInvoice?.id === oldId 
-      ? state.currentInvoice 
+
+    // Find the current invoice
+    let currentInvoice = state.currentInvoice?.id === oldId
+      ? state.currentInvoice
       : state.invoices.find(inv => inv.id === oldId);
-    
+
     if (!currentInvoice) {
-      console.warn('⚠️ [Store.migrateInvoiceKey] Invoice not found:', oldId);
+      console.warn('[Store.migrateInvoiceKey] Invoice not found:', oldId);
       return;
     }
 
     if (!persistFull || !masterKey) {
-      console.warn('⚠️ [Store.migrateInvoiceKey] Missing masterKey or persistFull is false');
+      console.warn('[Store.migrateInvoiceKey] Missing masterKey or persistFull is false');
       return;
     }
 
     try {
-      // 1. 获取旧记录数据（从 IndexedDB）
+      // 1. Get old record data (from IndexedDB)
       const oldRecordData = await getStorageService().getData<InvoiceStorageData>(
         INVOICE_TABLE,
         oldId
       );
 
       if (!oldRecordData) {
-        console.warn('⚠️ [Store.migrateInvoiceKey] Old record not found in IndexedDB:', oldId);
+        console.warn('[Store.migrateInvoiceKey] Old record not found in IndexedDB:', oldId);
         return;
       }
 
-      // 2. 构建完整的新发票对象
+      // 2. Build the complete new invoice object
       const finalMetadata = updatedInvoice.metadata || {
         confirmationStatus: 'CONFIRMED' as ChainConfirmationStatus,
         dataSource: 'chain' as const,
         action: (currentInvoice.metadata?.action || 'create') as 'create' | 'cancel' | 'pay',
         lastUpdated: new Date()
       };
-      
+
       const updatedInvoiceFull: Invoice = {
         ...currentInvoice,
         ...updatedInvoice,
@@ -324,12 +324,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         metadata: finalMetadata
       };
 
-      // 3. 加密 details（如果存在）
+      // 3. Encrypt details (if present)
       const encryptedDetails = updatedInvoiceFull.details
         ? await getCryptoService().encryptInvoiceDetails(updatedInvoiceFull.details, masterKey)
         : oldRecordData.encryptedDetails;
 
-      // 4. 构建存储数据
+      // 4. Build storage data
       const storageData: InvoiceStorageData = {
         id: newId,
         invoiceHash: updatedInvoiceFull.invoiceHash,
@@ -348,15 +348,15 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         }
       };
 
-      // 5. 删除旧记录
+      // 5. Delete old record
       await getStorageService().deleteData(INVOICE_TABLE, [oldId]);
-      console.log(`✅ [Store.migrateInvoiceKey] Deleted old record with key: ${oldId}`);
+      console.log(`[Store.migrateInvoiceKey] Deleted old record with key: ${oldId}`);
 
-      // 6. 创建新记录
+      // 6. Create new record
       await getStorageService().addData(INVOICE_TABLE, newId, storageData);
-      console.log(`✅ [Store.migrateInvoiceKey] Created new record with key: ${newId}`);
+      console.log(`[Store.migrateInvoiceKey] Created new record with key: ${newId}`);
 
-      // 7. 更新内存状态
+      // 7. Update memory state
       set((state) => {
         const updatedInvoices = state.invoices
           .filter(inv => inv.id !== oldId)
@@ -366,7 +366,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           ? updatedInvoiceFull
           : state.currentInvoice;
 
-        // ✅ 更新 sending 索引（通常迁移后状态变为 CONFIRMED）
+        // Update sending index (typically status changes to CONFIRMED after migration)
         const newSending = { ...state.sendingInvoiceHashes };
         if (finalMetadata.confirmationStatus === 'CONFIRMED') {
           delete newSending[updatedInvoiceFull.invoiceHash];
@@ -381,25 +381,25 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         };
       });
 
-      console.log('✅ [Store.migrateInvoiceKey] Key migration completed', {
+      console.log('[Store.migrateInvoiceKey] Key migration completed', {
         oldId,
         newId,
         invoiceHash: updatedInvoiceFull.invoiceHash
       });
     } catch (error) {
-      console.error('❌ [Store.migrateInvoiceKey] Failed to migrate key:', error);
+      console.error('[Store.migrateInvoiceKey] Failed to migrate key:', error);
       throw error;
     }
   },
 
   /**
-   * ✅ 根据 hash 获取发票的 metadata（confirmationStatus）
+   * Get invoice metadata (confirmationStatus) by hash
    */
   getInvoiceMetadata: async (hash: AleoField): Promise<{ confirmationStatus: ChainConfirmationStatus } | null> => {
     try {
       const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
       const dbRecord = allDBRecords.find(record => record.invoiceHash === hash);
-      
+
       if (dbRecord) {
         return {
           confirmationStatus: dbRecord.metadata.confirmationStatus
@@ -407,40 +407,40 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       }
       return null;
     } catch (error) {
-      console.error('❌ [Store.getInvoiceMetadata] Failed to load metadata:', error);
+      console.error('[Store.getInvoiceMetadata] Failed to load metadata:', error);
       return null;
     }
   },
 
   /**
-   * ✅ 根据 hash 获取发票：IndexedDB → 解密 → 更新内存（如需要）→ 返回
-   * 注意：由于 key 是 invoiceId，需要通过 hash 查找，需要遍历所有数据或使用索引
-   * 这里先尝试从内存查找，如果内存没有则从 IndexedDB 加载所有数据后查找
+   * Get invoice by hash: IndexedDB -> decrypt -> update memory (if needed) -> return
+   * Note: Since the key is invoiceId, searching by hash requires iterating all data or using an index.
+   * Here we first try to find from memory; if not in memory, load all data from IndexedDB and search.
    */
   getInvoiceByHash: async (hash, options = {}) => {
     const { masterKey, loadFromDB = true } = options;
     const state = get();
-    
-    // 1. 先从内存查找
+
+    // 1. First search from memory
     const invoiceInMemory = state.invoices.find((inv) => inv.invoiceHash === hash);
     if (invoiceInMemory) {
       return invoiceInMemory;
     }
-    
-    // 2. ✅ 从 IndexedDB 读取（由于 key 是 invoiceId，需要遍历查找）
+
+    // 2. Read from IndexedDB (since the key is invoiceId, need to iterate to find)
     if (loadFromDB && masterKey) {
       try {
-        // 获取所有数据，然后通过 hash 查找
+        // Get all data, then search by hash
         const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
         const dbRecord = allDBRecords.find(record => record.invoiceHash === hash);
-        
+
         if (dbRecord) {
-          // 解密 details（如果存在）
+          // Decrypt details (if present)
           const details = dbRecord.encryptedDetails
             ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // ✅ 构建完整发票对象（直接使用存储的字段，包含 metadata）
+          // Build complete invoice object (directly using stored fields, including metadata)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -451,19 +451,19 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
             details: details,
-            metadata: dbRecord.metadata  // ✅ 包含 metadata
+            metadata: dbRecord.metadata  // Include metadata
           };
 
-          // ✅ 更新内存状态
+          // Update memory state
           set((state) => ({
             invoices: [...state.invoices, invoice]
           }));
 
-          console.log('✅ [Store.getInvoiceByHash] Loaded from IndexedDB:', hash);
+          console.log('[Store.getInvoiceByHash] Loaded from IndexedDB:', hash);
           return invoice;
         }
       } catch (error) {
-        console.error('❌ [Store.getInvoiceByHash] Failed to load from IndexedDB:', error);
+        console.error('[Store.getInvoiceByHash] Failed to load from IndexedDB:', error);
       }
     }
 
@@ -471,32 +471,32 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 从 IndexedDB 获取所有发票：IndexedDB → 解密 → 更新内存 → 返回
-   * 
-   * ✅ masterKey 是可选的：
-   * - 有 masterKey：解密 details，返回完整发票
-   * - 无 masterKey：不解密 details，只返回基本信息
+   * Get all invoices from IndexedDB: IndexedDB -> decrypt -> update memory -> return
+   *
+   * masterKey is optional:
+   * - With masterKey: decrypt details, return complete invoices
+   * - Without masterKey: do not decrypt details, return only basic information
    */
   getAllInvoices: async (options = {}) => {
     const { masterKey, refreshMemory = true } = options;
-    
+
     try {
-      // 1. 从 IndexedDB 读取所有记录
+      // 1. Read all records from IndexedDB
       const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
-      console.log(`📦 [Store.getAllInvoices] Found ${allDBRecords.length} invoices in IndexedDB`);
-      console.log(`📦 [Store.getAllInvoices] Has masterKey for decryption:`, !!masterKey);
-      
+      console.log(`[Store.getAllInvoices] Found ${allDBRecords.length} invoices in IndexedDB`);
+      console.log(`[Store.getAllInvoices] Has masterKey for decryption:`, !!masterKey);
+
       const invoices: Invoice[] = [];
-      
-      // 2. 批量解密并构建完整发票对象
+
+      // 2. Batch decrypt and build complete invoice objects
       for (const dbRecord of allDBRecords) {
         try {
-          // ✅ 如果没有 masterKey，details 会是 undefined（这是正常的）
+          // If no masterKey, details will be undefined (this is normal)
           const details = (masterKey && dbRecord.encryptedDetails)
             ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // 构建完整发票对象（直接使用存储的字段，包含 metadata）
+          // Build complete invoice object (directly using stored fields, including metadata)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -507,13 +507,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
             details: details,
-            metadata: dbRecord.metadata  // ✅ 包含 metadata
+            metadata: dbRecord.metadata  // Include metadata
           };
 
           invoices.push(invoice);
         } catch (error) {
           console.error(`Failed to decrypt invoice ${dbRecord.invoiceHash}:`, error);
-          // 继续处理其他发票（即使解密失败，也保留基本信息）
+          // Continue processing other invoices (even if decryption fails, retain basic information)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -524,87 +524,87 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
             details: undefined,
-            metadata: dbRecord.metadata  // ✅ 包含 metadata
+            metadata: dbRecord.metadata  // Include metadata
           };
           invoices.push(invoice);
         }
       }
-      
-      // 3. ✅ 更新内存状态（如果 refreshMemory 为 true）
+
+      // 3. Update memory state (if refreshMemory is true)
       if (refreshMemory) {
-        // ✅ 使用函数式更新确保状态正确更新
+        // Use functional update to ensure state is correctly updated
         set((state) => {
-          // ✅ 重建 sending 索引
+          // Rebuild sending index
           const newSending: Record<AleoField, true> = {};
           for (const invoice of invoices) {
             if (invoice.metadata?.confirmationStatus === 'SENDING') {
               newSending[invoice.invoiceHash] = true;
             }
           }
-          
+
           return {
             ...state,
             invoices: invoices,
             sendingInvoiceHashes: newSending
           };
         });
-        console.log(`✅ [Store.getAllInvoices] Updated memory state with ${invoices.length} invoices`);
+        console.log(`[Store.getAllInvoices] Updated memory state with ${invoices.length} invoices`);
         const sendingCount = Object.keys(get().sendingInvoiceHashes).length;
         if (sendingCount > 0) {
-          console.log(`📤 [Store.getAllInvoices] Found ${sendingCount} SENDING invoice(s)`);
+          console.log(`[Store.getAllInvoices] Found ${sendingCount} SENDING invoice(s)`);
         }
         if (!masterKey && invoices.length > 0) {
-          console.log(`💡 [Store.getAllInvoices] Details not decrypted (no masterKey)`);
+          console.log(`[Store.getAllInvoices] Details not decrypted (no masterKey)`);
         }
       }
-      
+
       return invoices;
     } catch (error) {
-      console.error('❌ [Store.getAllInvoices] Failed to load from IndexedDB:', error);
+      console.error('[Store.getAllInvoices] Failed to load from IndexedDB:', error);
       throw error;
     }
   },
 
   /**
-   * ✅ 批量设置发票：接收数组 → 清空 IndexedDB → 保存新数据 → 更新内存
-   * 实现真正的重置：确保 IndexedDB 和内存状态完全一致
+   * Batch set invoices: receive array -> clear IndexedDB -> save new data -> update memory
+   * Implements a true reset: ensures IndexedDB and memory state are fully consistent
    */
   setInvoices: async (invoices, options = {}) => {
-    const { masterKey, persistFull = true, metadata } = options; // ✅ 添加 metadata 参数
-    
-    // 1. ✅ 批量保存到 IndexedDB（如果启用）
+    const { masterKey, persistFull = true, metadata } = options; // Added metadata parameter
+
+    // 1. Batch save to IndexedDB (if enabled)
     if (persistFull && masterKey) {
       try {
         const storageService = getStorageService();
-        
-        // ✅ 先清空整个表（实现真正的重置）
-        // 获取所有现有数据，然后删除它们
+
+        // First clear the entire table (implement a true reset)
+        // Get all existing data, then delete them
         const allExistingData = await storageService.getAllData<InvoiceStorageData>(INVOICE_TABLE);
         console.log('allExistingData', allExistingData)
         if (allExistingData.length > 0) {
           const allKeys = allExistingData.map(item => item.id);
           await storageService.deleteData(INVOICE_TABLE, allKeys);
-          console.log(`✅ [Store.setInvoices] Cleared ${allKeys.length} existing invoices from IndexedDB`);
+          console.log(`[Store.setInvoices] Cleared ${allKeys.length} existing invoices from IndexedDB`);
         }
-        
-        // 准备批量数据
+
+        // Prepare batch data
         const dataList: Array<{ key: string; data: InvoiceStorageData }> = [];
-        
+
         for (const invoice of invoices) {
           try {
-            // 加密 details（如果存在）
+            // Encrypt details (if present)
             const encryptedDetails = invoice.details
               ? await getCryptoService().encryptInvoiceDetails(invoice.details, masterKey)
               : null;
 
-            // ✅ 使用传入的 metadata 或默认值
+            // Use the provided metadata or default values
             const invoiceMetadata = metadata || {
               confirmationStatus: 'SENDING' as ChainConfirmationStatus,
               lastUpdated: new Date(),
               dataSource: 'local' as const
             };
 
-            // 构建存储数据（直接使用 Invoice 的基本字段）
+            // Build storage data (directly using Invoice's basic fields)
             const storageData: InvoiceStorageData = {
               id: invoice.id,
               invoiceHash: invoice.invoiceHash,
@@ -615,83 +615,83 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               createdAt: invoice.createdAt,
               status: invoice.status,
               encryptedDetails: encryptedDetails,
-              metadata: invoiceMetadata // ✅ 使用传入的 metadata
+              metadata: invoiceMetadata // Use the provided metadata
             };
 
             dataList.push({
-              key: invoice.id,  // ✅ 使用 invoiceId 作为 key
+              key: invoice.id,  // Use invoiceId as key
               data: storageData
             });
           } catch (error) {
             console.error(`Failed to prepare invoice ${invoice.invoiceHash} for storage:`, error);
-            // 继续处理其他发票
+            // Continue processing other invoices
           }
         }
 
-        // ✅ 添加新数据
+        // Add new data
         if (dataList.length > 0) {
           await storageService.addData(INVOICE_TABLE, dataList);
-          console.log(`✅ [Store.setInvoices] Saved ${dataList.length} invoices to IndexedDB`);
+          console.log(`[Store.setInvoices] Saved ${dataList.length} invoices to IndexedDB`);
         } else {
-          console.log(`✅ [Store.setInvoices] No new invoices to save (IndexedDB already cleared)`);
+          console.log(`[Store.setInvoices] No new invoices to save (IndexedDB already cleared)`);
         }
       } catch (error) {
-        console.error('❌ [Store.setInvoices] Failed to persist to IndexedDB:', error);
-        // 持久化失败时抛出错误，不更新内存，保持数据库和内存同步
+        console.error('[Store.setInvoices] Failed to persist to IndexedDB:', error);
+        // Throw error on persistence failure, do not update memory, keep DB and memory in sync
         throw error;
       }
     }
-    
-    // 2. ✅ 更新内存状态（仅在持久化成功或不需要持久化时）
-    // ✅ 同时重建 sending 索引
+
+    // 2. Update memory state (only when persistence succeeds or is not required)
+    // Also rebuild the sending index
     const newSending: Record<AleoField, true> = {};
     for (const invoice of invoices) {
       if (invoice.metadata?.confirmationStatus === 'SENDING') {
         newSending[invoice.invoiceHash] = true;
       }
     }
-    
+
     set({
       invoices: invoices,
       sendingInvoiceHashes: newSending
     });
-    
+
     const sendingCount = Object.keys(newSending).length;
-    console.log(`✅ [Store.setInvoices] Updated memory state with ${invoices.length} invoices`);
+    console.log(`[Store.setInvoices] Updated memory state with ${invoices.length} invoices`);
     if (sendingCount > 0) {
-      console.log(`📤 [Store.setInvoices] Rebuilt sending index with ${sendingCount} SENDING invoice(s)`);
+      console.log(`[Store.setInvoices] Rebuilt sending index with ${sendingCount} SENDING invoice(s)`);
     }
   },
 
   /**
-   * ✅ 设置当前 invoice
+   * Set the current invoice
    */
   setCurrentInvoice: async (hash, options = {}) => {
     const { masterKey } = options;
-    
+
     if (!hash) {
       set({ currentInvoice: null });
       return;
     }
 
     const state = get();
-    
-    // 1. 先从内存查找
+
+    // 1. First search from memory
     let invoice = state.invoices.find((inv) => inv.invoiceHash === hash);
-    
-    // 2. 如果内存没有，从 IndexedDB 加载（复用 getInvoiceByHash 的逻辑）
+
+    // 2. If not in memory, load from IndexedDB (reusing getInvoiceByHash logic)
     if (!invoice && masterKey) {
       try {
         const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
         const dbRecord = allDBRecords.find(record => record.invoiceHash === hash);
-        
+
         if (dbRecord) {
-          // 解密 details（如果存在）
+          // Decrypt details (if present)
           const details = dbRecord.encryptedDetails
             ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // 构建完整发票对象（包含 metadata）
+          // Build complete invoice object (including metadata)
           invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -705,30 +705,30 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             metadata: dbRecord.metadata
           };
 
-          // 更新内存状态（如果 invoice 不在内存中）
+          // Update memory state (if invoice is not in memory)
           set((state) => ({
             invoices: [...state.invoices, invoice!]
           }));
         }
       } catch (error) {
-        console.error('❌ [Store.setCurrentInvoice] Failed to load from IndexedDB:', error);
+        console.error('[Store.setCurrentInvoice] Failed to load from IndexedDB:', error);
       }
     }
 
     if (invoice) {
-      // 3. 如果 invoice 没有 metadata，从 IndexedDB 获取
+      // 3. If invoice has no metadata, fetch from IndexedDB
       if (!invoice.metadata) {
         try {
           const allDBRecords = await getStorageService().getAllData<InvoiceStorageData>(INVOICE_TABLE);
           const dbRecord = allDBRecords.find(record => record.invoiceHash === hash);
-          
+
           if (dbRecord?.metadata) {
             invoice = {
               ...invoice,
               metadata: dbRecord.metadata
             };
           } else {
-            // 如果没有 metadata，添加默认值
+            // If no metadata exists, add default values
             invoice = {
               ...invoice,
               metadata: {
@@ -739,8 +739,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             };
           }
         } catch (error) {
-          console.error('❌ [Store.setCurrentInvoice] Failed to load metadata:', error);
-          // 添加默认 metadata
+          console.error('[Store.setCurrentInvoice] Failed to load metadata:', error);
+          // Add default metadata
           invoice = {
             ...invoice,
             metadata: {
@@ -751,30 +751,30 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           };
         }
       }
-      
+
       set({ currentInvoice: invoice });
-      console.log('✅ [Store.setCurrentInvoice] Set current invoice:', hash);
+      console.log('[Store.setCurrentInvoice] Set current invoice:', hash);
     } else {
       set({ currentInvoice: null });
-      console.warn('⚠️ [Store.setCurrentInvoice] Invoice not found:', hash);
+      console.warn('[Store.setCurrentInvoice] Invoice not found:', hash);
     }
   },
 
   // ---------------------------------------------------------------------------
-  // ✅ SENDING 管理（统一入口：用户操作后立即写入，轮询确认后移除）
+  // SENDING management (unified entry: write immediately after user action, remove after polling confirmation)
   // ---------------------------------------------------------------------------
 
   /**
-   * ✅ 标记发票进入 SENDING（只更新内存索引；是否持久化由调用方 updateInvoice 决定）
+   * Mark invoice as SENDING (only updates memory index; persistence is determined by the caller via updateInvoice)
    */
   markInvoiceSending: (invoiceHash: AleoField) => {
     set((state) => {
-      // 如果已经在 sending 列表中，不重复添加
+      // If already in the sending list, do not add again
       if (state.sendingInvoiceHashes[invoiceHash]) {
         return state;
       }
-      
-      console.log(`📤 [Store.markInvoiceSending] Adding to sending: ${invoiceHash}`);
+
+      console.log(`[Store.markInvoiceSending] Adding to sending: ${invoiceHash}`);
       return {
         sendingInvoiceHashes: {
           ...state.sendingInvoiceHashes,
@@ -785,18 +785,18 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 标记发票已确认（从 sending 索引移除）
+   * Mark invoice as confirmed (remove from sending index)
    */
   markInvoiceConfirmed: (invoiceHash: AleoField) => {
     set((state) => {
       if (!state.sendingInvoiceHashes[invoiceHash]) {
         return state;
       }
-      
-      console.log(`✅ [Store.markInvoiceConfirmed] Removing from sending: ${invoiceHash}`);
+
+      console.log(`[Store.markInvoiceConfirmed] Removing from sending: ${invoiceHash}`);
       const newSending = { ...state.sendingInvoiceHashes };
       delete newSending[invoiceHash];
-      
+
       return {
         sendingInvoiceHashes: newSending
       };
@@ -804,7 +804,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 获取当前所有 SENDING 发票 hash 列表
+   * Get the list of all currently SENDING invoice hashes
    */
   getSendingInvoiceHashes: () => {
     const state = get();
@@ -812,27 +812,27 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   /**
-   * ✅ 基于 invoices 重新构建 sending 索引（初始化/批量覆盖时使用）
-   * 扫描所有 invoices，将 confirmationStatus === 'SENDING' 的发票加入索引
+   * Rebuild sending index based on invoices (used during initialization/batch overwrite)
+   * Scans all invoices and adds those with confirmationStatus === 'SENDING' to the index
    */
   rebuildSendingIndex: () => {
     const state = get();
     const newSending: Record<AleoField, true> = {};
-    
+
     for (const invoice of state.invoices) {
       if (invoice.metadata?.confirmationStatus === 'SENDING') {
         newSending[invoice.invoiceHash] = true;
       }
     }
-    
-    // 同时检查 currentInvoice
+
+    // Also check currentInvoice
     if (state.currentInvoice?.metadata?.confirmationStatus === 'SENDING') {
       newSending[state.currentInvoice.invoiceHash] = true;
     }
-    
+
     const count = Object.keys(newSending).length;
-    console.log(`🔄 [Store.rebuildSendingIndex] Rebuilt index with ${count} SENDING invoice(s)`);
-    
+    console.log(`[Store.rebuildSendingIndex] Rebuilt index with ${count} SENDING invoice(s)`);
+
     set({ sendingInvoiceHashes: newSending });
   }
 }));

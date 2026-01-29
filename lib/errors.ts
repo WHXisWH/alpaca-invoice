@@ -3,29 +3,29 @@ import { WalletError } from '@/services/WalletService/IWalletService';
 import { ProtocolError } from '@/services/AleoProtocolService/IAleoProtocolService';
 
 /**
- * 用户友好的错误类型（面向 UI 层）
+ * User-friendly error types (for the UI layer)
  */
 export enum ErrorType {
-  // 钱包相关
+  // Wallet related
   WALLET_NOT_CONNECTED = 'WALLET_NOT_CONNECTED',
   WALLET_NOT_INSTALLED = 'WALLET_NOT_INSTALLED',
   WALLET_CONNECTION_FAILED = 'WALLET_CONNECTION_FAILED',
   WALLET_NETWORK_MISMATCH = 'WALLET_NETWORK_MISMATCH',
   INSUFFICIENT_BALANCE = 'INSUFFICIENT_BALANCE',
-  
-  // 交易相关
+
+  // Transaction related
   TRANSACTION_FAILED = 'TRANSACTION_FAILED',
   TRANSACTION_REJECTED = 'TRANSACTION_REJECTED',
   PROOF_GENERATION_FAILED = 'PROOF_GENERATION_FAILED',
   BROADCAST_FAILED = 'BROADCAST_FAILED',
-  
-  // 发票相关
+
+  // Invoice related
   INVOICE_NOT_FOUND = 'INVOICE_NOT_FOUND',
   INVOICE_ALREADY_PAID = 'INVOICE_ALREADY_PAID',
   INVOICE_CANCELLED = 'INVOICE_CANCELLED',
   INVALID_INVOICE_DATA = 'INVALID_INVOICE_DATA',
-  
-  // 系统错误
+
+  // System errors
   NETWORK_ERROR = 'NETWORK_ERROR',
   STORAGE_ERROR = 'STORAGE_ERROR',
   DECRYPTION_FAILED = 'DECRYPTION_FAILED',
@@ -33,7 +33,7 @@ export enum ErrorType {
 }
 
 /**
- * 应用级错误类
+ * Application-level error class
  */
 export class AppError extends Error {
   constructor(
@@ -48,89 +48,89 @@ export class AppError extends Error {
 }
 
 /**
- * 错误消息映射表
+ * Error message mapping table
  */
 export const ERROR_MESSAGES: Record<ErrorType, { title: string; description: string }> = {
   [ErrorType.WALLET_NOT_CONNECTED]: {
-    title: '钱包未连接',
-    description: '请先连接您的 Aleo 钱包'
+    title: 'Wallet Not Connected',
+    description: 'Please connect your Aleo wallet first'
   },
   [ErrorType.WALLET_NOT_INSTALLED]: {
-    title: '未检测到钱包插件',
-    description: '未检测到 Leo Wallet 插件，请先安装插件并刷新页面'
+    title: 'Wallet Extension Not Detected',
+    description: 'Leo Wallet extension not detected. Please install the extension and refresh the page'
   },
   [ErrorType.WALLET_CONNECTION_FAILED]: {
-    title: '钱包连接失败',
-    description: '无法连接到钱包，请在钱包中确认授权并重试'
+    title: 'Wallet Connection Failed',
+    description: 'Unable to connect to wallet. Please confirm authorization in your wallet and try again'
   },
   [ErrorType.WALLET_NETWORK_MISMATCH]: {
-    title: '网络不匹配',
-    description: '请在钱包中切换到正确的网络'
+    title: 'Network Mismatch',
+    description: 'Please switch to the correct network in your wallet'
   },
   [ErrorType.INSUFFICIENT_BALANCE]: {
-    title: '余额不足',
-    description: '您的账户余额不足以完成此操作'
+    title: 'Insufficient Balance',
+    description: 'Your account balance is insufficient to complete this operation'
   },
   [ErrorType.TRANSACTION_FAILED]: {
-    title: '交易失败',
-    description: '交易执行失败，请稍后重试'
+    title: 'Transaction Failed',
+    description: 'Transaction execution failed. Please try again later'
   },
   [ErrorType.TRANSACTION_REJECTED]: {
-    title: '交易已拒绝',
-    description: '您已取消此次交易'
+    title: 'Transaction Rejected',
+    description: 'You have cancelled this transaction'
   },
   [ErrorType.PROOF_GENERATION_FAILED]: {
-    title: '证明生成失败',
-    description: 'ZK 证明生成失败，请重试'
+    title: 'Proof Generation Failed',
+    description: 'ZK proof generation failed. Please try again'
   },
   [ErrorType.BROADCAST_FAILED]: {
-    title: '广播失败',
-    description: '交易广播到网络失败，请检查网络连接'
+    title: 'Broadcast Failed',
+    description: 'Failed to broadcast transaction to the network. Please check your network connection'
   },
   [ErrorType.INVOICE_NOT_FOUND]: {
-    title: '发票不存在',
-    description: '未找到指定的发票'
+    title: 'Invoice Not Found',
+    description: 'The specified invoice was not found'
   },
   [ErrorType.INVOICE_ALREADY_PAID]: {
-    title: '发票已支付',
-    description: '此发票已经完成支付'
+    title: 'Invoice Already Paid',
+    description: 'This invoice has already been paid'
   },
   [ErrorType.INVOICE_CANCELLED]: {
-    title: '发票已取消',
-    description: '此发票已被取消'
+    title: 'Invoice Cancelled',
+    description: 'This invoice has been cancelled'
   },
   [ErrorType.INVALID_INVOICE_DATA]: {
-    title: '发票数据无效',
-    description: '发票数据格式不正确'
+    title: 'Invalid Invoice Data',
+    description: 'The invoice data format is incorrect'
   },
   [ErrorType.NETWORK_ERROR]: {
-    title: '网络错误',
-    description: '网络连接失败，请检查您的网络连接'
+    title: 'Network Error',
+    description: 'Network connection failed. Please check your network connection'
   },
   [ErrorType.STORAGE_ERROR]: {
-    title: '存储错误',
-    description: '本地数据存储失败'
+    title: 'Storage Error',
+    description: 'Local data storage failed'
   },
   [ErrorType.DECRYPTION_FAILED]: {
-    title: '解密失败',
-    description: '无法解密数据，请检查您的私钥'
+    title: 'Decryption Failed',
+    description: 'Unable to decrypt data. Please check your private key'
   },
   [ErrorType.UNKNOWN_ERROR]: {
-    title: '未知错误',
-    description: '发生了意外错误，请稍后重试'
+    title: 'Unknown Error',
+    description: 'An unexpected error occurred. Please try again later'
   }
 };
 
 /**
- * Service 错误到 AppError 的映射表
+ * Service error to AppError mapping table
  */
 const SERVICE_ERROR_MAPPINGS: Record<string, Record<string, ErrorType>> = {
   WalletService: {
     [WalletError.NOT_INSTALLED]: ErrorType.WALLET_NOT_INSTALLED,
-    [WalletError.USER_REJECTED]: ErrorType.TRANSACTION_REJECTED, // 用户拒绝连接应该视为交易拒绝
+    [WalletError.USER_REJECTED]: ErrorType.TRANSACTION_REJECTED, // User rejecting connection should be treated as transaction rejection
     [WalletError.INSUFFICIENT_FEE]: ErrorType.INSUFFICIENT_BALANCE,
     [WalletError.NETWORK_MISMATCH]: ErrorType.WALLET_NETWORK_MISMATCH,
-    [WalletError.UNAUTHORIZED]: ErrorType.WALLET_CONNECTION_FAILED, // 连接失败（而不是"未连接"状态）
+    [WalletError.UNAUTHORIZED]: ErrorType.WALLET_CONNECTION_FAILED, // Connection failed (not "not connected" state)
     [WalletError.DECRYPTION_FAILED]: ErrorType.DECRYPTION_FAILED
   },
   AleoProtocol: {
@@ -143,23 +143,23 @@ const SERVICE_ERROR_MAPPINGS: Record<string, Record<string, ErrorType>> = {
 };
 
 /**
- * 将任何错误转换为 AppError
+ * Convert any error to an AppError
  */
 export function toAppError(error: any): AppError {
   if (error instanceof AppError) {
     return error;
   }
 
-  // 处理所有 ServiceError
+  // Handle all ServiceErrors
   if (error instanceof ServiceError) {
     const mapping = SERVICE_ERROR_MAPPINGS[error.serviceName];
     const errorType = mapping?.[error.code] || ErrorType.UNKNOWN_ERROR;
     const message = ERROR_MESSAGES[errorType];
 
-    // 优先展示 ServiceError.details.hint（如果有），否则使用默认文案
+    // Prefer displaying ServiceError.details.hint (if available), otherwise use default message
     const hint =
       typeof error?.details?.hint === 'string' ? error.details.hint.trim() : '';
-    const description = hint ? `${message.description}（${hint}）` : message.description;
+    const description = hint ? `${message.description} (${hint})` : message.description;
 
     return new AppError(
       errorType,
@@ -169,9 +169,9 @@ export function toAppError(error: any): AppError {
     );
   }
 
-  // 处理其他未知错误
+  // Handle other unknown errors
   const errorMessage = error?.message?.toLowerCase() || '';
-  
+
   if (errorMessage.includes('user rejected') || errorMessage.includes('user denied')) {
     return new AppError(
       ErrorType.TRANSACTION_REJECTED,
@@ -180,7 +180,7 @@ export function toAppError(error: any): AppError {
       error
     );
   }
-  
+
   if (errorMessage.includes('insufficient')) {
     return new AppError(
       ErrorType.INSUFFICIENT_BALANCE,
@@ -189,7 +189,7 @@ export function toAppError(error: any): AppError {
       error
     );
   }
-  
+
   if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
     return new AppError(
       ErrorType.NETWORK_ERROR,
@@ -199,7 +199,7 @@ export function toAppError(error: any): AppError {
     );
   }
 
-  // 默认未知错误
+  // Default unknown error
   return new AppError(
     ErrorType.UNKNOWN_ERROR,
     ERROR_MESSAGES[ErrorType.UNKNOWN_ERROR].title,

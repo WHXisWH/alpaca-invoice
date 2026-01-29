@@ -1,32 +1,32 @@
 import { CreateInvoiceParams, AleoTransactionId, AleoField, Invoice } from '@/lib/types'
 
 export interface ITxController {
-  // --- 状态暴露 ---
-  isProcessing: boolean;    // 是否正在生成证明或广播
+  // --- State exposure ---
+  isProcessing: boolean;    // Whether proof generation or broadcast is in progress
   currentProgress: number;  // 0-100
-  currentLog: string;       // 实时日志（如 "Synthesis in progress..."）
+  currentLog: string;       // Real-time log (e.g. "Synthesis in progress...")
 
-  // --- 业务方法 ---
-  /** * 逻辑：
-   * 1. 调用 CryptoService.computeInvoiceHash 计算发票哈希
-   * 2. 调用 WalletService.requestTransaction 请求交易（钱包内部生成 ZKP 证明）
-   * 3. 本地加密归档到 IndexedDB
-   * @returns invoiceHash 用于跳转到发票详情页
+  // --- Business methods ---
+  /** * Logic:
+   * 1. Call CryptoService.computeInvoiceHash to compute the invoice hash
+   * 2. Call WalletService.requestTransaction to request a transaction (wallet internally generates ZKP proof)
+   * 3. Locally encrypt and archive to IndexedDB
+   * @returns invoiceHash used to navigate to the invoice detail page
    */
   executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoField>;
 
-  /** * 逻辑：
-   * 1. 从 Invoice 对象获取所需数据
-   * 2. 调用 WalletService.requestTransaction 请求支付交易（钱包内部生成 ZKP 证明）
-   * 3. 返回交易 ID
+  /** * Logic:
+   * 1. Get required data from the Invoice object
+   * 2. Call WalletService.requestTransaction to request a payment transaction (wallet internally generates ZKP proof)
+   * 3. Return transaction ID
    */
   executePay(invoice: Invoice): Promise<AleoTransactionId>;
 
-  /** * 执行取消发票
-   * 逻辑：
-   * 1. 从 Invoice 对象获取所需数据）
-   * 2. 调用 cancel_invoice transition
-   * 3. 更新本地状态
+  /** * Execute invoice cancellation
+   * Logic:
+   * 1. Get required data from the Invoice object
+   * 2. Call cancel_invoice transition
+   * 3. Update local state
    */
   executeCancel(invoice: Invoice): Promise<AleoTransactionId>;
 }

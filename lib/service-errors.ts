@@ -1,6 +1,6 @@
 /**
- * Service 层通用错误基类
- * 使用泛型来支持不同 Service 的错误枚举
+ * Service layer generic error base class
+ * Uses generics to support different Service error enums
  */
 export class ServiceError<TErrorCode extends string = string> extends Error {
   constructor(
@@ -11,27 +11,27 @@ export class ServiceError<TErrorCode extends string = string> extends Error {
   ) {
     super(message);
     this.name = `${serviceName}Error`;
-    
-    // 保持正确的原型链（TypeScript 需要）
+
+    // Maintain correct prototype chain (required by TypeScript)
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
   /**
-   * 判断是否为特定类型的错误
+   * Check if this is a specific type of error
    */
   is(code: TErrorCode): boolean {
     return this.code === code;
   }
 
   /**
-   * 判断是否为多个错误类型之一
+   * Check if this is one of multiple error types
    */
   isOneOf(codes: TErrorCode[]): boolean {
     return codes.includes(this.code);
   }
 
   /**
-   * 获取完整的错误信息（用于日志）
+   * Get the complete error information (for logging)
    */
   toJSON() {
     return {
@@ -45,7 +45,7 @@ export class ServiceError<TErrorCode extends string = string> extends Error {
 }
 
 /**
- * 创建特定 Service 的错误类工厂
+ * Factory function to create error classes for a specific Service
  */
 export function createServiceError<TErrorCode extends string>(
   serviceName: string

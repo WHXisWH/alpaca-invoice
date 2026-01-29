@@ -1,58 +1,58 @@
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 
 /**
- * 🌐 Aleo 网络归一化处理
- * * 解决不同来源（环境变量、钱包插件、RPC 节点）对网络命名不一致的问题：
- * - 环境变量通常简写为: "mainnet", "testnet"
- * - 钱包适配器使用: "mainnetbeta", "testnet3", "testnetbeta"
- * - RPC Chain ID 要求: "mainnet", "testnet3", "testnetbeta"
+ * Aleo network normalization
+ * Resolves inconsistent network naming across different sources (environment variables, wallet extensions, RPC nodes):
+ * - Environment variables typically use shorthand: "mainnet", "testnet"
+ * - Wallet adapter uses: "mainnetbeta", "testnet3", "testnetbeta"
+ * - RPC Chain ID requires: "mainnet", "testnet3", "testnetbeta"
  */
 
 /**
- * 核心转换逻辑：将任何可能的字符串输入映射为标准的 WalletAdapterNetwork 枚举
+ * Core conversion logic: map any possible string input to a standard WalletAdapterNetwork enum
  */
 export function normalizeNetwork(input: string | undefined | null): WalletAdapterNetwork {
   const net = (input || '').toLowerCase().trim();
 
   switch (net) {
-    // 归一化为 MainnetBeta
+    // Normalize to MainnetBeta
     case 'mainnet':
     case 'mainnetbeta':
     case WalletAdapterNetwork.MainnetBeta:
       return WalletAdapterNetwork.MainnetBeta;
 
-    // 归一化为 Testnet (遗留的 Testnet3)
+    // Normalize to Testnet (legacy Testnet3)
     case 'testnet':
     case 'testnet3':
     case WalletAdapterNetwork.Testnet:
       return WalletAdapterNetwork.Testnet;
 
-    // 归一化为 Testnet Beta (当前主流)
+    // Normalize to Testnet Beta (current mainstream)
     case 'testnetbeta':
     case WalletAdapterNetwork.TestnetBeta:
       return WalletAdapterNetwork.TestnetBeta;
 
     default:
-      // 如果无法识别，默认返回环境变量配置，若环境变量也无则返回 TestnetBeta
+      // If unrecognized, default to environment variable configuration; if env var is also absent, return TestnetBeta
       const envNet = process.env.NEXT_PUBLIC_ALEO_NETWORK;
       return envNet ? normalizeNetwork(envNet) : WalletAdapterNetwork.TestnetBeta;
   }
 }
 
 /**
- * 从环境变量初始化默认网络配置
+ * Initialize default network configuration from environment variables
  */
 export function getNetworkFromEnv(): WalletAdapterNetwork {
   return normalizeNetwork(process.env.NEXT_PUBLIC_ALEO_NETWORK);
 }
 
 /**
- * 获取网络显示名称
- * 用于 UI Header 或 状态展示
+ * Get network display name
+ * Used for UI Header or status display
  */
 export function getNetworkDisplayName(network: string | WalletAdapterNetwork): string {
   const normalized = normalizeNetwork(network.toString());
-  
+
   switch (normalized) {
     case WalletAdapterNetwork.MainnetBeta:
       return 'Mainnet';
@@ -66,11 +66,11 @@ export function getNetworkDisplayName(network: string | WalletAdapterNetwork): s
 }
 
 /**
- * 获取网络徽章的 CSS 类名 (Tailwind)
+ * Get CSS class names for the network badge (Tailwind)
  */
 export function getNetworkBadgeClass(network: string | WalletAdapterNetwork): string {
   const normalized = normalizeNetwork(network.toString());
-  
+
   switch (normalized) {
     case WalletAdapterNetwork.MainnetBeta:
       return 'bg-green-100 text-green-700 border-green-200';
@@ -84,15 +84,15 @@ export function getNetworkBadgeClass(network: string | WalletAdapterNetwork): st
 }
 
 /**
- * 将网络标识转换为 Chain ID 字符串
- * 用于向钱包发起 Transaction 或查询 RPC 节点
+ * Convert network identifier to Chain ID string
+ * Used when submitting Transactions to the wallet or querying RPC nodes
  */
 export function getChainIdFromNetwork(network: string | WalletAdapterNetwork): string {
   const normalized = normalizeNetwork(network.toString());
 
   switch (normalized) {
     case WalletAdapterNetwork.MainnetBeta:
-      // ⚠️ 重要：Aleo 官方 RPC 节点识别 "mainnet" 而非 "mainnetbeta"
+      // Important: Aleo official RPC nodes recognize "mainnet" rather than "mainnetbeta"
       return 'mainnet';
     case WalletAdapterNetwork.Testnet:
       return 'testnet3';

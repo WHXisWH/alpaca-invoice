@@ -35,11 +35,11 @@ export default function DashboardPage() {
     isInvoiceSyncing,
   } = useInvoices();
   
-  // ✅ 订阅 store 的 sendingInvoiceHashes（实时更新）
+  // Subscribe to sendingInvoiceHashes in the store (real-time updates)
   const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
   const sendingCount = Object.keys(sendingInvoiceHashes).length;
 
-  // 统计数据
+  // Statistics
   const stats = {
     totalSent: sentInvoices.length,
     totalReceived: receivedInvoices.length,
@@ -57,11 +57,11 @@ export default function DashboardPage() {
     ).length,
     totalPending: pending.length,
     totalComplete: complete.length,
-    // ✅ 新增：实时 SENDING 统计
+    // Real-time SENDING statistics
     totalSending: sendingCount,
   };
 
-  // 显示加载状态
+  // Display loading state
   if (showLoading) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center">
@@ -71,7 +71,7 @@ export default function DashboardPage() {
     );
   }
 
-  // 显示钱包连接提示
+  // Display wallet connection prompt
   if (showWalletPrompt) {
     return (
       <MotionContainer className="flex min-h-[60vh] flex-col items-center justify-center">
@@ -133,7 +133,7 @@ export default function DashboardPage() {
           </p>
         </MotionItem>
         
-        {/* ✅ 新增：SENDING 状态卡片（实时更新） */}
+        {/* SENDING status card (real-time updates) */}
         {stats.totalSending > 0 && (
           <MotionItem className="surface-card-muted card-hover p-5 col-span-2 sm:col-span-1">
             <div className="flex items-center gap-4">

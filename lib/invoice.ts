@@ -4,11 +4,11 @@ import { cleanAleoNumber } from './utils';
 import InvoiceCard from '@/components/invoice-card';
 
 // ============================================================================
-// 发票状态配置
+// Invoice status configuration
 // ============================================================================
 
 /**
- * 发票状态配置
+ * Invoice status configuration
  */
 export interface StatusConfig {
   label: string;
@@ -19,10 +19,10 @@ export interface StatusConfig {
 }
 
 /**
- * 获取发票状态的 UI 配置
- * 
- * @param status - 发票状态
- * @returns 状态配置对象，包含标签、图标、样式类等
+ * Get UI configuration for an invoice status
+ *
+ * @param status - Invoice status
+ * @returns Status configuration object containing label, icon, style classes, etc.
  */
 export function getStatusConfig(status: InvoiceStatus): StatusConfig {
   switch (status) {
@@ -70,30 +70,30 @@ export function getStatusConfig(status: InvoiceStatus): StatusConfig {
 }
 
 // ============================================================================
-// 发票角色判断
+// Invoice role determination
 // ============================================================================
 
 /**
- * 核心角色判断逻辑（纯函数，可复用）
- * 
- * @param publicKey - 当前用户的公钥
- * @param invoice - 发票对象
- * @returns 用户角色：'seller' | 'buyer' | 'unknown' | 'both'
+ * Core role determination logic (pure function, reusable)
+ *
+ * @param publicKey - Current user's public key
+ * @param invoice - Invoice object
+ * @returns User role: 'seller' | 'buyer' | 'unknown' | 'both'
  */
 export function determineInvoiceRole(
   publicKey: string,
   invoice: Invoice
 ): 'seller' | 'buyer' | 'unknown' | 'both' {
   if (!publicKey || !invoice) return 'unknown';
-  
-  // 清理地址字符串，移除可能的可见性修饰符
+
+  // Clean address strings, remove possible visibility modifiers
   const cleanPublicKey = publicKey.replace(/\.(private|public)$/, '');
   const cleanSeller = invoice.seller.replace(/\.(private|public)$/, '');
   const cleanBuyer = invoice.buyer.replace(/\.(private|public)$/, '');
-  
+
   const isSeller = cleanPublicKey === cleanSeller;
   const isBuyer = cleanPublicKey === cleanBuyer;
-  
+
   if (isSeller && isBuyer) return 'both';
   if (isSeller) return 'seller';
   if (isBuyer) return 'buyer';
@@ -101,21 +101,21 @@ export function determineInvoiceRole(
 }
 
 // ============================================================================
-// 发票工具函数
+// Invoice utility functions
 // ============================================================================
 
 /**
- * 从链上 InvoiceRecord 构建 Invoice 对象
- * 
- * @param record - 链上的 InvoiceRecord
- * @param invoiceHash - 发票 hash
- * @returns 构建的 Invoice 对象
+ * Build an Invoice object from an on-chain InvoiceRecord
+ *
+ * @param record - On-chain InvoiceRecord
+ * @param invoiceHash - Invoice hash
+ * @returns Constructed Invoice object
  */
 export function buildInvoiceFromRecord(
   record: AleoInvoiceRecord,
   invoiceHash: AleoField
 ): Invoice {
-  // ✅ 如果 invoice_id 不存在，使用 invoiceHash 作为 fallback
+  // If invoice_id does not exist, use invoiceHash as fallback
   const cleanInvoiceId = (record.invoice_id?.replace(/field\.(private|public)$/, 'field') || invoiceHash) as AleoField;
   const cleanAmount = cleanAleoNumber(record.amount);
   const cleanDueDate = cleanAleoNumber(record.due_date);
@@ -133,16 +133,16 @@ export function buildInvoiceFromRecord(
       ? new Date(Number(cleanCreatedAt) * 1000)
       : new Date(),
     status: Number(cleanStatus) as any,
-    details: undefined // 链上数据不包含 details
+    details: undefined // On-chain data does not include details
   };
 }
 
 /**
- * 从 PaymentRecord 更新 Invoice 对象
- * 
- * @param invoice - 原始发票对象
- * @param paymentRecord - 链上的 PaymentRecord
- * @returns 更新后的发票部分数据
+ * Update an Invoice object from a PaymentRecord
+ *
+ * @param invoice - Original invoice object
+ * @param paymentRecord - On-chain PaymentRecord
+ * @returns Updated partial invoice data
  */
 export function updateInvoiceFromPaymentRecord(
   invoice: Invoice,
@@ -164,17 +164,17 @@ export function updateInvoiceFromPaymentRecord(
 }
 
 /**
- * 从 InvoiceRecord 更新 Invoice 对象
- * 
- * @param invoice - 原始发票对象
- * @param invoiceRecord - 链上的 InvoiceRecord
- * @returns 更新后的发票部分数据
+ * Update an Invoice object from an InvoiceRecord
+ *
+ * @param invoice - Original invoice object
+ * @param invoiceRecord - On-chain InvoiceRecord
+ * @returns Updated partial invoice data
  */
 export function updateInvoiceFromInvoiceRecord(
   invoice: Invoice,
   invoiceRecord: AleoInvoiceRecord
 ): Partial<Invoice> {
-  // ✅ 如果 invoice_id 不存在，使用原 invoice.id 作为 fallback
+  // If invoice_id does not exist, use original invoice.id as fallback
   const cleanInvoiceId = (invoiceRecord.invoice_id?.replace(/field\.(private|public)$/, 'field') || invoice.id) as AleoField;
   const cleanAmount = cleanAleoNumber(invoiceRecord.amount);
   const cleanDueDate = cleanAleoNumber(invoiceRecord.due_date);
@@ -196,27 +196,27 @@ export function updateInvoiceFromInvoiceRecord(
 }
 
 /**
- * 清理 Aleo 字段的可见性修饰符
- * 
- * @param field - Aleo 字段字符串
- * @returns 清理后的字段字符串
+ * Clean Aleo field visibility modifiers
+ *
+ * @param field - Aleo field string
+ * @returns Cleaned field string
  */
 export function cleanAleoField(field: string): string {
   return field.replace(/field\.(private|public)$/, 'field');
 }
 
 /**
- * 按 invoice_id 去重 InvoiceRecord Map
- * 如果有多个相同 invoice_id 的 record，优先选择 spent 为 false 的
- * 
- * @param recordsByHash - 按 invoice_hash 索引的 InvoiceRecord Map（已包含 originalInvoiceId）
- * @param rawRecords - 原始 record 对象数组（用于提取 spent 状态）
- * @returns 按 invoice_id 索引的去重后的 Map，包含 record 和 invoiceHash
+ * Deduplicate InvoiceRecord Map by invoice_id
+ * If there are multiple records with the same invoice_id, prefer the one with spent set to false
+ *
+ * @param recordsByHash - InvoiceRecord Map indexed by invoice_hash (already contains originalInvoiceId)
+ * @param rawRecords - Array of raw record objects (used to extract spent status)
+ * @returns Deduplicated Map indexed by invoice_id, containing record and invoiceHash
  */
 export function deduplicateInvoiceRecordsByInvoiceId(
   recordsByHash: Map<string, AleoInvoiceRecord & { originalInvoiceId?: string }>,
-  rawRecords: Array<{ 
-    data: any; 
+  rawRecords: Array<{
+    data: any;
     spent: boolean;
     invoiceHash: string;
   }>
@@ -231,24 +231,24 @@ export function deduplicateInvoiceRecordsByInvoiceId(
     statusNum: number;
   }>();
 
-  // 构建 rawRecords 的索引（按 invoiceHash，用于获取 spent 状态）
+  // Build an index of rawRecords (by invoiceHash, to get spent status)
   const rawRecordsByHash = new Map<string, boolean>();
   for (const rawRecord of rawRecords) {
     rawRecordsByHash.set(rawRecord.invoiceHash, rawRecord.spent);
   }
 
-  // 遍历所有 InvoiceRecord，按 invoice_id 去重
+  // Iterate through all InvoiceRecords, deduplicate by invoice_id
   for (const [invoiceHash, record] of recordsByHash.entries()) {
     const cleanInvoiceId = cleanAleoField(record.invoice_id || '');
     if (!cleanInvoiceId) {
-      continue; // 跳过没有 invoice_id 的 record
+      continue; // Skip records without invoice_id
     }
 
     const isSpent = rawRecordsByHash.get(invoiceHash) || false;
     const statusNum = Number(cleanAleoNumber(record.status));
 
     const candidate = {
-      record: record, // record 已经包含 originalInvoiceId
+      record: record, // record already contains originalInvoiceId
       invoiceHash: invoiceHash,
       spent: isSpent,
       statusNum: statusNum
@@ -256,20 +256,20 @@ export function deduplicateInvoiceRecordsByInvoiceId(
 
     const existing = recordsMap.get(cleanInvoiceId);
 
-    // ✅ 选择策略：
-    // 1. 优先选择 unspent 的 record（spent === false）
-    // 2. 如果 spent 状态相同，优先选择 status 更大的（cancelled=2 > pending=0）
-    const shouldReplace = !existing || 
-      (existing.spent && !isSpent) || // 现有的是 spent，候选的是 unspent
-      (existing.spent === isSpent && statusNum > existing.statusNum); // spent 相同，选择 status 更大的
+    // Selection strategy:
+    // 1. Prefer unspent records (spent === false)
+    // 2. If spent status is the same, prefer the one with a higher status (cancelled=2 > pending=0)
+    const shouldReplace = !existing ||
+      (existing.spent && !isSpent) || // Existing is spent, candidate is unspent
+      (existing.spent === isSpent && statusNum > existing.statusNum); // Same spent status, select higher status
 
     if (shouldReplace) {
       recordsMap.set(cleanInvoiceId, candidate);
-      console.log(`✅ [deduplicateInvoiceRecordsByInvoiceId] Selected record for invoice_id ${cleanInvoiceId}: spent=${isSpent}, status=${statusNum}, hash=${invoiceHash}`);
+      console.log(`[deduplicateInvoiceRecordsByInvoiceId] Selected record for invoice_id ${cleanInvoiceId}: spent=${isSpent}, status=${statusNum}, hash=${invoiceHash}`);
     }
   }
 
-  // 转换为最终格式
+  // Convert to final format
   const result = new Map<string, {
     record: AleoInvoiceRecord & { originalInvoiceId?: string };
     invoiceHash: string;
@@ -281,6 +281,6 @@ export function deduplicateInvoiceRecordsByInvoiceId(
     });
   }
 
-  console.log(`✅ [deduplicateInvoiceRecordsByInvoiceId] Deduplicated ${recordsByHash.size} records to ${result.size} unique invoice_ids`);
+  console.log(`[deduplicateInvoiceRecordsByInvoiceId] Deduplicated ${recordsByHash.size} records to ${result.size} unique invoice_ids`);
   return result;
 }

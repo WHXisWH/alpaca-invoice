@@ -10,8 +10,8 @@ import { toast } from 'sonner';
 
 /**
  * useAuthCheck Hook
- * 独立的授权检查和处理逻辑
- * 可在多个地方复用（列表页、详情页等）
+ * Standalone authorization check and handling logic
+ * Can be reused across multiple pages (list page, detail page, etc.)
  */
 export function useAuthCheck() {
   const wallet = useWallet();
@@ -19,22 +19,22 @@ export function useAuthCheck() {
   const { handleError } = useErrorHandler();
   const [isRequestingAuth, setIsRequestingAuth] = useState(false);
 
-  // 使用 useMemo 缓存服务实例
-  const walletService = useMemo(() => 
+  // Cache service instances with useMemo
+  const walletService = useMemo(() =>
     wallet ? new WalletService(createWalletAdapter(wallet)) : null,
     [wallet]
   );
   const cryptoService = useMemo(() => new CryptoService(), []);
 
   /**
-   * 检查是否需要授权
+   * Check if authorization is required
    */
   const isAuthRequired = useMemo((): boolean => {
     return !masterKey && !!publicKey && !!wallet?.connected;
   }, [masterKey, publicKey, wallet?.connected]);
 
   /**
-   * 处理解锁（请求授权并派生 masterKey）
+   * Handle unlock (request authorization and derive masterKey)
    */
   const handleUnlock = useCallback(async () => {
     if (!walletService || !publicKey) {
@@ -48,7 +48,7 @@ export function useAuthCheck() {
     try {
       toast.loading('Requesting authorization...', { id: 'auth-unlock' });
 
-      // 请求签名
+      // Request signature
       const signature = await walletService.signMessage(
         'Authorize Access',
         publicKey
@@ -61,17 +61,17 @@ export function useAuthCheck() {
         );
       }
 
-      // 从签名派生主密钥
+      // Derive master key from signature
       const derivedMasterKey = await cryptoService.deriveMasterKey(signature);
       setMasterKey(derivedMasterKey);
-      
+
       toast.success('Authorization successful', {
         id: 'auth-unlock',
         description: 'You can now access your private invoice data'
       });
     } catch (error: any) {
       console.error('Failed to unlock:', error);
-      
+
       if (error instanceof WalletServiceError && error.code === WalletError.USER_REJECTED) {
         toast.error('Authorization cancelled', {
           id: 'auth-unlock',
@@ -83,7 +83,7 @@ export function useAuthCheck() {
           description: error instanceof Error ? error.message : 'Unknown error occurred'
         });
       }
-      
+
       handleError(error as Error);
     } finally {
       setIsRequestingAuth(false);
