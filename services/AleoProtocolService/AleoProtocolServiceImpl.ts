@@ -9,11 +9,11 @@ import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAl
 import { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
 
 /**
- * AleoProtocolService 实现类
- * 
- * 职责：与 Aleo 区块链节点交互，查询链上数据和广播交易
- * 
- * 使用 @provablehq/sdk 的 AleoNetworkClient 自动处理 URL 拼接和版本兼容问题
+ * AleoProtocolService implementation class
+ *
+ * Responsibilities: Interacts with Aleo blockchain nodes to query on-chain data and broadcast transactions
+ *
+ * Uses @provablehq/sdk's AleoNetworkClient to automatically handle URL construction and version compatibility
  */
 export class AleoProtocolService implements IAleoProtocolService {
   private networkClient: AleoNetworkClient;
@@ -27,21 +27,21 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 获取或创建 ProgramManager 实例（延迟初始化）
-   * ProgramManager 可能需要 WASM 初始化，所以采用延迟加载策略
+   * Get or create ProgramManager instance (lazy initialization)
+   * ProgramManager may require WASM initialization, so lazy loading strategy is used
    */
   private getProgramManager(): ProgramManager {
     if (!this.programManager) {
       const baseUrl = this.getBaseUrlForNetwork(this.network);
-      // ProgramManager 构造函数: (host?, keyProvider?, recordProvider?, networkClientOptions?)
-      // 对于费用估算，我们不需要 keyProvider 和 recordProvider
+      // ProgramManager constructor: (host?, keyProvider?, recordProvider?, networkClientOptions?)
+      // For fee estimation, we don't need keyProvider and recordProvider
       this.programManager = new ProgramManager(baseUrl);
     }
     return this.programManager;
   }
 
   /**
-   * 根据网络类型获取基础 RPC URL（用于 AleoNetworkClient）
+   * Get base RPC URL based on network type (for AleoNetworkClient)
    */
   private getBaseUrlForNetwork(network: WalletAdapterNetwork): string {
     switch (network) {
@@ -56,14 +56,14 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 获取当前链的最新区块高度
-   * 
-   * 使用 AleoNetworkClient.getLatestHeight() 直接获取最新区块高度
+   * Get the latest block height of the current chain
+   *
+   * Uses AleoNetworkClient.getLatestHeight() to directly retrieve the latest block height
    */
   async getLatestBlockHeight(): Promise<number> {
     try {
       const height = await this.networkClient.getLatestHeight();
-      
+
       if (!height || height < 0) {
         throw new ProtocolServiceError(
           ProtocolError.NODE_CONNECTION_FAILED,
@@ -77,7 +77,7 @@ export class AleoProtocolService implements IAleoProtocolService {
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
-      
+
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
         'Failed to connect to Aleo node',
@@ -87,10 +87,10 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 获取公开余额（从链上 Mapping 查询）
-   * 查询 credits.aleo 程序的 account mapping
-   * 
-   * 使用 AleoNetworkClient.getProgramMappingValue，如果返回 null 则表示余额为 0
+   * Get public balance (queried from on-chain Mapping)
+   * Queries the account mapping of the credits.aleo program
+   *
+   * Uses AleoNetworkClient.getProgramMappingValue; returns 0 if the result is null
    */
   async getPublicBalance(address: AleoAddress): Promise<Microcredits> {
     try {
@@ -100,42 +100,42 @@ export class AleoProtocolService implements IAleoProtocolService {
         address
       );
 
-      // 如果返回 null，即余额为 0
+      // If null is returned, balance is 0
       if (balance === null || balance === undefined) {
         return 0n;
       }
 
-      // 处理返回的余额值（可能是字符串或数字）
+      // Process the returned balance value (may be a string or number)
       const balanceStr = String(balance).trim();
-      
-      // 移除可能的单位后缀（如 "u64"）并解析为 bigint
+
+      // Remove possible unit suffix (e.g., "u64") and parse as bigint
       const cleanBalanceStr = balanceStr
-        .replace(/^["']|["']$/g, '') // 移除首尾引号
-        .replace(/u64$/i, '') // 移除 u64 后缀（不区分大小写）
+        .replace(/^["']|["']$/g, '') // Remove leading/trailing quotes
+        .replace(/u64$/i, '') // Remove u64 suffix (case-insensitive)
         .trim();
-      
+
       return BigInt(cleanBalanceStr || 0);
     } catch (error: any) {
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
-      
-      // 网络错误或其他错误，返回 0（可能是地址没有公开余额）
+
+      // Network error or other errors, return 0 (the address may not have a public balance)
       console.warn('Failed to get public balance, returning 0:', error);
       return 0n;
     }
   }
 
   /**
-   * 获取指定地址在特定程序下的所有加密Record
-   * 
-   * 注意：此方法需要私钥才能解密 Records。
-   * AleoNetworkClient.findUnspentRecords 需要 PrivateKey 参数。
-   * 
-   * 建议在上层 Service（如 WalletService）中处理 Record 查询，
-   * 因为只有 Wallet 层才持有用户私钥。
-   * 
-   * 如需实现，参考代码：
+   * Get all encrypted Records for a specified address under a specific program
+   *
+   * Note: This method requires a private key to decrypt Records.
+   * AleoNetworkClient.findUnspentRecords requires a PrivateKey parameter.
+   *
+   * It is recommended to handle Record queries in the upper-layer Service (e.g., WalletService),
+   * since only the Wallet layer holds the user's private key.
+   *
+   * For implementation reference:
    * const records = await this.networkClient.findUnspentRecords(
    *   startHeight,
    *   undefined,
@@ -157,18 +157,18 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 查询链上程序的 Mapping 值（通用方法）
-   * 
-   * 可以查询任意程序的任意 Mapping，例如：
-   * - credits.aleo 的 account mapping（余额查询）
-   * - zk_invoice.aleo 的 invoice_status mapping（发票状态查询）
-   * - 任意自定义程序的任意 mapping
-   * 
-   * @param programId 程序标识符（如: "zk_invoice.aleo"）
-   * @param mappingName Mapping 名称（如: "invoice_status"）
-   * @param key Mapping 的键值（Field 类型）
-   * @returns Mapping 的值（字符串格式），如果不存在则返回 null
-   * @throws {ProtocolServiceError} 可能抛出 NODE_CONNECTION_FAILED
+   * Query on-chain program Mapping value (generic method)
+   *
+   * Can query any Mapping of any program, for example:
+   * - credits.aleo account mapping (balance query)
+   * - zk_invoice.aleo invoice_status mapping (invoice status query)
+   * - Any custom program's Mapping
+   *
+   * @param programId Program identifier (e.g., "zk_invoice.aleo")
+   * @param mappingName Mapping name (e.g., "invoice_status")
+   * @param key Mapping key (Field type)
+   * @returns Mapping value (string format), or null if it does not exist
+   * @throws {ProtocolServiceError} May throw NODE_CONNECTION_FAILED
    */
   async getProgramMappingValue(
     programId: string,
@@ -182,19 +182,19 @@ export class AleoProtocolService implements IAleoProtocolService {
         key
       );
 
-      // 如果返回 null 或 undefined，表示 Mapping 中不存在该键
+      // If null or undefined is returned, the key does not exist in the Mapping
       if (value === null || value === undefined) {
         return null;
       }
 
-      // 返回字符串格式的值（可能包含类型后缀，如 "123u64", "0u8" 等）
+      // Return the value in string format (may include type suffixes such as "123u64", "0u8", etc.)
       return String(value);
     } catch (error: any) {
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
 
-      // 网络错误或其他错误
+      // Network error or other errors
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
         'Failed to query program mapping value',
@@ -204,9 +204,9 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 广播已生成的零知识证明交易到 Aleo 网络
-   * 
-   * 使用 AleoNetworkClient.submitTransaction 提交交易
+   * Broadcast a generated zero-knowledge proof transaction to the Aleo network
+   *
+   * Uses AleoNetworkClient.submitTransaction to submit the transaction
    */
   async broadcastTransaction(transactionPayload: any): Promise<AleoTransactionId> {
     try {
@@ -235,32 +235,32 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 等待交易确认
-   * 
-   * 通过轮询 getTransaction 来检查交易状态
+   * Wait for transaction confirmation
+   *
+   * Polls getTransaction to check the transaction status
    */
   async waitForTransaction(txId: AleoTransactionId, timeoutMS: number = 60000): Promise<any> {
     const startTime = Date.now();
-    const pollInterval = 2000; // 2 秒轮询一次
+    const pollInterval = 2000; // Poll every 2 seconds
 
     while (Date.now() - startTime < timeoutMS) {
       try {
         const transaction = await this.networkClient.getTransaction(txId);
-        
+
         if (transaction) {
-          // 交易已确认
+          // Transaction confirmed
           return transaction;
         }
       } catch (error) {
-        // 交易可能还未被节点接收，继续轮询
+        // Transaction may not have been received by the node yet, continue polling
         console.debug('Transaction not found yet, continuing to poll:', txId);
       }
 
-      // 等待下一次轮询
+      // Wait for the next poll
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
-    // 超时
+    // Timeout
     throw new ProtocolServiceError(
       ProtocolError.SYNC_TIMEOUT,
       'Transaction confirmation timeout',
@@ -269,12 +269,12 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
-   * 估算执行费用（Microcredits）
-   * 
-   * 通过构建 Authorization 并使用 SDK 的 estimateFeeForAuthorization 进行预估
-   * 增加 20% 冗余以确保交易能够成功执行
-   * 
-   * 如果 SDK 预估失败，返回降级方案：250,000 microcredits（0.25 credits）
+   * Estimate execution fee (Microcredits)
+   *
+   * Builds an Authorization and uses the SDK's estimateFeeForAuthorization for estimation
+   * Adds 20% buffer to ensure the transaction can be successfully executed
+   *
+   * If SDK estimation fails, returns a fallback value: 250,000 microcredits (0.25 credits)
    */
   async estimateExecutionFee(
     programName: string,
@@ -284,53 +284,54 @@ export class AleoProtocolService implements IAleoProtocolService {
     try {
       const programManager = this.getProgramManager();
 
-      // 第一步：构建 Authorization 对象
-      // 这个对象包含了交易的完整描述，但还没有生成昂贵的 ZK 证明
+      // Step 1: Build Authorization object
+      // This object contains the complete transaction description but hasn't generated the expensive ZK proof yet
       const authorization = await programManager.buildAuthorization({
         programName,
         functionName,
         inputs,
-        // 如果程序还没部署或者在本地，可以传入 programSource
-        // 但通常不需要，因为 SDK 会从网络获取
+        // If the program hasn't been deployed or is local, you can pass in programSource
+        // But usually it's not needed since the SDK will fetch from the network
       });
 
-      // 第二步：使用 estimateFeeForAuthorization 进行预估
+      // Step 2: Use estimateFeeForAuthorization for estimation
       const baseFeeMicrocredits = await programManager.estimateFeeForAuthorization({
         authorization,
-        programName: 'credits.aleo', // 费用支付程序
+        programName: 'credits.aleo', // Fee payment program
       });
 
-      // 第三步：转换并增加 20% 冗余
+      // Step 3: Convert and add 20% buffer
       const fee = BigInt(baseFeeMicrocredits);
-      const feeWithBuffer = (fee * 120n) / 100n; // 增加 20% 冗余
+      const feeWithBuffer = (fee * 120n) / 100n; // Add 20% buffer
 
       return feeWithBuffer;
     } catch (error: any) {
-      console.error('SDK 预估失败:', error);
-      
-      // 如果是 ProtocolServiceError，直接抛出
+      console.error('SDK fee estimation failed:', error);
+
+      // If it's a ProtocolServiceError, rethrow directly
       if (error instanceof ProtocolServiceError) {
         throw error;
       }
 
-      // 降级方案：返回经验硬编码值
+      // Fallback: return a hardcoded empirical value
       // 250,000 microcredits = 0.25 credits
-      // 这是一个保守的估算值，适用于大多数简单的合约调用
-      console.warn('使用降级费用估算值: 250,000 microcredits');
+      // This is a conservative estimate suitable for most simple contract calls
+      console.warn('Using fallback fee estimate: 250,000 microcredits');
       return 250_000n;
     }
   }
 
   /**
-   * 验证生成的 record 是否上链成功
-   * 
-   * 通过查询交易详情来验证交易是否已确认，并可选择性地验证交易中是否包含预期的 record
-   * 
-   * 验证逻辑：
-   * 1. 查询交易是否存在且已确认
-   * 2. 如果提供了 programId，验证交易是否属于该程序
-   * 3. 如果提供了 functionName，验证交易调用的函数名称
-   * 4. 如果提供了 expectedOutputsCount，验证交易产生的输出 record 数量
+   * Verify whether a generated record has been successfully committed on-chain
+   *
+   * Verifies transaction confirmation by querying transaction details, and optionally
+   * validates whether the transaction contains the expected records
+   *
+   * Verification logic:
+   * 1. Check if the transaction exists and is confirmed
+   * 2. If programId is provided, verify the transaction belongs to that program
+   * 3. If functionName is provided, verify the function name called by the transaction
+   * 4. If expectedOutputsCount is provided, verify the number of output records produced by the transaction
    */
   async verifyRecordOnChain(
     transactionId: AleoTransactionId,
@@ -345,7 +346,7 @@ export class AleoProtocolService implements IAleoProtocolService {
     message: string;
   }> {
     try {
-      // 第一步：查询交易详情
+      // Step 1: Query transaction details
       const transaction = await this.networkClient.getTransaction(transactionId);
 
       if (!transaction) {
@@ -356,15 +357,15 @@ export class AleoProtocolService implements IAleoProtocolService {
         };
       }
 
-      // 第二步：验证交易是否已确认（交易存在即表示已确认）
-      // 如果交易被拒绝或失败，通常不会出现在链上，所以这里假设存在即成功
+      // Step 2: Verify the transaction is confirmed (existence implies confirmation)
+      // If a transaction is rejected or fails, it typically won't appear on chain, so existence is assumed to mean success
 
-      // 将交易对象转换为 any 类型以便安全访问动态属性
+      // Cast the transaction object to any for safe access to dynamic properties
       const tx = transaction as any;
 
-      // 第三步：如果提供了 programId，验证交易是否属于该程序
+      // Step 3: If programId is provided, verify the transaction belongs to that program
       if (options?.programId) {
-        // 检查交易中的 transitions 是否包含指定的程序
+        // Check if the transaction's transitions contain the specified program
         const transitions = tx.transitions || tx.execution?.transitions || [];
         const hasMatchingProgram = transitions.some((transition: any) => {
           const program = transition.program || transition.id?.program || '';
@@ -380,7 +381,7 @@ export class AleoProtocolService implements IAleoProtocolService {
         }
       }
 
-      // 第四步：如果提供了 functionName，验证交易调用的函数名称
+      // Step 4: If functionName is provided, verify the function name called by the transaction
       if (options?.functionName) {
         const transitions = tx.transitions || tx.execution?.transitions || [];
         const hasMatchingFunction = transitions.some((transition: any) => {
@@ -397,17 +398,17 @@ export class AleoProtocolService implements IAleoProtocolService {
         }
       }
 
-      // 第五步：如果提供了 expectedOutputsCount，验证交易产生的输出 record 数量
+      // Step 5: If expectedOutputsCount is provided, verify the number of output records
       if (options?.expectedOutputsCount !== undefined) {
-        // 尝试从交易中提取输出 record 数量
-        // 不同版本的交易格式可能不同，需要兼容处理
+        // Try to extract the number of output records from the transaction
+        // Different transaction format versions may differ, so handle compatibly
         let actualOutputsCount = 0;
 
-        // 方法1: 从 execution.outputs 获取
+        // Method 1: Get from execution.outputs
         if (tx.execution?.outputs) {
           actualOutputsCount = tx.execution.outputs.length;
         }
-        // 方法2: 从 transitions 的 outputs 获取
+        // Method 2: Get from transitions' outputs
         else if (tx.transitions || tx.execution?.transitions) {
           const transitions = tx.transitions || tx.execution.transitions || [];
           actualOutputsCount = transitions.reduce((count: number, transition: any) => {
@@ -415,7 +416,7 @@ export class AleoProtocolService implements IAleoProtocolService {
             return count + outputs.length;
           }, 0);
         }
-        // 方法3: 从 transaction.outputs 获取
+        // Method 3: Get from transaction.outputs
         else if (tx.outputs) {
           actualOutputsCount = tx.outputs.length;
         }
@@ -429,7 +430,7 @@ export class AleoProtocolService implements IAleoProtocolService {
         }
       }
 
-      // 所有验证通过
+      // All verifications passed
       return {
         verified: true,
         transaction,
@@ -440,7 +441,7 @@ export class AleoProtocolService implements IAleoProtocolService {
         throw error;
       }
 
-      // 如果查询失败，可能是交易不存在或网络错误
+      // If the query fails, the transaction may not exist or there may be a network error
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
         'Failed to verify record on chain',
@@ -449,4 +450,3 @@ export class AleoProtocolService implements IAleoProtocolService {
     }
   }
 }
-

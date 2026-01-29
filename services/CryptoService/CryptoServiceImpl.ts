@@ -7,66 +7,66 @@ import {
 } from '@/lib/crypto';
 
 /**
- * Aleo Field 的模数（素数 p）
+ * Aleo Field modulus (prime p)
  * p = 8444461749428370424248824938781546531375899335154063827935233455917409239041
- * 这是 Aleo 区块链使用的 BLS12-377 曲线的标量域模数
+ * This is the scalar field modulus of the BLS12-377 curve used by the Aleo blockchain
  */
 const ALEO_FIELD_MODULUS = BigInt('8444461749428370424248824938781546531375899335154063827935233455917409239041');
 
 /**
- * CryptoService 错误类
+ * CryptoService error class
  */
 export const CryptoServiceError = createServiceError<CryptoError>('Crypto');
 export type CryptoServiceError = InstanceType<typeof CryptoServiceError>;
 
 /**
- * CryptoService 实现类
- * 
- * 职责：提供加密、解密和哈希计算功能
- * - 计算发票哈希（用于链上存证）
- * - 验证发票完整性（对比链上哈希与本地哈希）
- * - 本地加密/解密发票明细（PBKDF2 + AES-GCM）
- * - 解析 Aleo Record（处理钱包已解密的数据）
- * 
- * 核心验证流程：
- * 1. 开票时：computeInvoiceHash(details) → invoice_hash 存入链上 Record
- * 2. 查看时：parseAleoRecord(jsonString) → 获取链上 invoice_hash
- * 3. 验证时：verifyInvoiceIntegrity(localDetails, chainHash) → 确认数据完整性
- * 
- * 技术特性：
- * - 使用 Web Crypto API 的 SHA-256 进行安全哈希
- * - 应用模运算确保哈希值在 Aleo Field 的有效范围内
- * - 使用 PBKDF2 (100,000 次迭代) 派生加密密钥
+ * CryptoService implementation class
+ *
+ * Responsibilities: Provides encryption, decryption, and hash computation functionality
+ * - Compute invoice hash (for on-chain proof of record)
+ * - Verify invoice integrity (compare on-chain hash with local hash)
+ * - Local encryption/decryption of invoice details (PBKDF2 + AES-GCM)
+ * - Parse Aleo Records (process wallet-decrypted data)
+ *
+ * Core verification flow:
+ * 1. On invoice creation: computeInvoiceHash(details) -> invoice_hash stored in on-chain Record
+ * 2. On viewing: parseAleoRecord(jsonString) -> retrieve on-chain invoice_hash
+ * 3. On verification: verifyInvoiceIntegrity(localDetails, chainHash) -> confirm data integrity
+ *
+ * Technical features:
+ * - Uses Web Crypto API's SHA-256 for secure hashing
+ * - Applies modular arithmetic to ensure hash values are within the valid Aleo Field range
+ * - Uses PBKDF2 (100,000 iterations) to derive encryption keys
  */
 export class CryptoService implements ICryptoService {
   /**
-   * 核心业务哈希：将 InvoiceDetails 按照合约逻辑计算出唯一哈希
-   * 
-   * 使用场景：
-   * - 开票时：计算哈希 → 存入链上 InvoiceRecord.invoice_hash
-   * - 验证时：重新计算本地明细的哈希 → 与链上哈希对比（通过 verifyInvoiceIntegrity）
-   * 
-   * 实现说明：
-   * 1. 使用 SHA-256 算法生成 256 位哈希
-   * 2. 将哈希值转换为 BigInt
-   * 3. 应用模运算 (hash % ALEO_FIELD_MODULUS) 确保结果在 Field 范围内
-   * 4. 返回 AleoField 格式字符串 (例如: "123456789field")
-   * 
-   * 为什么需要模运算：
-   * - Aleo Field 是一个有限域，所有元素必须 < ALEO_FIELD_MODULUS
-   * - SHA-256 可能产生大于模数的值，需要通过模运算映射到有效范围
-   * - 这确保了链上合约可以正确处理哈希值
-   * 
-   * @param details 发票明细对象
-   * @returns 对应合约字段的 AleoField
+   * Core business hash: Computes a unique hash for InvoiceDetails following the contract logic
+   *
+   * Use cases:
+   * - On invoice creation: compute hash -> store in on-chain InvoiceRecord.invoice_hash
+   * - On verification: recompute hash from local details -> compare with on-chain hash (via verifyInvoiceIntegrity)
+   *
+   * Implementation details:
+   * 1. Uses SHA-256 algorithm to generate a 256-bit hash
+   * 2. Converts the hash value to BigInt
+   * 3. Applies modular arithmetic (hash % ALEO_FIELD_MODULUS) to ensure the result is within Field range
+   * 4. Returns an AleoField format string (e.g., "123456789field")
+   *
+   * Why modular arithmetic is needed:
+   * - Aleo Field is a finite field where all elements must be < ALEO_FIELD_MODULUS
+   * - SHA-256 may produce values larger than the modulus, requiring modular reduction to map into the valid range
+   * - This ensures the on-chain contract can correctly handle the hash values
+   *
+   * @param details Invoice details object
+   * @returns AleoField corresponding to the contract field
    */
   async computeInvoiceHash(details: InvoiceDetails): Promise<AleoField> {
     try {
-      // 1. 规范化对象：通过 JSON.parse(JSON.stringify()) 移除 undefined 值
-      // 这确保加密/解密前后的对象结构一致
+      // 1. Normalize object: remove undefined values via JSON.parse(JSON.stringify())
+      // This ensures consistent object structure before and after encryption/decryption
       const normalized = JSON.parse(JSON.stringify(details));
-      
-      // 2. 深度排序对象键（递归处理嵌套对象和数组）
+
+      // 2. Deep sort object keys (recursively handle nested objects and arrays)
       const sortObjectKeys = (obj: any): any => {
         if (Array.isArray(obj)) {
           return obj.map(item => sortObjectKeys(item));
@@ -81,36 +81,36 @@ export class CryptoService implements ICryptoService {
         }
         return obj;
       };
-      
+
       const sortedNormalized = sortObjectKeys(normalized);
       const canonical = JSON.stringify(sortedNormalized);
-      
-      // 调试日志
+
+      // Debug logs
       console.log('🔐 [computeInvoiceHash] Normalized object:', normalized);
       console.log('🔐 [computeInvoiceHash] Sorted normalized:', sortedNormalized);
       console.log('🔐 [computeInvoiceHash] Canonical JSON:', canonical);
-      
-      // 3. 获取浏览器原生 Crypto API
+
+      // 3. Get browser native Crypto API
       const encoder = new TextEncoder();
       const data = encoder.encode(canonical);
       const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
-      
-      // 4. 将 ArrayBuffer 转换为 BigInt (不使用 Buffer)
-      // 方案：将 hashBuffer 包装为 Uint8Array，然后逐字节处理
+
+      // 4. Convert ArrayBuffer to BigInt (without using Buffer)
+      // Approach: wrap hashBuffer as Uint8Array, then process byte by byte
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
-      
+
       const hashBigInt = BigInt('0x' + hashHex);
-      
-      // 5. 应用模运算确保在 Aleo Field 范围内
+
+      // 5. Apply modular arithmetic to ensure value is within Aleo Field range
       const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
-      
-      // 6. 返回 AleoField 格式字符串
+
+      // 6. Return AleoField format string
       const result = `${fieldValue.toString()}field` as AleoField;
       console.log('🔐 [computeInvoiceHash] Result hash:', result);
-      
+
       return result;
     } catch (error: any) {
       throw new CryptoServiceError(
@@ -122,21 +122,21 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 敏感数据本地加密：在保存到 StorageService 之前，用私有密钥加密明细
-   * 
-   * @param details 原始明细
-   * @param masterKey 用户的本地推导密钥（字符串格式）
-   * @returns 加密后的载荷
+   * Local encryption of sensitive data: encrypts details with a private key before saving to StorageService
+   *
+   * @param details Original details
+   * @param masterKey User's locally derived key (string format)
+   * @returns Encrypted payload
    */
   async encryptInvoiceDetails(
     details: InvoiceDetails,
     masterKey: string
   ): Promise<EncryptedPayload> {
     try {
-      // 将 masterKey 字符串转换为 Uint8Array
+      // Convert masterKey string to Uint8Array
       const encryptionKey = await this.deriveEncryptionKey(masterKey);
-      
-      // 使用 lib/crypto.ts 中的加密函数
+
+      // Use the encryption function from lib/crypto.ts
       return await encryptDetails(details, encryptionKey);
     } catch (error: any) {
       throw new CryptoServiceError(
@@ -148,29 +148,29 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 敏感数据本地解密
-   * 
-   * @param payload 加密载荷
-   * @param masterKey 用户的本地推导密钥（字符串格式）
-   * @returns 解密后的发票明细
-   * @throws {CryptoServiceError} 可能抛出 DECRYPTION_FAILED
+   * Local decryption of sensitive data
+   *
+   * @param payload Encrypted payload
+   * @param masterKey User's locally derived key (string format)
+   * @returns Decrypted invoice details
+   * @throws {CryptoServiceError} May throw DECRYPTION_FAILED
    */
   async decryptInvoiceDetails(
     payload: EncryptedPayload,
     masterKey: string
   ): Promise<InvoiceDetails> {
     try {
-      // 将 masterKey 字符串转换为 Uint8Array
+      // Convert masterKey string to Uint8Array
       const encryptionKey = await this.deriveEncryptionKey(masterKey);
-      
-      // 使用 lib/crypto.ts 中的解密函数
+
+      // Use the decryption function from lib/crypto.ts
       return await decryptDetails(payload, encryptionKey);
     } catch (error: any) {
-      // 如果是解密失败，抛出特定的错误
+      // If decryption fails, throw a specific error
       if (error instanceof CryptoServiceError) {
         throw error;
       }
-      
+
       throw new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
         'Failed to decrypt invoice details. Invalid master key or corrupted data.',
@@ -180,42 +180,42 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 解析来自 wallet.requestRecords() 的已解密 InvoiceRecord
-   * 
-   * 这是发票验证流程的关键步骤：
-   * 1. 钱包通过 requestRecords() 返回已解密的链上 Record
-   * 2. 此方法解析 JSON，提取出 invoice_hash 等字段
-   * 3. 调用方可以使用 verifyInvoiceIntegrity() 验证数据完整性
-   * 
-   * 完整验证流程示例：
+   * Parse a decrypted InvoiceRecord from wallet.requestRecords()
+   *
+   * This is a key step in the invoice verification flow:
+   * 1. The wallet returns decrypted on-chain Records via requestRecords()
+   * 2. This method parses the JSON and extracts fields like invoice_hash
+   * 3. The caller can then use verifyInvoiceIntegrity() to verify data integrity
+   *
+   * Complete verification flow example:
    * ```typescript
-   * // 1. 获取链上 Record
+   * // 1. Get on-chain Record
    * const records = await wallet.requestRecords('zk_invoice.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );
-   * 
-   * // 2. 从 IndexedDB 获取本地加密存储的明细
+   *
+   * // 2. Get locally encrypted details from IndexedDB
    * const encryptedPayload = await storageService.getInvoice(chainRecord.invoice_id);
    * const localDetails = await cryptoService.decryptInvoiceDetails(encryptedPayload, masterKey);
-   * 
-   * // 3. 验证完整性
+   *
+   * // 3. Verify integrity
    * const isValid = await cryptoService.verifyInvoiceIntegrity(
-   *   localDetails, 
+   *   localDetails,
    *   chainRecord.invoice_hash as AleoField
    * );
    * if (!isValid) {
-   *   throw new Error('发票数据已被篡改！');
+   *   throw new Error('Invoice data has been tampered with!');
    * }
    * ```
-   * 
-   * @param jsonString 已解密的 JSON 字符串（来自 wallet.requestRecords()）
-   * @returns 解析后的 Record 数据对象（泛型支持，默认 AleoInvoiceRecord）
-   * @throws {CryptoServiceError} 如果 JSON 格式无效或为 record1... 加密格式
+   *
+   * @param jsonString Decrypted JSON string (from wallet.requestRecords())
+   * @returns Parsed Record data object (generic support, defaults to AleoInvoiceRecord)
+   * @throws {CryptoServiceError} If the JSON format is invalid or is in encrypted record1... format
    */
   async parseAleoRecord<T = AleoInvoiceRecord>(jsonString: string): Promise<T> {
     try {
-      // 空字符串检查
+      // Empty string check
       if (!jsonString || jsonString.trim() === '') {
         throw new CryptoServiceError(
           CryptoError.DECRYPTION_FAILED,
@@ -224,23 +224,23 @@ export class CryptoService implements ICryptoService {
         );
       }
 
-      // 处理已解密的 JSON 数据（来自 wallet.requestRecords()）
+      // Process decrypted JSON data (from wallet.requestRecords())
       if (jsonString.startsWith('{') || jsonString.startsWith('[')) {
         const parsed = JSON.parse(jsonString);
-        
-        // 清理 Aleo 格式的类型标记和可见性修饰符
+
+        // Clean Aleo format type markers and visibility modifiers
         const cleanRecord = (obj: any): any => {
           if (typeof obj === 'string') {
-            // 移除 field.private 或 field.public 后缀
+            // Remove field.private or field.public suffix
             if (obj.includes('field.')) {
               return obj.replace(/field\.(private|public)$/, 'field');
             }
-            // 移除数值类型后缀 (u8, u16, u32, u64, u128, i8, i16, i32, i64, i128)
-            // 例如: "1000000u64" -> "1000000", "0u8" -> "0"
+            // Remove numeric type suffixes (u8, u16, u32, u64, u128, i8, i16, i32, i64, i128)
+            // e.g., "1000000u64" -> "1000000", "0u8" -> "0"
             if (obj.match(/^\d+[ui](8|16|32|64|128)$/)) {
               return obj.replace(/[ui](8|16|32|64|128)$/, '');
             }
-            // 移除其他类型的可见性修饰符（如 .private, .public）
+            // Remove other visibility modifiers (e.g., .private, .public)
             if (obj.match(/\.(private|public)$/)) {
               return obj.replace(/\.(private|public)$/, '');
             }
@@ -257,26 +257,26 @@ export class CryptoService implements ICryptoService {
           }
           return obj;
         };
-        
+
         const cleaned = cleanRecord(parsed);
         // console.log('🧹 [parseAleoRecord] Original record:', parsed);
         // console.log('🧹 [parseAleoRecord] Cleaned record:', cleaned);
         return cleaned as T;
       }
-      
-      // 如果是 record1... 格式，提示使用正确的方式
+
+      // If it's in record1... format, suggest using the correct approach
       if (jsonString.startsWith('record1')) {
         throw new CryptoServiceError(
           CryptoError.DECRYPTION_FAILED,
           'Encrypted record format detected. Please use wallet.requestRecords() to get decrypted data.',
-          { 
+          {
             hint: 'The record1... format is encrypted. Use wallet.requestRecords() which automatically decrypts records using your ViewKey.',
             inputPrefix: jsonString.substring(0, 20) + '...'
           }
         );
       }
-      
-      // 未知格式
+
+      // Unknown format
       throw new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
         'Unknown input format. Expected JSON string from wallet.requestRecords().',
@@ -286,7 +286,7 @@ export class CryptoService implements ICryptoService {
       if (error instanceof CryptoServiceError) {
         throw error;
       }
-      
+
       throw new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
         'Failed to parse Aleo Record JSON',
@@ -296,19 +296,19 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 验证发票完整性：对比本地明细的哈希与链上存储的哈希
-   * 
-   * 这是防篡改验证的核心方法：
-   * - 重新计算本地发票明细的哈希
-   * - 与链上 InvoiceRecord 中存储的 invoice_hash 对比
-   * - 如果一致，证明本地数据与链上存证匹配，未被篡改
-   * 
-   * @param localDetails 本地存储的发票明细（从 IndexedDB 解密获取）
-   * @param chainInvoiceHash 链上 Record 中的 invoice_hash 字段
-   * @returns true 表示数据完整未被篡改，false 表示数据不一致
+   * Verify invoice integrity: compare hash of local details with on-chain stored hash
+   *
+   * This is the core method for tamper-proof verification:
+   * - Recomputes the hash of local invoice details
+   * - Compares with the invoice_hash stored in the on-chain InvoiceRecord
+   * - If they match, it proves the local data matches the on-chain proof and has not been tampered with
+   *
+   * @param localDetails Locally stored invoice details (decrypted from IndexedDB)
+   * @param chainInvoiceHash The invoice_hash field from the on-chain Record
+   * @returns true indicates data is intact and untampered, false indicates data inconsistency
    */
   async verifyInvoiceIntegrity(
-    localDetails: InvoiceDetails, 
+    localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField
   ): Promise<boolean> {
     if (!localDetails || typeof localDetails !== 'object') {
@@ -320,19 +320,19 @@ export class CryptoService implements ICryptoService {
     }
 
     try {
-      // 重新计算本地明细的哈希
+      // Recompute hash from local details
       const computedHash = await this.computeInvoiceHash(localDetails);
-      
-      // 清理链上哈希的可见性修饰符（双重保险，防止 parseAleoRecord 未清理）
+
+      // Clean visibility modifiers from on-chain hash (extra safety, in case parseAleoRecord didn't clean it)
       const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
-      
-      // 调试日志
+
+      // Debug logs
       console.log('🔍 [verifyInvoiceIntegrity] Computed hash:', computedHash);
       console.log('🔍 [verifyInvoiceIntegrity] Chain hash (original):', chainInvoiceHash);
       console.log('🔍 [verifyInvoiceIntegrity] Chain hash (cleaned):', cleanChainHash);
       console.log('🔍 [verifyInvoiceIntegrity] Match:', computedHash === cleanChainHash);
-      
-      // 对比两个哈希值
+
+      // Compare the two hash values
       return computedHash === cleanChainHash;
     } catch (error: any) {
       throw new CryptoServiceError(
@@ -344,7 +344,7 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 获取 Web Crypto API 实例
+   * Get Web Crypto API instance
    */
   private getWebCrypto(): Crypto {
     if (typeof globalThis.crypto !== 'undefined') {
@@ -354,20 +354,20 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 使用 PBKDF2 从字符串密钥派生 32 字节加密密钥
-   * 
-   * 改进说明：
-   * - 使用标准的 PBKDF2 密钥派生函数（Key Derivation Function）
-   * - 提供更好的安全性，即使输入密钥较弱也能生成强密钥
-   * - 使用固定盐值（在生产环境中应该使用用户特定的盐）
-   * 
-   * @param masterKey 用户提供的主密钥字符串
-   * @returns 32 字节的加密密钥
+   * Derive a 32-byte encryption key from a string key using PBKDF2
+   *
+   * Improvement notes:
+   * - Uses the standard PBKDF2 Key Derivation Function
+   * - Provides better security by generating strong keys even from weak input keys
+   * - Uses a fixed salt (in production, a user-specific salt should be used)
+   *
+   * @param masterKey User-provided master key string
+   * @returns 32-byte encryption key
    */
   private async deriveEncryptionKey(masterKey: string): Promise<Uint8Array> {
     const crypto = this.getWebCrypto();
-    
-    // 将主密钥转换为 CryptoKey 对象
+
+    // Convert master key to CryptoKey object
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(masterKey),
@@ -375,45 +375,45 @@ export class CryptoService implements ICryptoService {
       false,
       ['deriveBits']
     );
-    
-    // 使用 PBKDF2 派生密钥
-    // 注意：在生产环境中，盐值应该是用户特定的（如从地址派生）
+
+    // Derive key using PBKDF2
+    // Note: In production, the salt should be user-specific (e.g., derived from address)
     const salt = new TextEncoder().encode('alpaca-invoice-salt-v1');
     const derivedBits = await crypto.subtle.deriveBits(
       {
         name: 'PBKDF2',
         salt: salt,
-        iterations: 100000, // OWASP 推荐至少 100,000 次迭代
+        iterations: 100000, // OWASP recommends at least 100,000 iterations
         hash: 'SHA-256'
       },
       keyMaterial,
-      256 // 256 位 = 32 字节
+      256 // 256 bits = 32 bytes
     );
-    
+
     return new Uint8Array(derivedBits);
   }
 
   /**
-   * 从签名派生主密钥（用于本地加密发票明细）
-   * 
-   * 使用场景：
-   * - 用户首次创建发票时，需要授权访问私有发票数据
-   * - 通过签名消息获取签名，然后从此签名派生主密钥
-   * - 主密钥用于加密/解密存储在 IndexedDB 中的发票明细
-   * 
-   * 实现说明：
-   * 1. 使用 SHA-256 对签名进行哈希
-   * 2. 将哈希结果转换为十六进制字符串
-   * 3. 返回该字符串作为 masterKey（后续会使用 PBKDF2 进一步派生加密密钥）
-   * 
-   * 安全性：
-   * - 签名是用户钱包私钥对特定消息的签名，具有唯一性和不可伪造性
-   * - 使用 SHA-256 确保密钥的随机性和安全性
-   * - 相同的签名总是产生相同的主密钥（确定性派生）
-   * 
-   * @param signature 钱包签名的消息（来自 signMessage）
-   * @returns 主密钥字符串（用于后续加密/解密）
-   * @throws {CryptoServiceError} 可能抛出 ENCRYPTION_FAILED
+   * Derive master key from signature (used for local encryption of invoice details)
+   *
+   * Use cases:
+   * - When a user first creates an invoice and needs to authorize access to private invoice data
+   * - Obtain a signature by signing a message, then derive the master key from that signature
+   * - The master key is used to encrypt/decrypt invoice details stored in IndexedDB
+   *
+   * Implementation details:
+   * 1. Hash the signature using SHA-256
+   * 2. Convert the hash result to a hexadecimal string
+   * 3. Return that string as the masterKey (which will be further derived into an encryption key via PBKDF2)
+   *
+   * Security:
+   * - The signature is produced by the user's wallet private key on a specific message, ensuring uniqueness and unforgeability
+   * - SHA-256 ensures randomness and security of the key
+   * - The same signature always produces the same master key (deterministic derivation)
+   *
+   * @param signature Wallet-signed message (from signMessage)
+   * @returns Master key string (used for subsequent encryption/decryption)
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
    */
   async deriveMasterKey(signature: string): Promise<string> {
     if (!signature || signature.trim() === '') {
@@ -425,15 +425,15 @@ export class CryptoService implements ICryptoService {
     }
 
     try {
-      // 获取 Web Crypto API
+      // Get Web Crypto API
       const crypto = this.getWebCrypto();
 
-      // 使用 SHA-256 对签名进行哈希
+      // Hash the signature using SHA-256
       const encoder = new TextEncoder();
       const signatureBytes = encoder.encode(signature);
       const hashBuffer = await crypto.subtle.digest('SHA-256', signatureBytes);
 
-      // 将 ArrayBuffer 转换为十六进制字符串
+      // Convert ArrayBuffer to hexadecimal string
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const masterKey = hashArray
         .map(b => b.toString(16).padStart(2, '0'))
@@ -450,19 +450,19 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
-   * 验证 Field 值是否在有效范围内
-   * 用于测试和调试
-   * 
-   * @param fieldStr AleoField 格式字符串
-   * @returns 是否有效
+   * Validate whether a Field value is within the valid range
+   * Used for testing and debugging
+   *
+   * @param fieldStr AleoField format string
+   * @returns Whether the value is valid
    */
   public validateFieldValue(fieldStr: AleoField): boolean {
     try {
-      // 移除 'field' 后缀
+      // Remove 'field' suffix
       const numStr = fieldStr.replace(/field$/, '');
       const value = BigInt(numStr);
-      
-      // 检查是否在有效范围内
+
+      // Check if it is within the valid range
       return value >= 0n && value < ALEO_FIELD_MODULUS;
     } catch {
       return false;
