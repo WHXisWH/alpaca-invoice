@@ -11,17 +11,17 @@ import { useInvoicePollingCore } from './useInvoicePollingCore';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 /**
- * Hook: 链上手动同步逻辑（统一轮询架构版）
- * 
- * 职责：
- * - ✅ 手动同步功能（handleSyncStatus）- 用户主动触发
- * - ✅ 支持 key 迁移逻辑（create action 时）
- * - ❌ 移除自动轮询：由全局 AutoPoller 统一管理
- * 
- * 架构说明：
- * - 自动轮询：由 InvoiceAutoPoller（全局单例）统一管理
- * - isSyncing：在 useInvoiceDetail 中从 sendingInvoiceHashes 派生
- * - 本 Hook 只提供手动同步功能
+ * Hook: manual on-chain sync (shared polling architecture)
+ *
+ * Responsibilities:
+ * - Expose manual sync (handleSyncStatus) triggered by the user
+ * - Support key-migration flow during create action
+ * - Leave auto polling to the global InvoiceAutoPoller
+ *
+ * Notes:
+ * - Auto polling: managed by InvoiceAutoPoller (global singleton)
+ * - isSyncing: derived in useInvoiceDetail from sendingInvoiceHashes
+ * - This hook only provides manual sync helpers
  */
 export function useInvoiceChainSync(
   invoice: Invoice | null,
@@ -33,16 +33,16 @@ export function useInvoiceChainSync(
   const { handleError } = useErrorHandler();
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
-  // ✅ 使用核心轮询逻辑（仅用于 buildUpdatedInvoice）
+  // Use shared polling core (only for buildUpdatedInvoice / mapping lookup)
   const { buildUpdatedInvoice, fetchChainAnchors } = useInvoicePollingCore();
   const protocolService = new AleoProtocolService();
   
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
 
   /**
-   * 确认发票并更新到 store
-   * ✅ 包含 key 迁移逻辑（详情页特有）
-   * ✅ 支持无 masterKey 时仅更新内存（不持久化）
+   * Confirm invoice and persist to the store.
+   * - Handles key-migration logic for the create action.
+   * - Supports memory-only updates when masterKey is unavailable.
    */
   const confirmInvoice = useCallback(async (
     updatedInvoice: Invoice,
@@ -59,13 +59,13 @@ export function useInvoiceChainSync(
         willPersist: !!masterKey
       });
       
-      // ✅ 检测是否需要 key 迁移（action === 'create' 且 id 发生变化）
+      // Detect whether key migration is needed (create action and id changed)
       const oldId = invoice?.id;
       const newId = updatedInvoice.id;
       const needsKeyMigration = invoice?.metadata?.action === 'create' && newId && newId !== oldId;
       
       if (needsKeyMigration && masterKey) {
-        // ✅ Key 迁移需要 masterKey（因为要移动加密数据）
+        // Key migration requires masterKey because encrypted data must be moved
         console.log(`🔄 [ChainSync] Key migration needed for create action: ${oldId} → ${newId}`);
         
         await useNewInvoiceStore.getState().migrateInvoiceKey(
@@ -93,8 +93,8 @@ export function useInvoiceChainSync(
           status: updatedInvoice.status
         });
       } else {
-        // ✅ 常规更新流程（非 create action 或 id 未变化）
-        // 如果没有 masterKey，只更新内存（不持久化）
+        // Regular update flow (no create key migration)
+        // If no masterKey, update memory only (skip persistence)
         await updateInvoice(updatedInvoice.id, {
           ...updatedInvoice,
           metadata: {
@@ -105,7 +105,7 @@ export function useInvoiceChainSync(
           }
         } as any, {
           masterKey: masterKey || undefined,
-          persistFull: !!masterKey  // ✅ 只有在有 masterKey 时才持久化
+          persistFull: !!masterKey  // Persist only when masterKey is available
         });
         
         if (!masterKey) {
@@ -125,8 +125,8 @@ export function useInvoiceChainSync(
   }, [invoice, invoiceHash, masterKey, updateInvoice, handleError]);
 
   /**
-   * 回退状态并更新到 store
-   * ✅ 支持无 masterKey 时仅更新内存
+   * Roll back status and update the store.
+   * Supports memory-only rollback when masterKey is absent.
    */
   const rollbackInvoice = useCallback(async (rolledBackInvoice: Invoice) => {
     if (!invoiceHash) {
@@ -138,7 +138,7 @@ export function useInvoiceChainSync(
         hasMasterKey: !!masterKey
       });
       
-      // ✅ 回退到 CONFIRMED 状态（保持原有的 invoice 状态不变）
+      // Roll back to CONFIRMED while keeping the original invoice fields intact
       await updateInvoice(rolledBackInvoice.id, {
         metadata: {
           confirmationStatus: 'CONFIRMED',
@@ -148,7 +148,7 @@ export function useInvoiceChainSync(
         }
       } as any, {
         masterKey: masterKey || undefined,
-        persistFull: !!masterKey  // ✅ 只有在有 masterKey 时才持久化
+        persistFull: !!masterKey  // Persist only when masterKey is available
       });
       
       toast.warning('Transaction may have failed', {
@@ -168,13 +168,14 @@ export function useInvoiceChainSync(
   }, [invoice, invoiceHash, masterKey, updateInvoice, handleError]);
 
   /**
-   * 手动同步发票状态（从链上获取最新 record）
-   * ✅ 详情页特有功能
+   * Manually sync invoice status by fetching the latest record on-chain
+   * (used by the invoice detail page)
    */
   const handleSyncStatus = useCallback(async () => {
-    // ✅ 从 store 获取最新的 invoice，避免闭包问题
+    // Always pull the latest invoice from the store to avoid stale closures
     const state = useNewInvoiceStore.getState();
-    const latestInvoice = state.currentInvoice || state.invoices.find(inv => inv.invoiceHash === invoiceHash);
+    const latestInvoice =
+      state.currentInvoice || state.invoices.find((inv: Invoice) => inv.invoiceHash === invoiceHash);
     
     if (!latestInvoice || !invoiceHash || !masterKey || !publicKey) {
       toast.error('Unable to sync', {
@@ -188,7 +189,7 @@ export function useInvoiceChainSync(
       console.log('🔄 [ChainSync] Starting manual sync for invoice:', latestInvoice.id);
       toast.loading('Syncing status...', { id: 'sync-status' });
 
-      // ✅ 先查 mapping anchor，若已确认可快速返回
+      // Fast path: check mapping anchor first; if confirmed, short-circuit
       const chainAnchor = await fetchChainAnchors(latestInvoice.id);
       if (chainAnchor.status !== null) {
         const updatedFromMapping: Invoice = {
@@ -206,7 +207,7 @@ export function useInvoiceChainSync(
         return;
       }
 
-      // ✅ 否则使用 useInvoiceChainScan 扫描链上记录
+      // Otherwise, scan on-chain records via useInvoiceChainScan
       const { invoiceRecord, paymentRecord } = await scanInvoiceRecord(invoiceHash, latestInvoice.id);
 
       if (!invoiceRecord && !paymentRecord) {
@@ -214,11 +215,11 @@ export function useInvoiceChainSync(
         return;
       }
 
-      // ✅ 使用核心逻辑构建更新后的 invoice
+      // Build updated invoice using shared core logic
       const recordToUse = paymentRecord || invoiceRecord!;
       const updatedInvoice = buildUpdatedInvoice(latestInvoice, recordToUse);
 
-      // ✅ 确认发票（包含 key 迁移逻辑）
+      // Confirm invoice (includes key-migration handling)
       await confirmInvoice(updatedInvoice, recordToUse);
       
       toast.success('Status sync successful', { id: 'sync-status' });
@@ -234,13 +235,8 @@ export function useInvoiceChainSync(
     }
   }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, handleError]);
 
-  // ✅ 移除自动轮询逻辑：由全局 AutoPoller 统一管理
-  // ✅ 移除 startPolling/stopPolling：不再需要详情页独立轮询
-
   return {
     isSyncingStatus,
     handleSyncStatus
-    // ✅ 移除 isSyncing：在 useInvoiceDetail 中从 sendingInvoiceHashes 派生
-    // ✅ 移除 startPolling/stopPolling：由 AutoPoller 统一管理
   };
 }

@@ -69,7 +69,6 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   currentInvoice: null,  // Currently selected invoice
   sendingInvoiceHashes: {},  // Global SENDING index
   chainStatusCache: {},
-  chainStatusCache: {},
 
   /**
    * Add invoice: receive invoice -> save to IndexedDB -> update memory
@@ -285,7 +284,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
   updateChainStatus: (invoiceId, status, hash) => {
     const now = Date.now();
-    useInvoiceStore.setState((state) => ({
+    set((state) => ({
       chainStatusCache: {
         ...state.chainStatusCache,
         [invoiceId]: { status, hash, lastQueried: now }
@@ -294,7 +293,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   getChainStatus: (invoiceId) => {
-    const entry = useInvoiceStore.getState().chainStatusCache[invoiceId];
+    const entry = get().chainStatusCache[invoiceId];
     if (!entry) return null;
     // 30s TTL
     if (Date.now() - entry.lastQueried > 30000) return null;
@@ -865,20 +864,4 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     set({ sendingInvoiceHashes: newSending });
   },
 
-  updateChainStatus: (invoiceId, status, hash) => {
-    const now = Date.now();
-    set((state) => ({
-      chainStatusCache: {
-        ...state.chainStatusCache,
-        [invoiceId]: { status, hash, lastQueried: now }
-      }
-    }));
-  },
-
-  getChainStatus: (invoiceId) => {
-    const entry = get().chainStatusCache[invoiceId];
-    if (!entry) return null;
-    if (Date.now() - entry.lastQueried > 30000) return null;
-    return entry.status;
-  }
 }));

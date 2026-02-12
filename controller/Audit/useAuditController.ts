@@ -9,7 +9,7 @@ import {
   randomAuditKey,
   validateAuditPackage
 } from '@/lib/audit';
-import type { AleoAddress, AleoField } from '@/lib/types';
+import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID } from '@/lib/contract';
 
@@ -36,8 +36,8 @@ export function useAuditController() {
 
       const invoices = await getAllInvoices({ masterKey, refreshMemory: false });
       const invoice =
-        invoices.find((inv) => inv.id === options.invoiceId) ||
-        invoices.find((inv) => inv.invoiceHash === options.invoiceId);
+        invoices.find((inv: Invoice) => inv.id === options.invoiceId) ||
+        invoices.find((inv: Invoice) => inv.invoiceHash === options.invoiceId);
 
       if (!invoice) {
         throw new Error('Invoice not found in local storage. Please sync invoices first.');

@@ -160,16 +160,16 @@ export function useTransactionController(): ITxController {
         // Get chainId from environment variable, consistent with useWalletController
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
         // Pre-compute invoice_id locally via compute_invoice_id (for record parity)
-        let invoiceId: AleoField | null = null;
+        let computedInvoiceId: AleoField | null = null;
         try {
-          invoiceId = await protocolService.computeInvoiceIdOffline({
+          computedInvoiceId = await protocolService.computeInvoiceIdOffline({
             seller: publicKey as AleoAddress,
             buyer: buyerAddress,
             amount: params.amount,
             dueDate: dueTimestamp,
             nonce: nonceField
           });
-          updateProgress(28, `✓ Invoice ID computed: ${invoiceId.slice(0, 12)}...`);
+          updateProgress(28, `✓ Invoice ID computed: ${computedInvoiceId.slice(0, 12)}...`);
         } catch (e) {
           console.warn('computeInvoiceIdOffline failed, will fall back to hash as ID', e);
         }
@@ -203,7 +203,7 @@ export function useTransactionController(): ITxController {
         // The wallet generates proof and prepares broadcast in the background, without blocking subsequent flow
         updateProgress(35, `✓ Transaction request submitted (requestId: ${requestId.slice(0, 20)}...)`);
 
-        const invoiceId = (invoiceId ?? invoiceHash) as AleoField;
+        const invoiceId = (computedInvoiceId ?? invoiceHash) as AleoField;
 
         // ==================== Phase 3: Local encrypted archival & instant redirect ====================
 

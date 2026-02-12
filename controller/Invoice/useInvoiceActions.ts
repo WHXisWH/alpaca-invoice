@@ -3,19 +3,20 @@ import { useTransactionController } from '@/controller/Transaction/useTransactio
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { Invoice, AleoField } from '@/lib/types';
+import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
 import { toast } from 'sonner';
 
 /**
- * Hook: 发票操作（支付/取消）
- * 
- * 使用方式：
- * - useInvoiceActions(invoice, onSync) - handlePay() 和 handleCancel() 直接使用传入的 invoice
- * 
- * 职责：
- * - 处理支付操作
- * - 处理取消操作
- * - 管理操作状态
- * - ✅ 操作成功后标记为 SENDING（触发 AutoPoller）
+ * Hook: invoice actions (pay / cancel)
+ *
+ * Usage:
+ * - useInvoiceActions(invoice, onSync) - handlePay() and handleCancel() operate on the provided invoice
+ *
+ * Responsibilities:
+ * - Execute payment
+ * - Execute cancellation
+ * - Manage processing state
+ * - Mark invoice as SENDING after success (triggers AutoPoller)
  */
 export function useInvoiceActions(
   invoice: Invoice | null,
@@ -23,14 +24,15 @@ export function useInvoiceActions(
 ) {
   const { executePay, executeCancel } = useTransactionController();
   const { handleError } = useErrorHandler();
-  const markInvoiceSending = useInvoiceStore((state) => state.markInvoiceSending);
+  const markInvoiceSending = useInvoiceStore(
+    (state: InvoiceState) => state.markInvoiceSending
+  );
   const [isProcessing, setIsProcessing] = useState(false);
 
   /**
-   * 处理支付
-   * 直接使用 hook 的 invoice 对象，不需要参数
-   * ✅ 成功后标记为 SENDING，触发全局 AutoPoller
-   */
+   * Process payment using the invoice provided to the hook.
+   * Marks the invoice as SENDING to trigger the global AutoPoller.
+  */
   const handlePay = useCallback(async () => {
     if (!invoice) {
       toast.error('Payment failed', {
@@ -65,10 +67,9 @@ export function useInvoiceActions(
   }, [invoice, executePay, markInvoiceSending, handleError]);
 
   /**
-   * 处理取消
-   * 直接使用 hook 的 invoice 对象，不需要参数
-   * ✅ 成功后标记为 SENDING，触发全局 AutoPoller
-   */
+   * Process cancellation using the invoice provided to the hook.
+   * Marks the invoice as SENDING to trigger the global AutoPoller.
+  */
   const handleCancel = useCallback(async () => {
     if (!invoice) {
       toast.error('Cancellation failed', {
@@ -108,4 +109,3 @@ export function useInvoiceActions(
     handleCancel
   };
 }
-
