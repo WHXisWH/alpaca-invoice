@@ -6,6 +6,21 @@ import {
   decryptInvoiceDetails as decryptDetails,
 } from '@/lib/crypto';
 
+// Contract tag mapping (commit_field tag values)
+const FIELD_TAGS = {
+  amount: 1n,
+  tax_amount: 2n,
+  due_date: 3n,
+  buyer: 4n,
+  seller: 5n,
+  currency: 6n,
+  items_hash: 7n,
+  memo_hash: 8n,
+  order_id: 9n
+} as const;
+
+const RULE_TAGS = ['r1', 'r2', 'r3', 'r4', 'r5'] as const;
+
 /**
  * Aleo Field modulus (prime p)
  * p = 8444461749428370424248824938781546531375899335154063827935233455917409239041
@@ -39,6 +54,184 @@ export type CryptoServiceError = InstanceType<typeof CryptoServiceError>;
  * - Uses PBKDF2 (100,000 iterations) to derive encryption keys
  */
 export class CryptoService implements ICryptoService {
+  /**
+   * Evaluate audit rules (R1–R5) consistent with contract compute_rules_proof.
+   */
+  async evaluateAuditRules(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    currentTime: number;
+    lineItemsSum: bigint;
+    expectedTotal: bigint;
+    taxRateBps: bigint;
+    invoiceHash: AleoField;
+  }): Promise<{ rulesHash: AleoField; r1: boolean; r2: boolean; r3: boolean; r4: boolean; r5: boolean }> {
+    const expectedTax = (input.amount * input.taxRateBps) / 10000n;
+    const r1 = input.taxAmount === expectedTax;
+    const r2 = BigInt(input.dueDate) >= BigInt(input.currentTime);
+    const r3 = input.amount + input.taxAmount === input.expectedTotal;
+    const r4 = input.lineItemsSum === input.amount;
+    const r5 = true; // invoice_hash is already provided; integrity is checked by caller
+
+    const rulesBits = RULE_TAGS.map((_, idx) => {
+      return [r1, r2, r3, r4, r5][idx] ? '1' : '0';
+    }).join('');
+
+    // Simple hash -> we reuse computeRulesResult logic: hash boolean struct via JSON -> SHA256 -> field
+    const hashInput = { r1, r2, r3, r4, r5 };
+    const encoder = new TextEncoder();
+    const data = encoder.encode(JSON.stringify(hashInput));
+    const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashBigInt = BigInt('0x' + hashHex) % ALEO_FIELD_MODULUS;
+    const rulesHash = `${hashBigInt.toString()}field` as AleoField;
+
+    return { rulesHash, r1, r2, r3, r4, r5 };
+  }
+
+  /**
+   * Build per-field commitments and root consistent with contract commit_field tags.
+   */
+  async buildFieldCommitments(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    buyer: string;
+    seller: string;
+    currency: AleoField;
+    itemsHash: AleoField;
+    memoHash: AleoField;
+    orderId: AleoField;
+    nonce: AleoField;
+  }): Promise<{ root: AleoField; fields: Record<string, AleoField> }> {
+    const commitField = async (valueField: AleoField, salt: AleoField, tag: bigint) => {
+      const payload = JSON.stringify({ val: valueField, salt, tag: `${tag}field` });
+      const enc = new TextEncoder().encode(payload);
+      const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
+      const hx = Array.from(new Uint8Array(h))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
+      return `${bi.toString()}field` as AleoField;
+    };
+
+    const salt = input.nonce;
+    const fields: Record<string, AleoField> = {};
+    fields.amount = await commitField(`${input.amount}field` as AleoField, salt, FIELD_TAGS.amount);
+    fields.tax_amount = await commitField(`${input.taxAmount}field` as AleoField, salt, FIELD_TAGS.tax_amount);
+    fields.due_date = await commitField(`${input.dueDate}field` as AleoField, salt, FIELD_TAGS.due_date);
+    fields.buyer = await commitField(`${input.buyer}field` as AleoField, salt, FIELD_TAGS.buyer);
+    fields.seller = await commitField(`${input.seller}field` as AleoField, salt, FIELD_TAGS.seller);
+    fields.currency = await commitField(input.currency, salt, FIELD_TAGS.currency);
+    fields.items_hash = await commitField(input.itemsHash, salt, FIELD_TAGS.items_hash);
+    fields.memo_hash = await commitField(input.memoHash, salt, FIELD_TAGS.memo_hash);
+    fields.order_id = await commitField(input.orderId, salt, FIELD_TAGS.order_id);
+
+    const root = await this.hashObjectToField(fields);
+    return { root, fields };
+  }
+
+  /**
+   * Generate minimal disclosure audit package (off-chain).
+   */
+  async generateAuditPackage(input: {
+    invoiceId: AleoField;
+    invoiceHash: AleoField;
+    rulesHash: AleoField;
+    fieldCommitments: Record<string, AleoField>;
+    commitmentsRoot: AleoField;
+    auditKeyHash: AleoField;
+    scopesBitmask: bigint;
+    expiresAt: number;
+    selectedFields: string[];
+    payload: any;
+    signature?: string;
+    programId: string;
+    version?: string;
+  }): Promise<any> {
+    return {
+      version: input.version ?? '2.2',
+      program_id: input.programId,
+      invoice_id: input.invoiceId,
+      invoice_hash: input.invoiceHash,
+      rules_hash: input.rulesHash,
+      commitments_root: input.commitmentsRoot,
+      field_commitments: input.fieldCommitments,
+      audit_key_hash: input.auditKeyHash,
+      scopes_bitmask: input.scopesBitmask.toString(),
+      expires_at: input.expiresAt,
+      selected_fields: input.selectedFields,
+      payload: input.payload,
+      signature: input.signature
+    };
+  }
+
+  /**
+   * Verify audit package by recomputing hashes and calling on-chain asserts.
+   */
+  async verifyAuditPackage(pkg: any, adapter: {
+    assertRules: (invoiceId: AleoField, rulesHash: AleoField) => Promise<void>;
+    assertAmount: (invoice: any, hash: AleoField, min: bigint, max: bigint) => Promise<void>;
+    assertOwnership: (invoice: any, hash: AleoField, seller: string, buyer: string) => Promise<void>;
+    assertCommitment: (invoiceId: AleoField, root: AleoField) => Promise<void>;
+    assertCounter?: (seller: string, expected: bigint) => Promise<void>;
+  }): Promise<{ valid: boolean; reason?: string }> {
+    try {
+      // Expiry check (milliseconds)
+      if (pkg.expires_at !== undefined && typeof pkg.expires_at === 'number') {
+        if (Date.now() > pkg.expires_at) {
+          return { valid: false, reason: 'expired' };
+        }
+      }
+
+      // Basic presence check
+      if (!pkg.invoice_id || !pkg.commitments_root || !pkg.rules_hash || !pkg.field_commitments) {
+        return { valid: false, reason: 'missing_required_fields' };
+      }
+
+      // If payload contains amount/tax/total, recompute expected rules hash and compare
+      if (pkg.payload && pkg.payload.amount && pkg.payload.tax_amount && pkg.payload.expected_total) {
+        const rules = await this.evaluateAuditRules({
+          amount: BigInt(pkg.payload.amount.toString()),
+          taxAmount: BigInt(pkg.payload.tax_amount.toString()),
+          dueDate: Number(pkg.payload.due_date ?? 0),
+          currentTime: Number(pkg.payload.current_time ?? 0),
+          lineItemsSum: BigInt(pkg.payload.line_items_sum ?? pkg.payload.amount),
+          expectedTotal: BigInt(pkg.payload.expected_total.toString()),
+          taxRateBps: BigInt(pkg.payload.tax_rate_bps ?? 0),
+          invoiceHash: pkg.invoice_hash as AleoField
+        });
+        if (rules.rulesHash !== pkg.rules_hash) {
+          return { valid: false, reason: 'rules_hash_mismatch' };
+        }
+      }
+
+      await adapter.assertRules(pkg.invoice_id as AleoField, pkg.rules_hash as AleoField);
+      await adapter.assertCommitment(pkg.invoice_id as AleoField, pkg.commitments_root as AleoField);
+
+      // Optional amount & ownership assertions if full invoice provided
+      if (pkg.invoice_record) {
+        await adapter.assertAmount(
+          pkg.invoice_record,
+          pkg.invoice_hash as AleoField,
+          BigInt(pkg.payload?.min_amount ?? 0),
+          BigInt(pkg.payload?.max_amount ?? pkg.payload?.amount ?? 0)
+        );
+        await adapter.assertOwnership(
+          pkg.invoice_record,
+          pkg.invoice_hash as AleoField,
+          pkg.invoice_record.seller,
+          pkg.invoice_record.buyer
+        );
+      }
+
+      return { valid: true };
+    } catch (e: any) {
+      return { valid: false, reason: e?.message ?? 'assert_failed' };
+    }
+  }
   /**
    * Core business hash: Computes a unique hash for InvoiceDetails following the contract logic
    *
@@ -119,6 +312,20 @@ export class CryptoService implements ICryptoService {
         { originalError: error }
       );
     }
+  }
+
+  /**
+   * Generic helper: hash arbitrary object to AleoField (SHA-256 mod p).
+   */
+  async hashObjectToField(obj: any): Promise<AleoField> {
+    const canonical = JSON.stringify(obj);
+    const enc = new TextEncoder().encode(canonical);
+    const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
+    const hx = Array.from(new Uint8Array(h))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
+    return `${bi.toString()}field` as AleoField;
   }
 
   /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
@@ -8,6 +8,8 @@ import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useAuditController } from '@/controller/Audit/useAuditController';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -34,6 +36,65 @@ export default function InvoiceDetailPage() {
     handleCancel,
     handleSyncStatus
   } = useInvoiceDetail(invoiceHash);
+  const { generate } = useAuditController();
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
+  const [anchors, setAnchors] = useState<{
+    commitment?: string | null;
+    rules?: string | null;
+    fieldCommitments?: any;
+    auth?: any;
+    counter?: number | null;
+  }>({});
+  const [isFetchingAnchors, setIsFetchingAnchors] = useState(false);
+  const [downloadMsg, setDownloadMsg] = useState('');
+
+  useEffect(() => {
+    const fetchAnchors = async () => {
+      if (!invoice) return;
+      setIsFetchingAnchors(true);
+      try {
+        const [commitment, fieldCommitments, rules, auth, counter] = await Promise.all([
+          protocolService.getInvoiceCommitment(invoice.id),
+          protocolService.getInvoiceFieldCommitments(invoice.id),
+          protocolService.getRulesResult(invoice.id),
+          protocolService.getAuditAuthorization(invoice.id),
+          protocolService.getAuditCounter(invoice.seller)
+        ]);
+        setAnchors({ commitment, fieldCommitments, rules, auth, counter });
+      } catch (e) {
+        setAnchors({});
+      } finally {
+        setIsFetchingAnchors(false);
+      }
+    };
+    fetchAnchors();
+  }, [invoice, protocolService]);
+
+  const handleDownloadPackage = async (mode: 'minimal' | 'full') => {
+    if (!invoice) return;
+    setDownloadMsg('');
+    try {
+      const fields =
+        mode === 'minimal'
+          ? ['amount', 'tax_amount', 'due_date', 'buyer', 'seller']
+          : ['amount', 'tax_amount', 'due_date', 'buyer', 'seller', 'currency', 'items_hash', 'memo_hash', 'order_id'];
+      const pkg = await generate({
+        invoiceId: invoice.id,
+        selectedFields: fields,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000
+      });
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-package-${mode}-${invoice.id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDownloadMsg(`Generated ${mode} package`);
+    } catch (e: any) {
+      setDownloadMsg(e?.message || 'Failed to generate package');
+    }
+  };
 
   // Display authorization overlay
   if (isAuthRequired) {
@@ -186,6 +247,59 @@ export default function InvoiceDetailPage() {
             <span className="font-medium text-slate-900 capitalize">
               {userRole === 'seller' ? '🏪 Seller' : userRole === 'buyer' ? '🛒 Buyer' : '❓ Unknown'}
             </span>
+          </div>
+        </div>
+
+        {/* Audit anchors */}
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold text-slate-900">Audit anchors</div>
+            {isFetchingAnchors && (
+              <span className="text-xs text-slate-600 flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" /> Loading
+              </span>
+            )}
+          </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-xs text-slate-800">
+            <div>
+              <div className="text-slate-500">Commitment root</div>
+              <div className="font-mono break-all">{anchors.commitment ?? 'N/A'}</div>
+            </div>
+            <div>
+              <div className="text-slate-500">Rules result</div>
+              <div className="font-mono break-all">{anchors.rules ?? 'N/A'}</div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-slate-500">Field commitments</div>
+              <pre className="mt-1 max-h-28 overflow-auto rounded border border-slate-200 bg-white p-2">
+                {anchors.fieldCommitments ? JSON.stringify(anchors.fieldCommitments, null, 2) : 'N/A'}
+              </pre>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-slate-500">Audit authorization</div>
+              <pre className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-white p-2">
+                {anchors.auth ? JSON.stringify(anchors.auth, null, 2) : 'N/A'}
+              </pre>
+            </div>
+            <div>
+              <div className="text-slate-500">Seller audit counter</div>
+              <div className="font-mono break-all">{anchors.counter ?? 'N/A'}</div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => handleDownloadPackage('minimal')}
+              className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              Download minimal package
+            </button>
+            <button
+              onClick={() => handleDownloadPackage('full')}
+              className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+            >
+              Download full package
+            </button>
+            {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
           </div>
         </div>
 

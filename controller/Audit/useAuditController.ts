@@ -1,91 +1,269 @@
 import { useCallback, useMemo } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import {
-  AuditPackage,
-  createAuditPackage,
-  randomAuditKey,
-  validateAuditPackage
-} from '@/lib/audit';
-import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID } from '@/lib/contract';
+import type { AleoAddress, AleoField } from '@/lib/types';
+import type { AuditPackage } from '@/types/audit-package';
 
-const cryptoService = new CryptoService();
+const FIELD_SCOPE_IDS: Record<string, number> = {
+  amount: 1,
+  tax_amount: 2,
+  due_date: 3,
+  buyer: 4,
+  seller: 5,
+  currency: 6,
+  items_hash: 7,
+  memo_hash: 8,
+  order_id: 9
+};
+
+const DEFAULT_FIELDS = ['amount', 'tax_amount', 'buyer', 'seller', 'due_date'];
+
+const toSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
+
+const sumLineItems = (lineItems: { quantity: number; unitPrice: number }[]) =>
+  lineItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+
+const buildScopesBitmask = (fields: string[]): bigint => {
+  let mask = 0n;
+  for (const f of fields) {
+    const id = FIELD_SCOPE_IDS[f];
+    if (id) {
+      mask |= 1n << BigInt(id - 1);
+    }
+  }
+  return mask;
+};
 
 export function useAuditController() {
-  const { getAllInvoices } = useInvoiceStore.getState();
-  const walletContext = useWallet();
+  const wallet = useWallet();
   const { publicKey, masterKey } = useUserStore();
+  const { getAllInvoices } = useInvoiceStore.getState();
 
-  const signerAddress = useMemo(() => publicKey as AleoAddress | null, [publicKey]);
-  // Protocol service for optional on-chain verification
+  const cryptoService = useMemo(() => new CryptoService(), []);
   const protocolService = useMemo(() => new AleoProtocolService(), []);
 
+  const signMessage = useCallback(
+    async (message: string) => {
+      if (!wallet.signMessage) return undefined;
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+      const sigBytes = await wallet.signMessage(encoder.encode(message));
+      return decoder.decode(sigBytes);
+    },
+    [wallet]
+  );
+
+  /**
+   * Generate an audit package referencing on-chain anchors plus minimal disclosed fields.
+   */
   const generate = useCallback(
-    async (options: {
+    async (opts: {
       invoiceId: AleoField;
-      auditorAddress: AleoAddress;
+      selectedFields?: string[];
+      scopesBitmask?: bigint;
       expiresAt: number;
-      permissions: string[];
-    }): Promise<{ pkg: AuditPackage; auditKey: string }> => {
-      if (!signerAddress) throw new Error('Wallet not connected');
-      if (!masterKey) throw new Error('Master key missing. Please sign to derive it.');
+      auditor?: AleoAddress;
+    }): Promise<AuditPackage> => {
+      if (!masterKey) {
+        throw new Error('Master key missing. Please sign in to load invoice details.');
+      }
 
       const invoices = await getAllInvoices({ masterKey, refreshMemory: false });
       const invoice =
-        invoices.find((inv: Invoice) => inv.id === options.invoiceId) ||
-        invoices.find((inv: Invoice) => inv.invoiceHash === options.invoiceId);
+        invoices.find((i) => i.id === opts.invoiceId) ||
+        invoices.find((i) => i.invoiceHash === opts.invoiceId);
 
       if (!invoice) {
-        throw new Error('Invoice not found in local storage. Please sync invoices first.');
-      }
-      if (!invoice.details) {
-        throw new Error('Invoice details are missing; cannot generate audit package.');
+        throw new Error('Invoice not found locally. Please sync invoices first.');
       }
 
-      const auditKey = randomAuditKey();
-      const signMessage = async (message: string) => {
-        if (!walletContext.signMessage) {
-          throw new Error('Wallet does not support signMessage');
+      const details = invoice.details;
+      if (!details) {
+        throw new Error('Invoice details are not decrypted. Cannot build audit package.');
+      }
+
+      const fields = opts.selectedFields && opts.selectedFields.length > 0
+        ? opts.selectedFields
+        : DEFAULT_FIELDS;
+      const scopes = opts.scopesBitmask ?? buildScopesBitmask(fields);
+
+      // Fetch on-chain anchors
+      const [commitmentRoot, fieldCommitments, rulesResult, auth] = await Promise.all([
+        protocolService.getInvoiceCommitment(invoice.id),
+        protocolService.getInvoiceFieldCommitments(invoice.id),
+        protocolService.getRulesResult(invoice.id),
+        protocolService.getAuditAuthorization(invoice.id)
+      ]);
+
+      if (!commitmentRoot || !fieldCommitments) {
+        throw new Error('Commitment caches are missing on chain for this invoice.');
+      }
+
+      // Compute rules hash locally if cache is absent
+      let rulesHash = rulesResult || null;
+      if (!rulesHash) {
+        const rules = await cryptoService.evaluateAuditRules({
+          amount: invoice.amount,
+          taxAmount: BigInt(Math.round(details.taxAmount)),
+          dueDate: toSeconds(invoice.dueDate),
+          currentTime: Math.floor(Date.now() / 1000),
+          lineItemsSum: BigInt(Math.round(sumLineItems(details.lineItems))),
+          expectedTotal: BigInt(Math.round(details.total)),
+          taxRateBps: BigInt(Math.round(details.taxRate * 10000)),
+          invoiceHash: invoice.invoiceHash
+        });
+        rulesHash = rules.rulesHash;
+      }
+
+      // Minimal payload with selected fields
+      const payload: Record<string, unknown> = {};
+      const itemsHash =
+        fields.includes('items_hash') && details.lineItems
+          ? await cryptoService.computeInvoiceHash({ ...details, notes: undefined })
+          : undefined;
+      const setIfSelected = (key: string, value: unknown) => {
+        if (fields.includes(key) && value !== undefined) {
+          payload[key] = value;
         }
-        const encoder = new TextEncoder();
-        const decoder = new TextDecoder();
-        const sigBytes = await walletContext.signMessage(encoder.encode(message));
-        return decoder.decode(sigBytes);
       };
 
-      const { pkg } = await createAuditPackage({
-        invoice,
-        permissions: options.permissions,
-        auditorAddress: options.auditorAddress,
-        expiresAt: options.expiresAt,
-        signerAddress,
-        auditKey,
-        signMessage,
+      setIfSelected('amount', invoice.amount.toString());
+      setIfSelected('tax_amount', details.taxAmount);
+      setIfSelected('due_date', toSeconds(invoice.dueDate));
+      setIfSelected('buyer', invoice.buyer);
+      setIfSelected('seller', invoice.seller);
+      setIfSelected('currency', details.currency);
+      setIfSelected('items_hash', itemsHash);
+      setIfSelected('memo_hash', details.notes);
+      setIfSelected('order_id', details.invoiceNumber);
+
+      const signatureMessage = [
+        'AUDIT_PACKAGE_V2_2',
+        PROGRAM_ID,
+        invoice.id,
+        invoice.invoiceHash,
+        rulesHash,
+        commitmentRoot,
+        scopes.toString()
+      ].join('|');
+
+      const pkg = await cryptoService.generateAuditPackage({
+        invoiceId: invoice.id,
+        invoiceHash: invoice.invoiceHash,
+        rulesHash,
+        fieldCommitments: fieldCommitments as any,
+        commitmentsRoot: commitmentRoot,
+        auditKeyHash: (auth?.audit_key_hash ?? '0field') as AleoField,
+        scopesBitmask: scopes,
+        expiresAt: opts.expiresAt,
+        selectedFields: fields,
+        payload,
+        signature: await signMessage(signatureMessage),
         programId: PROGRAM_ID,
-        version: 2,
-        chainVerifiable: true
+        version: '2.2'
       });
 
-      return { pkg, auditKey };
+      return pkg as AuditPackage;
     },
-    [getAllInvoices, masterKey, signerAddress]
+    [cryptoService, getAllInvoices, masterKey, protocolService, signMessage]
   );
 
-  const validate = useCallback(
-    async (pkg: AuditPackage, auditKey: string) => {
-      return validateAuditPackage({
-        pkg,
-        auditKey,
-        computeInvoiceHash: (details) => cryptoService.computeInvoiceHash(details),
-        protocolService
+  /**
+   * Verify an audit package by recomputing rules hash and calling on-chain asserts.
+   */
+  const verify = useCallback(
+    async (
+      pkg: AuditPackage
+    ): Promise<{
+      valid: boolean;
+      reason?: string;
+      anchors?: Record<string, unknown>;
+      assertions?: Record<string, { ok: boolean; error?: string }>;
+    }> => {
+      const anchors: Record<string, unknown> = {};
+      const assertions: Record<string, { ok: boolean; error?: string }> = {
+        rules: { ok: false },
+        commitment: { ok: false },
+        amount: { ok: pkg.payload?.amount !== undefined ? false : true },
+        ownership: { ok: pkg.payload?.buyer !== undefined ? false : true },
+        counter: { ok: true }
+      };
+
+      // Fetch anchors for display (best-effort)
+      try {
+        anchors.commitment = await protocolService.getInvoiceCommitment(pkg.invoice_id);
+        anchors.fieldCommitments = await protocolService.getInvoiceFieldCommitments(pkg.invoice_id);
+        anchors.rulesResult = await protocolService.getRulesResult(pkg.invoice_id);
+        anchors.auditAuthorization = await protocolService.getAuditAuthorization(pkg.invoice_id);
+      } catch (e) {
+        // display only
+      }
+
+      // Core verification (hash parity & generic checks)
+      const core = await cryptoService.verifyAuditPackage(pkg, {
+        assertRules: protocolService.assertRules.bind(protocolService),
+        assertAmount: protocolService.assertAmount.bind(protocolService),
+        assertOwnership: protocolService.assertOwnership.bind(protocolService) as any,
+        assertCommitment: protocolService.assertCommitment.bind(protocolService),
+        assertCounter: protocolService.assertCounter.bind(protocolService) as any
       });
+
+      // Individual assert calls for UI feedback (best-effort)
+      try {
+        await protocolService.assertRules(pkg.invoice_id, pkg.rules_hash);
+        assertions.rules.ok = true;
+      } catch (e: any) {
+        assertions.rules = { ok: false, error: e?.message };
+      }
+
+      try {
+        await protocolService.assertCommitment(pkg.invoice_id, pkg.commitments_root);
+        assertions.commitment.ok = true;
+      } catch (e: any) {
+        assertions.commitment = { ok: false, error: e?.message };
+      }
+
+      const record = (pkg as any).invoice_record;
+      if (record && pkg.payload) {
+        try {
+          await protocolService.assertAmount(
+            record,
+            pkg.invoice_hash,
+            BigInt(String(pkg.payload?.min_amount ?? 0)),
+            BigInt(String(pkg.payload?.max_amount ?? pkg.payload?.amount ?? 0))
+          );
+          assertions.amount.ok = true;
+        } catch (e: any) {
+          assertions.amount = { ok: false, error: e?.message };
+        }
+
+        try {
+          await protocolService.assertOwnership(
+            record,
+            pkg.invoice_hash,
+            (pkg as any).seller ?? record.seller,
+            (pkg as any).buyer ?? record.buyer
+          );
+          assertions.ownership.ok = true;
+        } catch (e: any) {
+          assertions.ownership = { ok: false, error: e?.message };
+        }
+      }
+
+      const valid =
+        core.valid &&
+        Object.values(assertions).every((a) => a.ok !== false);
+
+      const reason = valid ? undefined : core.reason || 'assert_failed';
+
+      return { valid, reason, anchors, assertions };
     },
-    [protocolService]
+    [cryptoService, protocolService]
   );
 
-  return { generate, validate };
+  return { generate, verify, publicKey };
 }
