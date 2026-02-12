@@ -10,11 +10,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // ============================================
-        // 方案 C: 深棕暖色系 - 与草泥马配图协调
-        // ============================================
+        // Palette: warm dark brown (matches mascot illustration)
 
-        // 主色 - 深棕色系 (侧边栏、深色元素)
+        // Primary - dark brown (sidebar, dark surfaces)
         primary: {
           50: "#FAFAF9",
           100: "#F5F5F4",
@@ -24,26 +22,26 @@ const config: Config = {
           500: "#78716C",
           600: "#57534E",
           700: "#44403C",
-          800: "#292524",  // 侧边栏背景
-          900: "#1C1917",  // 最深色
+          800: "#292524",  // sidebar background
+          900: "#1C1917",  // deepest tone
           950: "#0C0A09",
         },
 
-        // 强调色 - 琥珀金 (CTA按钮、重要操作)
+        // Accent - amber/gold (CTA, primary actions)
         accent: {
           50: "#FFFBEB",
           100: "#FEF3C7",
           200: "#FDE68A",
           300: "#FCD34D",
           400: "#FBBF24",
-          500: "#F59E0B",  // 主CTA色
+          500: "#F59E0B",  // main CTA
           600: "#D97706",
           700: "#B45309",
           800: "#92400E",
           900: "#78350F",
         },
 
-        // 成功色 - 翠绿
+        // Success - green
         success: {
           50: "#ECFDF5",
           100: "#D1FAE5",
@@ -55,7 +53,7 @@ const config: Config = {
           700: "#047857",
         },
 
-        // 警告色 - 琥珀
+        // Warning - amber
         warning: {
           50: "#FFFBEB",
           100: "#FEF3C7",
@@ -67,7 +65,7 @@ const config: Config = {
           700: "#B45309",
         },
 
-        // 错误色 - 玫红
+        // Error - red
         error: {
           50: "#FEF2F2",
           100: "#FEE2E2",
@@ -79,7 +77,7 @@ const config: Config = {
           700: "#B91C1C",
         },
 
-        // 信息色 - 天蓝
+        // Info - blue
         info: {
           50: "#EFF6FF",
           100: "#DBEAFE",
@@ -91,7 +89,7 @@ const config: Config = {
           700: "#1D4ED8",
         },
 
-        // 保留 Alpaca 色系用于特定装饰
+        // Alpaca accent set (selective use)
         alpaca: {
           50: "#FFFEF9",
           100: "#FDF8F3",

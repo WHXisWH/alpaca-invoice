@@ -665,7 +665,7 @@ export default function LandingPage() {
                 </p>
               </div>
               <div className="mt-8 p-6 rounded-2xl bg-primary-900/30 border border-white/5 font-mono text-xs text-primary-500">
-                // Encrypted Payload Example
+                <span>Encrypted Payload Example</span>
                 <br />
                 {`{ ciphertext: "0x7f3a...2b1c", iv: "0x1a2b...3c4d" }`}
               </div>

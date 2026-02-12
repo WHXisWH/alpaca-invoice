@@ -4,8 +4,8 @@ import { InvoiceStatus } from '@/lib/types';
 import { cleanAleoNumber } from '@/lib/utils';
 
 /**
- * 发票状态验证服务实现
- * 职责：根据 action 类型验证链上 record 是否符合预期状态
+ * Invoice status validation
+ * Purpose: decide whether a chain record matches the expected status based on action.
  */
 export class InvoiceStatusValidator implements IInvoiceStatusValidator {
   validateRecord(
@@ -20,7 +20,6 @@ export class InvoiceStatusValidator implements IInvoiceStatusValidator {
       };
     }
 
-    // PaymentRecord 总是可以确认（表示已支付）
     if ('payment_id' in record) {
       return { 
         shouldConfirm: true, 
@@ -28,7 +27,6 @@ export class InvoiceStatusValidator implements IInvoiceStatusValidator {
       };
     }
 
-    // InvoiceRecord 需要根据 action 检查 status
     const invoiceRecord = record as AleoInvoiceRecord;
     const recordStatus = Number(cleanAleoNumber(invoiceRecord.status));
 
@@ -86,7 +84,6 @@ export class InvoiceStatusValidator implements IInvoiceStatusValidator {
       };
     }
 
-    // 没有 action 或未知 action：使用默认逻辑
     if (originalInvoiceStatus === InvoiceStatus.PENDING && 
         recordStatus === InvoiceStatus.PENDING) {
       return {
@@ -103,4 +100,3 @@ export class InvoiceStatusValidator implements IInvoiceStatusValidator {
     };
   }
 }
-
