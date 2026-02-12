@@ -135,4 +135,65 @@ export interface ICryptoService {
    * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
    */
   deriveMasterKey(signature: string): Promise<string>;
+
+  /**
+   * Generate a random audit key for audit package encryption
+   * 
+   * Generates a cryptographically secure random 32-byte key
+   * and returns it as a 64-character hexadecimal string.
+   * 
+   * Use case: Creating new audit packages. Each audit package
+   * should have a unique random key for encryption.
+   * 
+   * Security: Uses crypto.getRandomValues() which provides
+   * cryptographically strong random values suitable for security purposes.
+   * 
+   * @returns Random audit key as hex string (64 characters)
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED if random generation fails
+   */
+  generateAuditKey(): string;
+
+  /**
+   * Convert hex audit key string to Uint8Array
+   * 
+   * Used by audit package generation to convert the random hex key
+   * into a format suitable for AES-GCM encryption
+   *
+   * @param auditKey Hex string audit key (e.g., from generateAuditKey())
+   * @returns Uint8Array suitable for encryption
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED if format is invalid
+   */
+  auditKeyToBytes(auditKey: string): Uint8Array;
+
+  /**
+   * Hash encrypted payload (SHA-256 of iv + ciphertext)
+   * 
+   * Used for audit package integrity verification. This hash is signed
+   * and included in the audit package to detect tampering.
+   *
+   * @param payload Encrypted payload containing iv and ciphertext
+   * @returns Hex hash string (64 characters)
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
+   */
+  hashCipher(payload: EncryptedPayload): Promise<string>;
+
+  /**
+   * Encrypt invoice details with raw audit key (without PBKDF2 derivation)
+   * 
+   * Unlike encryptInvoiceDetails which uses a master key string,
+   * this method accepts a raw Uint8Array key directly for audit packages.
+   * No key derivation is performed.
+   *
+   * Use case: Audit package generation where the audit key is already
+   * a random 32-byte key suitable for AES-GCM.
+   *
+   * @param details Invoice details or partial invoice to encrypt
+   * @param auditKey Raw encryption key as Uint8Array (32 bytes)
+   * @returns Encrypted payload
+   * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
+   */
+  encryptWithAuditKey(
+    details: InvoiceDetails | Partial<any>,
+    auditKey: Uint8Array
+  ): Promise<EncryptedPayload>;
 }
