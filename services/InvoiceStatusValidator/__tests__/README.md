@@ -1,58 +1,29 @@
-# InvoiceStatusValidator 测试说明
+# InvoiceStatusValidator Test Plan
 
-## 测试文件
+## Purpose
+Determine whether chain records should be accepted as confirmation for create/pay/cancel flows.
 
-- `InvoiceStatusValidatorImpl.test.ts` - 发票状态验证服务测试
+## Files
+- `InvoiceStatusValidatorImpl.test.ts` — unit tests.
 
-## 运行测试
-
+## Commands
 ```bash
-# 运行所有 InvoiceStatusValidator 相关测试
 npm test services/InvoiceStatusValidator
-
-# 运行特定测试文件
 npm test InvoiceStatusValidatorImpl.test.ts
 ```
 
-## 测试覆盖范围
+## Test Matrix
+1) Null record → `shouldConfirm: false`.  
+2) PaymentRecord → always confirm, action ignored.  
+3) Cancel action → confirm only when status = CANCELLED; otherwise wait.  
+4) Pay action → confirm only when status = PAID; otherwise wait.  
+5) Create action → always confirm (presence means created).  
+6) No action → confirm if status matches original PENDING; otherwise confirm on status change.  
+7) Edge cases: EXPIRED, numeric status strings, u8 suffix cleanup.  
+8) Integration flows: create→cancel; create→pay with PaymentRecord.
 
-### InvoiceStatusValidatorImpl 测试
+## Mock Notes
+- `cleanAleoNumber` mocked to strip numeric suffixes where needed.
 
-1. **null 记录处理**
-   - ✅ 对 null 记录返回 shouldConfirm: false
-
-2. **PaymentRecord 处理**
-   - ✅ PaymentRecord 总是返回 shouldConfirm: true
-   - ✅ 忽略 action 类型
-
-3. **InvoiceRecord with cancel action**
-   - ✅ status 为 CANCELLED 时返回 shouldConfirm: true
-   - ✅ status 不是 CANCELLED 时返回 shouldConfirm: false
-   - ✅ 处理不同的非 CANCELLED 状态
-
-4. **InvoiceRecord with pay action**
-   - ✅ status 为 PAID 时返回 shouldConfirm: true
-   - ✅ status 不是 PAID 时返回 shouldConfirm: false
-
-5. **InvoiceRecord with create action**
-   - ✅ create action 总是返回 shouldConfirm: true
-   - ✅ 忽略 status 值
-
-6. **InvoiceRecord without action**
-   - ✅ originalStatus 和 recordStatus 都是 PENDING 时返回 shouldConfirm: true
-   - ✅ status 已变化时返回 shouldConfirm: true
-   - ✅ originalStatus 不是 PENDING 时返回 shouldConfirm: true
-
-7. **边界情况**
-   - ✅ 处理 EXPIRED 状态
-   - ✅ 处理数字格式的 status
-
-8. **集成测试**
-   - ✅ 从创建到取消的完整验证流程
-   - ✅ 从创建到支付的完整验证流程
-
-## Mock 说明
-
-- 使用 `vi.mock()` mock `cleanAleoNumber` 工具函数
-- 模拟 Aleo 数字格式（移除 'u8' 后缀）
-
+## Coverage Goals
+- Lines/branches/functions >90%.
