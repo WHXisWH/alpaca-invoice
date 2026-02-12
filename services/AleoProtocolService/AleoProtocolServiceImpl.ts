@@ -7,8 +7,16 @@ import {
 } from '@/lib/types';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
-import { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
+import type { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
 import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
+
+let sdkPromise: Promise<typeof import('@provablehq/sdk')> | null = null;
+const loadSdk = async () => {
+  if (!sdkPromise) {
+    sdkPromise = import('@provablehq/sdk');
+  }
+  return sdkPromise;
+};
 
 /**
  * AleoProtocolService implementation class
@@ -18,36 +26,43 @@ import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
  * Uses @provablehq/sdk's AleoNetworkClient to automatically handle URL construction and version compatibility
  */
 export class AleoProtocolService implements IAleoProtocolService {
-  private networkClient: AleoNetworkClient;
+  private networkClient: AleoNetworkClient | null = null;
   private programManager: ProgramManager | null = null;
   private network: WalletAdapterNetwork;
+  private baseUrl: string;
   private programSourceCache: string | null = null;
   private statusCache: Map<string, { ts: number; status: InvoiceStatus | null }> = new Map();
   private hashCache: Map<string, { ts: number; hash: AleoField | null }> = new Map();
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
-    const baseUrl = this.getBaseUrlForNetwork(network);
-    this.networkClient = new AleoNetworkClient(baseUrl);
     this.network = network;
+    this.baseUrl = this.getBaseUrlForNetwork(network);
   }
 
   /**
-   * Get or create ProgramManager instance (lazy initialization)
-   * ProgramManager may require WASM initialization, so lazy loading strategy is used
+   * Lazily load SDK clients (browser-only; avoids SSR WASM fetch)
    */
-  private getProgramManager(): ProgramManager {
+  private async getNetworkClient(): Promise<AleoNetworkClient> {
+    if (!this.networkClient) {
+      const sdk = await loadSdk();
+      this.networkClient = new sdk.AleoNetworkClient(this.baseUrl);
+    }
+    return this.networkClient;
+  }
+
+  private async getProgramManager(): Promise<ProgramManager> {
     if (!this.programManager) {
-      const baseUrl = this.getBaseUrlForNetwork(this.network);
+      const sdk = await loadSdk();
       // ProgramManager constructor: (host?, keyProvider?, recordProvider?, networkClientOptions?)
-      // For fee estimation, we don't need keyProvider and recordProvider
-      this.programManager = new ProgramManager(baseUrl);
+      this.programManager = new sdk.ProgramManager(this.baseUrl);
     }
     return this.programManager;
   }
 
   private async getProgramSource(): Promise<string> {
     if (this.programSourceCache) return this.programSourceCache;
-    const src = await this.networkClient.getProgram(PROGRAM_ID);
+    const client = await this.getNetworkClient();
+    const src = await client.getProgram(PROGRAM_ID);
     if (!src || typeof src !== 'string') {
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
@@ -71,7 +86,7 @@ export class AleoProtocolService implements IAleoProtocolService {
     nonce: AleoField;
   }): Promise<AleoField> {
     const program = await this.getProgramSource();
-    const pm = this.getProgramManager();
+    const pm = await this.getProgramManager();
     const inputs = [
       params.seller,
       params.buyer,
@@ -112,7 +127,8 @@ export class AleoProtocolService implements IAleoProtocolService {
    */
   async getLatestBlockHeight(): Promise<number> {
     try {
-      const height = await this.networkClient.getLatestHeight();
+      const client = await this.getNetworkClient();
+      const height = await client.getLatestHeight();
 
       if (!height || height < 0) {
         throw new ProtocolServiceError(
@@ -144,7 +160,8 @@ export class AleoProtocolService implements IAleoProtocolService {
    */
   async getPublicBalance(address: AleoAddress): Promise<Microcredits> {
     try {
-      const balance = await this.networkClient.getProgramMappingValue(
+      const client = await this.getNetworkClient();
+      const balance = await client.getProgramMappingValue(
         CREDITS_PROGRAM_ID,
         'account',
         address
@@ -216,17 +233,18 @@ export class AleoProtocolService implements IAleoProtocolService {
    *
    * @param programId Program identifier (e.g., "zk_invoice_v2.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
-   * @param key Mapping key (Field type)
+   * @param key Mapping key (Field type or Aleo address, depending on mapping definition)
    * @returns Mapping value (string format), or null if it does not exist
    * @throws {ProtocolServiceError} May throw NODE_CONNECTION_FAILED
    */
   async getProgramMappingValue(
     programId: string,
     mappingName: string,
-    key: AleoField
+    key: AleoField | AleoAddress
   ): Promise<string | null> {
     try {
-      const value = await this.networkClient.getProgramMappingValue(
+      const client = await this.getNetworkClient();
+      const value = await client.getProgramMappingValue(
         programId,
         mappingName,
         key
@@ -312,7 +330,8 @@ export class AleoProtocolService implements IAleoProtocolService {
    */
   async broadcastTransaction(transactionPayload: any): Promise<AleoTransactionId> {
     try {
-      const txId = await this.networkClient.submitTransaction(transactionPayload);
+      const client = await this.getNetworkClient();
+      const txId = await client.submitTransaction(transactionPayload);
 
       if (!txId || !txId.startsWith('at1')) {
         throw new ProtocolServiceError(
@@ -344,10 +363,11 @@ export class AleoProtocolService implements IAleoProtocolService {
   async waitForTransaction(txId: AleoTransactionId, timeoutMS: number = 60000): Promise<any> {
     const startTime = Date.now();
     const pollInterval = 2000; // Poll every 2 seconds
+    const client = await this.getNetworkClient();
 
     while (Date.now() - startTime < timeoutMS) {
       try {
-        const transaction = await this.networkClient.getTransaction(txId);
+        const transaction = await client.getTransaction(txId);
 
         if (transaction) {
           // Transaction confirmed
@@ -384,7 +404,7 @@ export class AleoProtocolService implements IAleoProtocolService {
     inputs: string[]
   ): Promise<Microcredits> {
     try {
-      const programManager = this.getProgramManager();
+      const programManager = await this.getProgramManager();
 
       // Step 1: Build Authorization object
       // This object contains the complete transaction description but hasn't generated the expensive ZK proof yet
@@ -449,7 +469,8 @@ export class AleoProtocolService implements IAleoProtocolService {
   }> {
     try {
       // Step 1: Query transaction details
-      const transaction = await this.networkClient.getTransaction(transactionId);
+      const client = await this.getNetworkClient();
+      const transaction = await client.getTransaction(transactionId);
 
       if (!transaction) {
         return {

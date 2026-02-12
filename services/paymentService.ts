@@ -82,7 +82,6 @@ export const paymentService = {
     // Step 1: Transfer credits
     const transferResponse = await wallet.requestTransaction({
       address: wallet.publicKey,
-      chainId: 'testnetbeta',
       transitions: [{
         program: CREDITS_PROGRAM_ID,
         functionName: 'transfer_private',
@@ -131,7 +130,6 @@ export const paymentService = {
     // Step 2: Mark as paid
     const markPaidResponse = await wallet.requestTransaction({
       address: wallet.publicKey,
-      chainId: 'testnetbeta',
       transitions: [{
         program: PROGRAM_ID,
         functionName: 'mark_as_paid',

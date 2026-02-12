@@ -10,30 +10,30 @@ import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/Invoic
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID } from '@/lib/contract';
 
-const POLL_INTERVAL = 15000; // 15秒
-const POLL_TIMEOUT = 600000; // 10分钟超时
+const POLL_INTERVAL = 15000; // 15 seconds
+const POLL_TIMEOUT = 600000; // 10 minutes timeout
 const MAPPING_CACHE_MS = 20000;
 
 /**
- * 轮询完成回调接口
+ * Polling callbacks
  */
 export interface PollingCallbacks {
-  /** 轮询成功回调 */
+  /** Invoked when polling succeeds */
   onSuccess: (updatedInvoice: Invoice, record: AleoInvoiceRecord | AleoPaymentRecord) => void | Promise<void>;
-  /** 轮询超时回调 */
+  /** Invoked on polling timeout */
   onTimeout: (rolledBackInvoice: Invoice) => void | Promise<void>;
-  /** 轮询错误回调（可选） */
+  /** Optional error callback */
   onError?: (error: Error) => void;
 }
 
 /**
- * Hook: 核心轮询逻辑
- * 
- * 职责：
- * - 封装单个发票的轮询逻辑
- * - 处理扫描、验证、确认的通用流程
- * - 通过回调提供灵活的处理方式
- * - 被 useInvoiceListPolling 和 useInvoiceChainSync 复用
+ * Hook: core polling logic
+ *
+ * Responsibilities:
+ * - Encapsulate single-invoice polling flow
+ * - Handle scan, validate, confirm pipeline
+ * - Provide callbacks for flexible handling
+ * - Reused by useInvoiceListPolling and useInvoiceChainSync
  */
 export function useInvoicePollingCore() {
   const { scanInvoiceRecord } = useInvoiceChainScan();
@@ -41,16 +41,16 @@ export function useInvoicePollingCore() {
   const protocolService = useMemo(() => new AleoProtocolService(), []);
 
   /**
-   * 从 store 获取最新的 invoice
+   * Get the latest invoice from the store
    */
   const getLatestInvoice = useCallback((invoiceHash: AleoField): Invoice | null => {
     const store = useInvoiceStore.getState();
-    return store.invoices.find(inv => inv.invoiceHash === invoiceHash) || 
+    return store.invoices.find((inv: Invoice) => inv.invoiceHash === invoiceHash) || 
            (store.currentInvoice?.invoiceHash === invoiceHash ? store.currentInvoice : null);
   }, []);
 
   /**
-   * 构建更新后的 Invoice
+   * Build updated Invoice from a chain record
    */
   const buildUpdatedInvoice = useCallback((
     invoice: Invoice,
@@ -78,7 +78,7 @@ export function useInvoicePollingCore() {
   }, []);
 
   /**
-   * 构建回退后的 Invoice（超时时使用）
+   * Build rolled-back Invoice (used on timeout)
    */
   const buildRolledBackInvoice = useCallback((invoice: Invoice): Invoice => {
     return {
@@ -93,12 +93,12 @@ export function useInvoicePollingCore() {
   }, []);
 
   /**
-   * 创建单个发票的 PollingService
-   * 
-   * @param invoiceHash - 发票 hash
-   * @param invoice - 初始 invoice 对象
-   * @param callbacks - 回调函数
-   * @returns PollingService 实例
+   * Create a PollingService for a single invoice
+   *
+   * @param invoiceHash - invoice hash
+   * @param invoice - initial invoice object
+   * @param callbacks - callbacks
+   * @returns PollingService instance
    */
   const createPollingService = useCallback((
     invoiceHash: AleoField,
@@ -111,7 +111,7 @@ export function useInvoicePollingCore() {
       confirmationStatus: invoice.metadata?.confirmationStatus
     });
 
-    // 创建 PollingService
+    // Create PollingService
     return new PollingService<InvoiceScanResult>(
       {
         pollInterval: POLL_INTERVAL,
@@ -119,7 +119,7 @@ export function useInvoicePollingCore() {
         taskName: `Invoice polling (${invoiceHash.slice(0, 20)}...)`
       },
       {
-        // 扫描函数：每次都从 store 获取最新的 invoice
+        // Scan: always fetch latest invoice from store
         scan: async () => {
           const latestInvoice = getLatestInvoice(invoiceHash);
           const invoiceId = latestInvoice?.id || invoice.id;
@@ -131,7 +131,7 @@ export function useInvoicePollingCore() {
           };
         },
         
-        // 验证函数：每次都从 store 获取最新的 invoice 进行验证
+        // Validate: always use latest invoice from store
         validate: (result) => {
           const latestInvoice = getLatestInvoice(invoiceHash);
           
@@ -144,16 +144,16 @@ export function useInvoicePollingCore() {
             };
           }
           
-      // 使用最新的 invoice 创建验证适配器
+      // Build validation adapter with latest invoice
       const validateAdapter = createInvoiceValidationAdapter(statusValidator, latestInvoice);
       return validateAdapter(result);
     },
         
-        // 成功回调
+        // Success callback
         onSuccess: async (result) => {
           const recordToUse = result.paymentRecord || result.invoiceRecord;
           if (recordToUse) {
-            // 从 store 获取最新的 invoice 用于构建更新
+            // Use latest invoice from store when building update
             const latestInvoice = getLatestInvoice(invoiceHash) || invoice;
             const updatedInvoice = buildUpdatedInvoice(latestInvoice, recordToUse);
             
@@ -162,9 +162,9 @@ export function useInvoicePollingCore() {
           }
         },
         
-        // 超时回调
+        // Timeout callback
         onTimeout: async () => {
-          // 从 store 获取最新的 invoice 用于构建回退
+          // Use latest invoice from store when building rollback
           const latestInvoice = getLatestInvoice(invoiceHash) || invoice;
           const rolledBackInvoice = buildRolledBackInvoice(latestInvoice);
           
@@ -172,7 +172,7 @@ export function useInvoicePollingCore() {
           await callbacks.onTimeout(rolledBackInvoice);
         },
         
-        // 错误回调
+        // Error callback
         onError: callbacks.onError || ((error) => {
           console.error(`❌ [PollingCore] Polling error for ${invoiceHash}:`, error);
         })
@@ -181,7 +181,7 @@ export function useInvoicePollingCore() {
   }, [scanInvoiceRecord, statusValidator, getLatestInvoice, buildUpdatedInvoice, buildRolledBackInvoice]);
 
   /**
-   * Mapping 优先的快速探测：返回链上 status/hash，节省解密
+   * Mapping-first quick probe: returns on-chain status/hash, avoiding decrypt when possible
    */
   const fetchChainAnchors = useCallback(async (invoiceId: AleoField) => {
     try {

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useInvoiceListPolling } from '@/controller/Invoice/useInvoiceListPolling';
 import { AleoField, Invoice } from '@/lib/types';
+import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
 
 /**
  * InvoiceAutoPoller - Global automatic polling component
@@ -19,9 +20,13 @@ import { AleoField, Invoice } from '@/lib/types';
  * - Cross-page sync: all pages share the same polling state
  */
 export function InvoiceAutoPoller() {
-  const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
-  const markInvoiceConfirmed = useInvoiceStore((state) => state.markInvoiceConfirmed);
-  const updateInvoice = useInvoiceStore((state) => state.updateInvoice);
+  const sendingInvoiceHashes = useInvoiceStore(
+    (state: InvoiceState) => state.sendingInvoiceHashes
+  );
+  const markInvoiceConfirmed = useInvoiceStore(
+    (state: InvoiceState) => state.markInvoiceConfirmed
+  );
+  const updateInvoice = useInvoiceStore((state: InvoiceState) => state.updateInvoice);
   
   // Use ref to track invoices that have already started polling (to avoid duplicate starts)
   const pollingHashesRef = useRef<Set<AleoField>>(new Set());
@@ -34,7 +39,7 @@ export function InvoiceAutoPoller() {
     updateInvoice(updatedInvoice.id, updatedInvoice, {
       masterKey: undefined, // Auto-poller does not handle encryption; determined by the specific page
       persistFull: false     // Only update in memory, do not persist (to avoid overwriting user data)
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       console.error(`❌ [AutoPoller] Failed to update invoice ${invoiceHash}:`, error);
     });
     

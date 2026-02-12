@@ -15,24 +15,24 @@ import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 
 /**
- * StatusConfig 类型定义（导出供 UI 使用）
+ * StatusConfig type (re-exported for UI)
  */
 export type { StatusConfig } from './IInvoices';
 
 /**
  * useInvoices Hook
- * 作为组合器，组合各个子 hooks
- * 
- * 职责：
- * - 初始化加载发票数据（从 IndexedDB 或链上）
- * - 提供发票列表的过滤、搜索、分类功能
- * - 处理发票操作（支付、取消）
- * - 批量同步功能
- * 
- * 轮询架构：
- * - ✅ 自动轮询由全局 InvoiceAutoPoller 统一管理（Single Source of Truth）
- * - ✅ 用户操作后调用 markInvoiceSending，触发 AutoPoller 自动轮询
- * - ✅ 详情页使用 useInvoiceChainSync 提供手动同步功能
+ * Composes sub-hooks to provide invoice list functionality.
+ *
+ * Responsibilities:
+ * - Initialize invoice data (from IndexedDB or chain)
+ * - Provide filter/search/grouping
+ * - Handle pay/cancel actions
+ * - Batch sync
+ *
+ * Polling model:
+ * - Auto polling is managed by the global InvoiceAutoPoller (single source of truth)
+ * - After user actions call markInvoiceSending to trigger AutoPoller
+ * - Details view uses useInvoiceChainSync for manual sync
  */
 export function useInvoices(): IInvoices {
   const wallet = useWallet();
@@ -42,21 +42,21 @@ export function useInvoices(): IInvoices {
     updateInvoice, 
     setInvoices,
     sendingInvoiceHashes,
-    markInvoiceSending,  // ✅ 新增：用于标记发票进入 SENDING 状态
-    rebuildSendingIndex  // ✅ 新增：重建 sending 索引
+    markInvoiceSending,  // Marks invoice as SENDING (triggers AutoPoller)
+    rebuildSendingIndex  // Rebuilds sending index from invoices
   } = useInvoiceStore();
   const { scanAllInvoiceRecords, scanAllPaymentRecords } = useInvoiceChainScan();
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // ✅ 1. 初始化逻辑（轮询由全局 AutoPoller 管理）
+  // 1. Initialization (polling managed globally)
   const { isLoading, initialize } = useInvoiceListInitialize();
 
-  // ✅ 2. 角色判断（传递 sendingInvoiceHashes，在 hook 中计算 chainStatus）
+  // 2. Derive roles (chainStatus computed in hook using sendingInvoiceHashes)
   const { invoicesWithRole } = useInvoiceListRole(invoices, sendingInvoiceHashes);
-  // ✅ 3. 过滤和搜索
+  // 3. Filter and search
   const { filteredInvoices, filter, search, setFilter, setSearch } = useInvoiceListFilter(invoicesWithRole);
 
-  // ✅ 4. 发票分类逻辑（按角色和状态分类）
+  // 4. Group invoices by role and status
   const { receivedInvoices, sentInvoices, pending, complete } = useMemo(() => {
     const received: InvoiceWithRole[] = [];
     const sent: InvoiceWithRole[] = [];
@@ -66,7 +66,7 @@ export function useInvoices(): IInvoices {
     filteredInvoices.forEach((item) => {
       const { invoice, role } = item;
 
-      // 按角色分类
+      // Group by role
       if (role === 'BUYER' || role === 'BOTH') {
         received.push(item);
       }
@@ -74,7 +74,7 @@ export function useInvoices(): IInvoices {
         sent.push(item);
       }
 
-      // 按状态分类
+      // Group by status
       if (invoice.status === InvoiceStatus.PENDING) {
         pendingList.push(item);
       }
@@ -91,22 +91,22 @@ export function useInvoices(): IInvoices {
     };
   }, [filteredInvoices]);
 
-  // ✅ 5. 操作（列表页模式：为每个 invoice 创建处理函数）
+  // 5. Actions for each invoice (list view)
   const { executePay, executeCancel } = useTransactionController();
   const { handleError } = useErrorHandler();
   
-  // ✅ 添加：跟踪每张发票的处理状态
+  // Track per-invoice processing state
   const [processingInvoiceIds, setProcessingInvoiceIds] = useState<Set<string>>(new Set());
   
   const handlePay = useCallback(async (invoice: Invoice) => {
-    // ✅ 设置处理状态
+    // Set processing flag
     setProcessingInvoiceIds(prev => new Set(prev).add(invoice.id));
     
     try {
       toast.loading('Processing payment...', { id: `pay-${invoice.id}` });
       const transactionId = await executePay(invoice);
       
-      // ✅ 清除处理状态
+      // Clear processing flag
       setProcessingInvoiceIds(prev => {
         const next = new Set(prev);
         next.delete(invoice.id);
@@ -118,7 +118,7 @@ export function useInvoices(): IInvoices {
         description: `Transaction ID: ${transactionId.slice(0, 16)}... View details for status.`
       });
       
-      // ✅ 标记为 SENDING（AutoPoller 会自动启动轮询）
+      // Mark as SENDING (AutoPoller will take over polling)
       markInvoiceSending(invoice.invoiceHash);
     } catch (error) {
       toast.error('Payment failed', {
@@ -126,7 +126,7 @@ export function useInvoices(): IInvoices {
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
-      // ✅ 错误时清除处理状态
+      // Clear processing flag on error
       setProcessingInvoiceIds(prev => {
         const next = new Set(prev);
         next.delete(invoice.id);
@@ -136,15 +136,15 @@ export function useInvoices(): IInvoices {
   }, [executePay, handleError, markInvoiceSending]);
 
   const handleCancel = useCallback(async (invoice: Invoice) => {
-    // ✅ 设置处理状态
+    // Set processing flag
     setProcessingInvoiceIds(prev => new Set(prev).add(invoice.id));
     
     try {
       toast.loading('Cancelling invoice...', { id: `cancel-${invoice.id}` });
       const transactionId = await executeCancel(invoice);
-      // ✅ executeCancel 已经通过 updateInvoice 更新了 invoice metadata 为 SENDING
+      // executeCancel already updates invoice metadata to SENDING
       
-      // ✅ 清除处理状态
+      // Clear processing flag
       setProcessingInvoiceIds(prev => {
         const next = new Set(prev);
         next.delete(invoice.id);
@@ -156,7 +156,7 @@ export function useInvoices(): IInvoices {
         description: `Transaction ID: ${transactionId.slice(0, 16)}... View details for status.`
       });
       
-      // ✅ 标记为 SENDING（AutoPoller 会自动启动轮询）
+      // Mark as SENDING (AutoPoller will take over polling)
       markInvoiceSending(invoice.invoiceHash);
     } catch (error) {
       toast.error('Failed to cancel invoice', {
@@ -164,7 +164,7 @@ export function useInvoices(): IInvoices {
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
-      // ✅ 错误时清除处理状态
+      // Clear processing flag on error
       setProcessingInvoiceIds(prev => {
         const next = new Set(prev);
         next.delete(invoice.id);
@@ -173,18 +173,17 @@ export function useInvoices(): IInvoices {
     }
   }, [executeCancel, handleError, markInvoiceSending]);
 
-  // ✅ 添加：检查发票是否正在处理
+  // Helper: check whether a given invoice is processing
   const isInvoiceProcessing = useCallback((invoiceId: string) => {
     return processingInvoiceIds.has(invoiceId);
   }, [processingInvoiceIds]);
 
-  // ✅ 添加：检查发票是否正在同步（Single Source of Truth）
+  // Helper: check whether an invoice is syncing (single source of truth)
   const isInvoiceSyncing = useCallback((invoice: Invoice) => {
-    // ✅ Single Source of Truth：只检查全局索引
     return sendingInvoiceHashes[invoice.invoiceHash] === true;
   }, [sendingInvoiceHashes]);
 
-  // ✅ 6. 批量同步（使用 setInvoices 重置所有发票数据）
+  // 6. Batch sync (reset all invoices with setInvoices)
   const handleSyncAll = useCallback(async () => {
     if (!publicKey || !masterKey) {
       toast.error('Unable to sync', {
@@ -197,21 +196,21 @@ export function useInvoices(): IInvoices {
     try {
       toast.loading('Syncing all invoices...', { id: 'sync-all' });
       
-      // ✅ 使用按 invoice_id 去重的扫描函数
+      // Scan with invoice_id de-duplication
       const { byInvoiceId: invoiceRecordsByInvoiceId } = await scanAllInvoiceRecords();
       const paymentRecords = await scanAllPaymentRecords();
       
       const statusValidator = new InvoiceStatusValidator();
       
-      // ✅ 重新构建完整的发票列表（使用链上数据）
+      // Rebuild full invoice list from on-chain data
       const syncedInvoices: Invoice[] = [];
       const processedInvoiceIds = new Set<string>();
       
-      // 1. 先处理 PaymentRecord（优先级更高）
+      // 1) Process payment records first (higher priority)
       for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
         try {
-          // 查找本地发票
-          const localInvoice = invoices.find(inv => {
+          // Find local invoice
+          const localInvoice = invoices.find((inv: Invoice) => {
             const cleanLocalId = cleanAleoField(inv.id);
             const cleanRecordId = cleanAleoField(invoiceId);
             return cleanLocalId === cleanRecordId;
@@ -244,14 +243,14 @@ export function useInvoices(): IInvoices {
         }
       }
       
-      // 2. 处理 InvoiceRecord（没有 PaymentRecord 的）
+      // 2) Process InvoiceRecord when no PaymentRecord exists
       for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
         if (processedInvoiceIds.has(invoiceId)) {
-          continue; // 已经处理过了
+          continue; // already handled via payment record
         }
         
         try {
-          const localInvoice = invoices.find(inv => {
+          const localInvoice = invoices.find((inv: Invoice) => {
             const cleanLocalId = cleanAleoField(inv.id);
             const cleanRecordId = cleanAleoField(invoiceId);
             return cleanLocalId === cleanRecordId;
@@ -277,7 +276,7 @@ export function useInvoices(): IInvoices {
               } as Invoice);
             }
           } else {
-            // ✅ 新发票：从链上构建
+            // New invoice: build from chain record
             const invoice = buildInvoiceFromRecord(
               invoiceRecordData.record,
               invoiceRecordData.invoiceHash as AleoField
@@ -301,7 +300,7 @@ export function useInvoices(): IInvoices {
         }
       }
       
-      // ✅ 使用 setInvoices 重置所有发票数据（自动重建 sending 索引）
+      // Reset store with synced invoices (rebuilds sending index automatically)
       if (syncedInvoices.length > 0) {
         await setInvoices(syncedInvoices, {
           masterKey,
@@ -329,22 +328,16 @@ export function useInvoices(): IInvoices {
     }
   }, [publicKey, masterKey, invoices, setInvoices, rebuildSendingIndex, scanAllInvoiceRecords, scanAllPaymentRecords]);
 
-  // ✅ 自动初始化
+  // Auto-initialize when wallet is connected (masterKey optional)
   useEffect(() => {
-    // ✅ 只要有 publicKey 和钱包连接就可以初始化
-    // masterKey 不是必需的，只是在需要解密 details 时才需要
     if (publicKey && wallet?.connected) {
       console.log('📋 [useInvoices] Initializing with publicKey:', publicKey);
       console.log('📋 [useInvoices] Has masterKey:', !!masterKey);
       initialize();
     }
-    // ✅ 不需要清理：AutoPoller 全局管理轮询，不会随组件卸载而停止
   }, [publicKey, wallet?.connected, initialize]);
-  // ✅ 移除 masterKey 的依赖，允许在没有 masterKey 时也能初始化
 
-  /**
-   * ✅ 统一的状态判断逻辑（与详情页一致）
-   */
+  // Status flags (align with detail view)
   const showLoading = useMemo(() => isLoading, [isLoading]);
   const showWalletPrompt = useMemo(() => {
     return !isLoading && !publicKey;
@@ -354,13 +347,13 @@ export function useInvoices(): IInvoices {
   }, [isLoading, invoices.length]);
 
   return {
-    // 数据
+    // Data
     filteredInvoices,
     receivedInvoices,
     sentInvoices,
     pending,
     complete,
-    // 状态
+    // State
     filter,
     search,
     isLoading,
@@ -368,7 +361,7 @@ export function useInvoices(): IInvoices {
     showLoading,
     showWalletPrompt,
     showMainContent,
-    // 方法
+    // Methods
     setFilter,
     setSearch,
     refresh: initialize,
