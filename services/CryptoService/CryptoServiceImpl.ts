@@ -1,6 +1,7 @@
 import { InvoiceDetails, AleoField, EncryptedPayload } from '@/lib/types';
 import { ICryptoService, CryptoError, AleoInvoiceRecord } from './ICryptoService';
 import { createServiceError } from '@/lib/service-errors';
+import { Buffer } from 'buffer';
 import {
   encryptInvoiceDetails as encryptDetails,
   decryptInvoiceDetails as decryptDetails,
@@ -444,6 +445,185 @@ export class CryptoService implements ICryptoService {
       throw new CryptoServiceError(
         CryptoError.ENCRYPTION_FAILED,
         'Failed to derive master key from signature',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Generate a random audit key for audit package encryption
+   * 
+   * @returns Random audit key as hex string (64 characters)
+   * @throws {CryptoServiceError} If random generation fails
+   */
+  generateAuditKey(): string {
+    try {
+      // Get Web Crypto API
+      const crypto = this.getWebCrypto();
+
+      // Generate 32 random bytes (256 bits)
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+
+      // Convert to hexadecimal string
+      const hexKey = Buffer.from(bytes).toString('hex');
+
+      return hexKey;
+    } catch (error: any) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to generate random audit key',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Convert hex audit key string to Uint8Array
+   * 
+   * @param auditKey Hex string audit key
+   * @returns Uint8Array suitable for encryption
+   * @throws {CryptoServiceError} If audit key format is invalid
+   */
+  auditKeyToBytes(auditKey: string): Uint8Array {
+    try {
+      // Validate format: must be hex and at least 32 characters (16 bytes)
+      if (!auditKey || typeof auditKey !== 'string') {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Audit key must be a non-empty string'
+        );
+      }
+
+      if (!/^[0-9a-fA-F]+$/.test(auditKey)) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Invalid audit key format: must be hexadecimal',
+          { hint: 'Audit key should only contain 0-9 and a-f characters' }
+        );
+      }
+
+      if (auditKey.length < 32) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Audit key too short: must be at least 32 hex characters (16 bytes)',
+          { actualLength: auditKey.length }
+        );
+      }
+
+      // Convert hex string to Uint8Array
+      const buffer = Buffer.from(auditKey, 'hex');
+      return new Uint8Array(buffer);
+    } catch (error: any) {
+      // Already a CryptoServiceError, rethrow directly
+      if (error instanceof CryptoServiceError) {
+        throw error;
+      }
+
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to convert audit key to bytes',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Hash encrypted payload (SHA-256 of iv + ciphertext)
+   * 
+   * @param payload Encrypted payload
+   * @returns Hex hash string
+   * @throws {CryptoServiceError} If hashing fails
+   */
+  async hashCipher(payload: EncryptedPayload): Promise<string> {
+    try {
+      // Validate input
+      if (!payload || !payload.iv || !payload.ciphertext) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Invalid encrypted payload: missing iv or ciphertext'
+        );
+      }
+
+      // Get Web Crypto API
+      const crypto = this.getWebCrypto();
+
+      // Concatenate iv and ciphertext
+      const ivBuffer = Buffer.from(payload.iv, 'base64');
+      const ciphertextBuffer = Buffer.from(payload.ciphertext, 'base64');
+      const concat = Buffer.concat([ivBuffer, ciphertextBuffer]);
+
+      // Hash the concatenated data
+      const digest = await crypto.subtle.digest('SHA-256', concat);
+
+      // Convert to hex string
+      const hashArray = Array.from(new Uint8Array(digest));
+      const hexHash = hashArray
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      return hexHash;
+    } catch (error: any) {
+      // Already a CryptoServiceError, rethrow directly
+      if (error instanceof CryptoServiceError) {
+        throw error;
+      }
+
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to hash cipher',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Encrypt with raw audit key (no key derivation)
+   * 
+   * @param details Invoice details or partial invoice to encrypt
+   * @param auditKey Raw encryption key as Uint8Array
+   * @returns Encrypted payload
+   * @throws {CryptoServiceError} If encryption fails
+   */
+  async encryptWithAuditKey(
+    details: InvoiceDetails | Partial<any>,
+    auditKey: Uint8Array
+  ): Promise<EncryptedPayload> {
+    try {
+      // Validate inputs
+      if (!details) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Details cannot be null or undefined'
+        );
+      }
+
+      if (!auditKey || !(auditKey instanceof Uint8Array)) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Audit key must be a Uint8Array'
+        );
+      }
+
+      if (auditKey.length < 16) {
+        throw new CryptoServiceError(
+          CryptoError.ENCRYPTION_FAILED,
+          'Audit key too short: must be at least 16 bytes',
+          { actualLength: auditKey.length }
+        );
+      }
+
+      // Direct call to lib/crypto without key derivation
+      // This uses the audit key as-is for AES-GCM encryption
+      return await encryptDetails(details as any, auditKey);
+    } catch (error: any) {
+      // Already a CryptoServiceError, rethrow directly
+      if (error instanceof CryptoServiceError) {
+        throw error;
+      }
+
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to encrypt with audit key',
         { originalError: error }
       );
     }

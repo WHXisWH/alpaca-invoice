@@ -1056,4 +1056,557 @@ describe('CryptoService', () => {
       await expect(service.deriveMasterKey('')).rejects.toThrow(CryptoServiceError);
     });
   });
+
+  describe('generateAuditKey', () => {
+    it('should generate a valid hex audit key', () => {
+      // Act
+      const auditKey = service.generateAuditKey();
+
+      // Assert
+      expect(auditKey).toBeDefined();
+      expect(typeof auditKey).toBe('string');
+      expect(auditKey.length).toBe(64); // 32 bytes = 64 hex characters
+      expect(auditKey).toMatch(/^[0-9a-f]{64}$/); // Valid hex string
+    });
+
+    it('should generate different keys on each call (random)', () => {
+      // Act
+      const key1 = service.generateAuditKey();
+      const key2 = service.generateAuditKey();
+      const key3 = service.generateAuditKey();
+
+      // Assert
+      expect(key1).not.toBe(key2);
+      expect(key2).not.toBe(key3);
+      expect(key1).not.toBe(key3);
+    });
+
+    it('should generate keys that are usable with auditKeyToBytes', () => {
+      // Act
+      const auditKey = service.generateAuditKey();
+      const bytes = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      expect(bytes.length).toBe(32); // 64 hex chars = 32 bytes
+    });
+
+    it('should generate keys that work with the full encryption workflow', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-WORKFLOW-TEST',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+
+      // Act - Complete workflow
+      const auditKey = service.generateAuditKey();
+      const keyBytes = service.auditKeyToBytes(auditKey);
+      const encrypted = await service.encryptWithAuditKey(details, keyBytes);
+      const hash = await service.hashCipher(encrypted);
+
+      // Assert
+      expect(auditKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(encrypted.iv).toBeTruthy();
+      expect(encrypted.ciphertext).toBeTruthy();
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('should generate cryptographically strong keys (entropy check)', () => {
+      // Act - Generate multiple keys and check for patterns
+      const keys = Array.from({ length: 10 }, () => service.generateAuditKey());
+
+      // Assert - All keys should be unique
+      const uniqueKeys = new Set(keys);
+      expect(uniqueKeys.size).toBe(10);
+
+      // Assert - Keys should not have obvious patterns (all same char)
+      keys.forEach(key => {
+        const firstChar = key[0];
+        const allSame = key.split('').every(char => char === firstChar);
+        expect(allSame).toBe(false);
+      });
+    });
+
+    it('should handle multiple rapid generations without collision', () => {
+      // Act - Generate many keys rapidly
+      const keys = Array.from({ length: 100 }, () => service.generateAuditKey());
+
+      // Assert - All should be unique
+      const uniqueKeys = new Set(keys);
+      expect(uniqueKeys.size).toBe(100);
+    });
+
+    it('should generate keys with proper length for AES-256', () => {
+      // Act
+      const auditKey = service.generateAuditKey();
+      const bytes = service.auditKeyToBytes(auditKey);
+
+      // Assert - 32 bytes = 256 bits (suitable for AES-256)
+      expect(bytes.length).toBe(32);
+    });
+
+    it('should always return lowercase hexadecimal', () => {
+      // Act
+      const keys = Array.from({ length: 5 }, () => service.generateAuditKey());
+
+      // Assert
+      keys.forEach(key => {
+        expect(key).toMatch(/^[0-9a-f]+$/); // Only lowercase
+        expect(key).not.toMatch(/[A-F]/); // No uppercase
+      });
+    });
+  });
+
+  describe('auditKeyToBytes', () => {
+    it('should successfully convert a valid hex audit key to Uint8Array', () => {
+      // Arrange
+      const auditKey = 'abcdef0123456789abcdef0123456789'; // 32 hex characters
+
+      // Act
+      const result = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(result.length).toBe(16); // 32 hex chars = 16 bytes
+    });
+
+    it('should handle uppercase hex characters', () => {
+      // Arrange
+      const auditKey = 'ABCDEF0123456789ABCDEF0123456789';
+
+      // Act
+      const result = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(result.length).toBe(16);
+    });
+
+    it('should handle mixed case hex characters', () => {
+      // Arrange
+      const auditKey = 'AbCdEf0123456789aBcDeF0123456789';
+
+      // Act
+      const result = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(result.length).toBe(16);
+    });
+
+    it('should handle long audit keys (64+ hex characters)', () => {
+      // Arrange
+      const auditKey = 'a'.repeat(64); // 64 hex characters
+
+      // Act
+      const result = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(result).toBeInstanceOf(Uint8Array);
+      expect(result.length).toBe(32); // 64 hex chars = 32 bytes
+    });
+
+    it('should throw an error for non-hex characters', () => {
+      // Arrange
+      const invalidKey = 'ghijklmnopqrstuvwxyz123456789012'; // Contains g-z
+
+      // Act & Assert
+      expect(() => service.auditKeyToBytes(invalidKey)).toThrow('must be hexadecimal');
+      expect(() => service.auditKeyToBytes(invalidKey)).toThrow(CryptoServiceError);
+    });
+
+    it('should throw an error for keys shorter than 32 characters', () => {
+      // Arrange
+      const shortKey = 'abcdef0123456789'; // Only 16 hex characters
+
+      // Act & Assert
+      expect(() => service.auditKeyToBytes(shortKey)).toThrow('at least 32 hex characters');
+      expect(() => service.auditKeyToBytes(shortKey)).toThrow(CryptoServiceError);
+    });
+
+    it('should throw an error for empty string', () => {
+      // Act & Assert
+      expect(() => service.auditKeyToBytes('')).toThrow('non-empty string');
+      expect(() => service.auditKeyToBytes('')).toThrow(CryptoServiceError);
+    });
+
+    it('should throw an error for non-string input', () => {
+      // Act & Assert
+      expect(() => service.auditKeyToBytes(null as any)).toThrow('non-empty string');
+      expect(() => service.auditKeyToBytes(undefined as any)).toThrow('non-empty string');
+      expect(() => service.auditKeyToBytes(123 as any)).toThrow('non-empty string');
+    });
+
+    it('should produce the same bytes for the same audit key (deterministic)', () => {
+      // Arrange
+      const auditKey = 'abcdef0123456789abcdef0123456789';
+
+      // Act
+      const result1 = service.auditKeyToBytes(auditKey);
+      const result2 = service.auditKeyToBytes(auditKey);
+
+      // Assert
+      expect(result1).toEqual(result2);
+    });
+
+    it('should produce different bytes for different audit keys', () => {
+      // Arrange
+      const auditKey1 = 'abcdef0123456789abcdef0123456789';
+      const auditKey2 = 'fedcba9876543210fedcba9876543210';
+
+      // Act
+      const result1 = service.auditKeyToBytes(auditKey1);
+      const result2 = service.auditKeyToBytes(auditKey2);
+
+      // Assert
+      expect(result1).not.toEqual(result2);
+    });
+  });
+
+  describe('hashCipher', () => {
+    it('should successfully hash a valid encrypted payload', async () => {
+      // Arrange
+      const payload: EncryptedPayload = {
+        iv: Buffer.from('test-iv-data').toString('base64'),
+        ciphertext: Buffer.from('test-ciphertext-data').toString('base64')
+      };
+
+      // Act
+      const hash = await service.hashCipher(payload);
+
+      // Assert
+      expect(hash).toBeDefined();
+      expect(typeof hash).toBe('string');
+      expect(hash.length).toBe(64); // SHA-256 hex string is 64 characters
+      expect(hash).toMatch(/^[0-9a-f]{64}$/); // Valid hex string
+    });
+
+    it('should produce the same hash for the same payload (deterministic)', async () => {
+      // Arrange
+      const payload: EncryptedPayload = {
+        iv: Buffer.from('test-iv').toString('base64'),
+        ciphertext: Buffer.from('test-ciphertext').toString('base64')
+      };
+
+      // Act
+      const hash1 = await service.hashCipher(payload);
+      const hash2 = await service.hashCipher(payload);
+
+      // Assert
+      expect(hash1).toBe(hash2);
+    });
+
+    it('should produce different hashes for different payloads', async () => {
+      // Arrange
+      const payload1: EncryptedPayload = {
+        iv: Buffer.from('test-iv-1').toString('base64'),
+        ciphertext: Buffer.from('test-ciphertext-1').toString('base64')
+      };
+      const payload2: EncryptedPayload = {
+        iv: Buffer.from('test-iv-2').toString('base64'),
+        ciphertext: Buffer.from('test-ciphertext-2').toString('base64')
+      };
+
+      // Act
+      const hash1 = await service.hashCipher(payload1);
+      const hash2 = await service.hashCipher(payload2);
+
+      // Assert
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should produce different hashes if only IV changes', async () => {
+      // Arrange
+      const payload1: EncryptedPayload = {
+        iv: Buffer.from('iv-1').toString('base64'),
+        ciphertext: Buffer.from('same-ciphertext').toString('base64')
+      };
+      const payload2: EncryptedPayload = {
+        iv: Buffer.from('iv-2').toString('base64'),
+        ciphertext: Buffer.from('same-ciphertext').toString('base64')
+      };
+
+      // Act
+      const hash1 = await service.hashCipher(payload1);
+      const hash2 = await service.hashCipher(payload2);
+
+      // Assert
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should produce different hashes if only ciphertext changes', async () => {
+      // Arrange
+      const payload1: EncryptedPayload = {
+        iv: Buffer.from('same-iv').toString('base64'),
+        ciphertext: Buffer.from('ciphertext-1').toString('base64')
+      };
+      const payload2: EncryptedPayload = {
+        iv: Buffer.from('same-iv').toString('base64'),
+        ciphertext: Buffer.from('ciphertext-2').toString('base64')
+      };
+
+      // Act
+      const hash1 = await service.hashCipher(payload1);
+      const hash2 = await service.hashCipher(payload2);
+
+      // Assert
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should throw an error for missing iv', async () => {
+      // Arrange
+      const invalidPayload: any = {
+        ciphertext: Buffer.from('test-ciphertext').toString('base64')
+      };
+
+      // Act & Assert
+      await expect(service.hashCipher(invalidPayload)).rejects.toThrow('missing iv or ciphertext');
+      await expect(service.hashCipher(invalidPayload)).rejects.toThrow(CryptoServiceError);
+    });
+
+    it('should throw an error for missing ciphertext', async () => {
+      // Arrange
+      const invalidPayload: any = {
+        iv: Buffer.from('test-iv').toString('base64')
+      };
+
+      // Act & Assert
+      await expect(service.hashCipher(invalidPayload)).rejects.toThrow('missing iv or ciphertext');
+      await expect(service.hashCipher(invalidPayload)).rejects.toThrow(CryptoServiceError);
+    });
+
+    it('should throw an error for null payload', async () => {
+      // Act & Assert
+      await expect(service.hashCipher(null as any)).rejects.toThrow('missing iv or ciphertext');
+      await expect(service.hashCipher(null as any)).rejects.toThrow(CryptoServiceError);
+    });
+
+    it('should handle real encrypted payload from encryptInvoiceDetails', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+      const masterKey = 'test-master-key-1234567890123456';
+      const encrypted = await service.encryptInvoiceDetails(details, masterKey);
+
+      // Act
+      const hash = await service.hashCipher(encrypted);
+
+      // Assert
+      expect(hash).toBeDefined();
+      expect(hash.length).toBe(64);
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
+
+  describe('encryptWithAuditKey', () => {
+    it('should successfully encrypt invoice details with audit key', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-AUDIT-001',
+        lineItems: [
+          { description: 'Item 1', quantity: 1, unitPrice: 100, amount: 100 }
+        ],
+        subtotal: 100,
+        taxRate: 0.1,
+        taxAmount: 10,
+        total: 110,
+        currency: 'USD'
+      };
+      const auditKey = new Uint8Array(32).fill(0xaa); // 32 bytes of 0xaa
+
+      // Act
+      const encrypted = await service.encryptWithAuditKey(details, auditKey);
+
+      // Assert
+      expect(encrypted).toHaveProperty('iv');
+      expect(encrypted).toHaveProperty('ciphertext');
+      expect(encrypted.iv).toBeTruthy();
+      expect(encrypted.ciphertext).toBeTruthy();
+      expect(typeof encrypted.iv).toBe('string');
+      expect(typeof encrypted.ciphertext).toBe('string');
+    });
+
+    it('should encrypt and decrypt round-trip successfully', async () => {
+      // Arrange
+      const originalDetails: InvoiceDetails = {
+        invoiceNumber: 'INV-ROUNDTRIP-001',
+        lineItems: [
+          { description: 'Product A', quantity: 5, unitPrice: 123.45, amount: 617.25 }
+        ],
+        subtotal: 617.25,
+        taxRate: 0.13,
+        taxAmount: 80.24,
+        total: 697.49,
+        currency: 'CAD',
+        notes: 'Test audit encryption'
+      };
+      const auditKey = new Uint8Array(32).fill(0xbb);
+
+      // Act
+      const encrypted = await service.encryptWithAuditKey(originalDetails, auditKey);
+      // Note: We'd need a decryptWithAuditKey method for full round-trip, but we can use lib function
+      const { decryptInvoiceDetails } = await import('@/lib/crypto');
+      const decrypted = await decryptInvoiceDetails(encrypted, auditKey);
+
+      // Assert
+      expect(decrypted).toEqual(originalDetails);
+    });
+
+    it('should encrypt partial invoice data (filtered by permissions)', async () => {
+      // Arrange
+      const partialInvoice = {
+        id: '123field',
+        invoiceHash: '456field',
+        amount: 1000000,
+        seller: 'aleo1seller',
+        buyer: 'aleo1buyer'
+      };
+      const auditKey = new Uint8Array(32).fill(0xcc);
+
+      // Act
+      const encrypted = await service.encryptWithAuditKey(partialInvoice, auditKey);
+
+      // Assert
+      expect(encrypted).toHaveProperty('iv');
+      expect(encrypted).toHaveProperty('ciphertext');
+    });
+
+    it('should produce different ciphertexts for same data (random IV)', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+      const auditKey = new Uint8Array(32).fill(0xdd);
+
+      // Act
+      const encrypted1 = await service.encryptWithAuditKey(details, auditKey);
+      const encrypted2 = await service.encryptWithAuditKey(details, auditKey);
+
+      // Assert
+      expect(encrypted1.iv).not.toBe(encrypted2.iv); // Different IVs
+      expect(encrypted1.ciphertext).not.toBe(encrypted2.ciphertext); // Different ciphertexts
+    });
+
+    it('should throw an error for null or undefined details', async () => {
+      // Arrange
+      const auditKey = new Uint8Array(32).fill(0xee);
+
+      // Act & Assert
+      await expect(service.encryptWithAuditKey(null as any, auditKey))
+        .rejects.toThrow('Details cannot be null or undefined');
+      await expect(service.encryptWithAuditKey(undefined as any, auditKey))
+        .rejects.toThrow('Details cannot be null or undefined');
+    });
+
+    it('should throw an error for non-Uint8Array audit key', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+
+      // Act & Assert
+      await expect(service.encryptWithAuditKey(details, 'not-a-uint8array' as any))
+        .rejects.toThrow('Audit key must be a Uint8Array');
+      await expect(service.encryptWithAuditKey(details, null as any))
+        .rejects.toThrow('Audit key must be a Uint8Array');
+    });
+
+    it('should throw an error for audit key shorter than 16 bytes', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+      const shortKey = new Uint8Array(8).fill(0xff); // Only 8 bytes
+
+      // Act & Assert
+      await expect(service.encryptWithAuditKey(details, shortKey))
+        .rejects.toThrow('at least 16 bytes');
+      await expect(service.encryptWithAuditKey(details, shortKey))
+        .rejects.toThrow(CryptoServiceError);
+    });
+
+    it('should handle minimum valid key size (16 bytes)', async () => {
+      // Arrange
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+      const minKey = new Uint8Array(16).fill(0x11); // Exactly 16 bytes
+
+      // Act
+      const encrypted = await service.encryptWithAuditKey(details, minKey);
+
+      // Assert
+      expect(encrypted).toHaveProperty('iv');
+      expect(encrypted).toHaveProperty('ciphertext');
+    });
+
+    it('should throw CryptoServiceError type error', async () => {
+      // Arrange
+      const auditKey = new Uint8Array(32).fill(0x22);
+
+      // Act & Assert
+      await expect(service.encryptWithAuditKey(null as any, auditKey))
+        .rejects.toThrow(CryptoServiceError);
+    });
+
+    it('should work with real audit key from auditKeyToBytes', async () => {
+      // Arrange - Complete workflow
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-WORKFLOW-001',
+        lineItems: [],
+        subtotal: 500,
+        taxRate: 0.1,
+        taxAmount: 50,
+        total: 550,
+        currency: 'USD'
+      };
+      const hexAuditKey = 'a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890';
+      
+      // Act - Convert hex to bytes then encrypt
+      const auditKeyBytes = service.auditKeyToBytes(hexAuditKey);
+      const encrypted = await service.encryptWithAuditKey(details, auditKeyBytes);
+      const hash = await service.hashCipher(encrypted);
+
+      // Assert
+      expect(encrypted.iv).toBeTruthy();
+      expect(encrypted.ciphertext).toBeTruthy();
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
 });
