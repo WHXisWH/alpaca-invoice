@@ -10,6 +10,8 @@ import {
   validateAuditPackage
 } from '@/lib/audit';
 import type { AleoAddress, AleoField } from '@/lib/types';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { PROGRAM_ID } from '@/lib/contract';
 
 const cryptoService = new CryptoService();
 
@@ -19,6 +21,8 @@ export function useAuditController() {
   const { publicKey, masterKey } = useUserStore();
 
   const signerAddress = useMemo(() => publicKey as AleoAddress | null, [publicKey]);
+  // Protocol service for optional on-chain verification
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
 
   const generate = useCallback(
     async (options: {
@@ -60,7 +64,10 @@ export function useAuditController() {
         expiresAt: options.expiresAt,
         signerAddress,
         auditKey,
-        signMessage
+        signMessage,
+        programId: PROGRAM_ID,
+        version: 2,
+        chainVerifiable: true
       });
 
       return { pkg, auditKey };
@@ -73,10 +80,11 @@ export function useAuditController() {
       return validateAuditPackage({
         pkg,
         auditKey,
-        computeInvoiceHash: (details) => cryptoService.computeInvoiceHash(details)
+        computeInvoiceHash: (details) => cryptoService.computeInvoiceHash(details),
+        protocolService
       });
     },
-    []
+    [protocolService]
   );
 
   return { generate, validate };

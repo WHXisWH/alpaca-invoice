@@ -1,6 +1,6 @@
 # Test Quick Reference
 
-One-page cheat sheet for running zk_invoice.aleo tests.
+One-page cheat sheet for running zk_invoice_v2.aleo flows (legacy commands kept for reference).
 
 ## Fast Path
 ```bash
@@ -13,9 +13,9 @@ leo build                  # compile
 
 ### create_invoice
 ```bash
-leo run create_invoice <buyer> 1000000u64 1735689600u32 123456789field 99999field
-leo run create_invoice <buyer> 1u64 1735689600u32 123456789field 11111field      # min
-leo run create_invoice <buyer> 18446744073709551615u64 1735689600u32 123456789field 22222field  # max
+leo run create_invoice <buyer> 1000000u64 1735689600u32 123456789field 99999field 1700000000u32 0field 0u64
+leo run create_invoice <buyer> 1u64 1735689600u32 123456789field 11111field 1700000000u32 0field 0u64      # min
+leo run create_invoice <buyer> 18446744073709551615u64 1735689600u32 123456789field 22222field 1700000000u32 0field 0u64  # max
 ```
 
 ### verify_invoice
@@ -26,7 +26,7 @@ leo run verify_invoice "{invoice_record}" 987654321field      # expect false
 
 ### mark_as_paid
 ```bash
-leo run mark_as_paid "{buyer_invoice_record}" 88888field
+leo run mark_as_paid "{buyer_invoice_record}" 88888field 1700000000u32
 ```
 
 ### create_seller_receipt

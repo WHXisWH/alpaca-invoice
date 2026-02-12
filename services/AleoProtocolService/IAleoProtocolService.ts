@@ -40,7 +40,7 @@ export interface IAleoProtocolService {
 
   /**
    * Get all encrypted Records for a specified address under a specific program
-   * @param programId Program identifier (e.g., "zk_invoice.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v2.aleo")
    * @param address User address
    * @param startHeight Starting scan height
    * @returns Array of raw ciphertext strings
@@ -55,7 +55,7 @@ export interface IAleoProtocolService {
   /**
    * Query on-chain program Mapping values (generic method)
    * Can query any Mapping of any program
-   * @param programId Program identifier (e.g., "zk_invoice.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v2.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
    * @param key Mapping key (Field type)
    * @returns Mapping value (string format), or null if it does not exist
@@ -66,6 +66,44 @@ export interface IAleoProtocolService {
     mappingName: string,
     key: AleoField
   ): Promise<string | null>;
+
+  /**
+   * Compute invoice_id locally by running compute_invoice_id (no fee).
+   */
+  computeInvoiceIdOffline(params: {
+    seller: AleoAddress;
+    buyer: AleoAddress;
+    amount: Microcredits;
+    dueDate: number;
+    nonce: AleoField;
+  }): Promise<AleoField>;
+
+  /**
+   * Convenience: fetch on-chain invoice hash anchor from invoice_registry.
+   */
+  getInvoiceHash(invoiceId: AleoField): Promise<AleoField | null>;
+
+  /**
+   * Convenience: fetch on-chain invoice status (u8) from invoice_status.
+   */
+  getInvoiceStatus(invoiceId: AleoField): Promise<InvoiceStatus | null>;
+
+  /**
+   * Convenience: fetch seller invoice count from invoice_count.
+   */
+  getInvoiceCount(seller: AleoAddress): Promise<number>;
+
+  /**
+   * Verify invoice hash matches on-chain anchor and return status.
+   */
+  verifyInvoiceOnChain(
+    invoiceId: AleoField,
+    localHash: AleoField
+  ): Promise<{
+    exists: boolean;
+    hashMatch: boolean;
+    chainStatus: InvoiceStatus | null;
+  }>;
 
   /**
    * Broadcast a generated zero-knowledge proof transaction to the Aleo network
@@ -87,7 +125,7 @@ export interface IAleoProtocolService {
   /**
    * Estimate execution fee (Microcredits)
    * Estimates by building an Authorization and using the SDK's estimateFeeForAuthorization
-   * @param programName Program name (e.g., "zk_invoice.aleo")
+   * @param programName Program name (e.g., "zk_invoice_v2.aleo")
    * @param functionName Function name (e.g., "create_invoice")
    * @param inputs Array of function input parameters
    * @returns Estimated execution fee (Microcredits), with 20% buffer added
@@ -104,7 +142,7 @@ export interface IAleoProtocolService {
    * Verifies transaction confirmation by querying transaction details, and optionally verifies that the transaction contains the expected records
    * @param transactionId Transaction ID
    * @param options Optional verification options
-   * @param options.programId Program ID (e.g., "zk_invoice.aleo"), used to verify the transaction belongs to this program
+   * @param options.programId Program ID (e.g., "zk_invoice_v2.aleo"), used to verify the transaction belongs to this program
    * @param options.functionName Function name (e.g., "create_invoice"), used to verify the function called by the transaction
    * @param options.expectedOutputsCount Expected number of output records, used to verify the transaction produced the expected records
    * @returns Verification result object, including success status, transaction details, etc.

@@ -8,6 +8,7 @@ import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { useInvoicePollingCore } from './useInvoicePollingCore';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 /**
  * Hook: 链上手动同步逻辑（统一轮询架构版）
@@ -33,7 +34,8 @@ export function useInvoiceChainSync(
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
   // ✅ 使用核心轮询逻辑（仅用于 buildUpdatedInvoice）
-  const { buildUpdatedInvoice } = useInvoicePollingCore();
+  const { buildUpdatedInvoice, fetchChainAnchors } = useInvoicePollingCore();
+  const protocolService = new AleoProtocolService();
   
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
 
@@ -186,7 +188,25 @@ export function useInvoiceChainSync(
       console.log('🔄 [ChainSync] Starting manual sync for invoice:', latestInvoice.id);
       toast.loading('Syncing status...', { id: 'sync-status' });
 
-      // ✅ 使用 useInvoiceChainScan 扫描链上记录
+      // ✅ 先查 mapping anchor，若已确认可快速返回
+      const chainAnchor = await fetchChainAnchors(latestInvoice.id);
+      if (chainAnchor.status !== null) {
+        const updatedFromMapping: Invoice = {
+          ...latestInvoice,
+          status: chainAnchor.status,
+          metadata: {
+            confirmationStatus: 'CONFIRMED',
+            dataSource: 'chain',
+            action: latestInvoice.metadata?.action,
+            lastUpdated: new Date()
+          }
+        };
+        await confirmInvoice(updatedFromMapping, {} as any);
+        toast.success('Status refreshed from on-chain mapping', { id: 'sync-status' });
+        return;
+      }
+
+      // ✅ 否则使用 useInvoiceChainScan 扫描链上记录
       const { invoiceRecord, paymentRecord } = await scanInvoiceRecord(invoiceHash, latestInvoice.id);
 
       if (!invoiceRecord && !paymentRecord) {

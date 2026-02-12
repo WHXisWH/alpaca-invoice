@@ -1,15 +1,18 @@
 import { useCallback, useMemo } from 'react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
-import { AleoField, Invoice } from '@/lib/types';
+import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { updateInvoiceFromInvoiceRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
 import { PollingService } from '@/services/PollingService/PollingServiceImpl';
 import { createInvoiceValidationAdapter, InvoiceScanResult } from '@/services/PollingService/adapters/InvoiceStatusValidatorAdapter';
 import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { PROGRAM_ID } from '@/lib/contract';
 
 const POLL_INTERVAL = 15000; // 15秒
 const POLL_TIMEOUT = 600000; // 10分钟超时
+const MAPPING_CACHE_MS = 20000;
 
 /**
  * 轮询完成回调接口
@@ -35,6 +38,7 @@ export interface PollingCallbacks {
 export function useInvoicePollingCore() {
   const { scanInvoiceRecord } = useInvoiceChainScan();
   const statusValidator = useMemo(() => new InvoiceStatusValidator(), []);
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
 
   /**
    * 从 store 获取最新的 invoice
@@ -140,10 +144,10 @@ export function useInvoicePollingCore() {
             };
           }
           
-          // 使用最新的 invoice 创建验证适配器
-          const validateAdapter = createInvoiceValidationAdapter(statusValidator, latestInvoice);
-          return validateAdapter(result);
-        },
+      // 使用最新的 invoice 创建验证适配器
+      const validateAdapter = createInvoiceValidationAdapter(statusValidator, latestInvoice);
+      return validateAdapter(result);
+    },
         
         // 成功回调
         onSuccess: async (result) => {
@@ -176,10 +180,27 @@ export function useInvoicePollingCore() {
     );
   }, [scanInvoiceRecord, statusValidator, getLatestInvoice, buildUpdatedInvoice, buildRolledBackInvoice]);
 
+  /**
+   * Mapping 优先的快速探测：返回链上 status/hash，节省解密
+   */
+  const fetchChainAnchors = useCallback(async (invoiceId: AleoField) => {
+    try {
+      const [hash, status] = await Promise.all([
+        protocolService.getInvoiceHash(invoiceId),
+        protocolService.getInvoiceStatus(invoiceId)
+      ]);
+      return { hash, status };
+    } catch (e) {
+      console.warn('Mapping fetch failed', e);
+      return { hash: null, status: null };
+    }
+  }, [protocolService]);
+
   return {
     createPollingService,
     getLatestInvoice,
     buildUpdatedInvoice,
-    buildRolledBackInvoice
+    buildRolledBackInvoice,
+    fetchChainAnchors
   };
 }

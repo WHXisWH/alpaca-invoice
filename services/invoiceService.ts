@@ -10,9 +10,11 @@ import {
   type Invoice,
   InvoiceStatus
 } from '@/lib/types';
+import { PROGRAM_ID } from '@/lib/contract';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
-const PROGRAM_ID = 'zk_invoice.aleo';
 const STORAGE_KEY = 'zk_invoice_records';
+const protocolService = new AleoProtocolService();
 
 // Get wallet instance
 function getWallet() {
@@ -70,6 +72,23 @@ export const invoiceService = {
     const nonce = randomField() as AleoField;
     const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
     const amountStr = `${params.amount.toString()}u64`;
+    const orderId = '0field' as AleoField;
+    const taxAmount = `${BigInt(Math.max(0, Math.floor(params.details.taxAmount || 0)))}u64`;
+    const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
+
+    // Compute deterministic invoice_id via on-chain logic (offline)
+    let invoiceIdFromCompute: AleoField | null = null;
+    try {
+      invoiceIdFromCompute = await protocolService.computeInvoiceIdOffline({
+        seller,
+        buyer: params.buyer,
+        amount: params.amount,
+        dueDate: dueTimestamp,
+        nonce
+      });
+    } catch (err) {
+      console.warn('computeInvoiceIdOffline failed; falling back to nonce-based display ID', err);
+    }
 
     console.log('Creating invoice on-chain...');
     console.log('Transaction params:', {
@@ -93,7 +112,10 @@ export const invoiceService = {
           amountStr,
           `${dueTimestamp}u32`,
           invoiceHash,
-          nonce
+          nonce,
+          currentTime,
+          orderId,
+          taxAmount
         ]
       }],
       fee: 1000000,
@@ -165,8 +187,8 @@ export const invoiceService = {
       );
     }
 
-    // Generate invoice ID (use nonce as base)
-    const invoiceId = `${nonce.slice(0, 32)}field` as AleoField;
+    // Generate invoice ID (prefer contract-consistent value)
+    const invoiceId = (invoiceIdFromCompute ?? `${nonce.slice(0, 32)}field`) as AleoField;
 
     // Save to localStorage
     const invoice: Invoice = {

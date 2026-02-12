@@ -125,7 +125,7 @@ async requestTransaction(params: RequestTransactionParams): Promise<any>
 - `functionName`: 要调用的函数名（如 "create_invoice", "pay_invoice"）
 - `inputs`: 函数输入参数数组
 - `publicKey`: 钱包公钥地址（用于验证连接状态）
-- `programId`: 程序ID（可选，默认为 "zk_invoice.aleo"）
+- `programId`: 程序ID（可选，默认为 "zk_invoice_v2.aleo"）
 - `feeRecord`: 可选的手续费 Record（如果不提供，钱包会自动选择）
 - `fee`: 手续费金额，单位为 microcredits（可选，默认为 250000）
 - `chainId`: 链ID（可选，默认从环境变量获取）
@@ -169,4 +169,3 @@ const result = await walletService.requestTransaction({
 - [ ] 添加压力测试
 - [ ] 添加端到端测试
 - [ ] 测试并发场景
-

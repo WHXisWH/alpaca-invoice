@@ -1,4 +1,4 @@
-# zk_invoice.aleo Testing Guide (Step-by-Step)
+# zk_invoice_v2.aleo Testing Guide (Step-by-Step)
 
 This guide walks through preparation, core tests, negatives, and workflow checks for the Leo contract.
 

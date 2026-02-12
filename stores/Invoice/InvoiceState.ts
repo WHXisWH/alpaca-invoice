@@ -1,4 +1,4 @@
-import { Invoice, AleoField } from '@/lib/types';
+import { Invoice, AleoField, InvoiceStatus } from '@/lib/types';
 
 /**
  * 链上确认状态
@@ -24,6 +24,7 @@ export interface InvoiceState {
   // 数据
   invoices: Invoice[];     // 所有发票列表
   currentInvoice: Invoice | null;        // ✅ 当前选中的 invoice（包含 metadata）
+  chainStatusCache: Record<string, { status: InvoiceStatus; hash: AleoField | null; lastQueried: number }>;
   /**
    * ✅ 全局 SENDING 索引（跨页面共享）
    * - key: invoiceHash
@@ -95,4 +96,9 @@ export interface InvoiceState {
   getSendingInvoiceHashes: () => AleoField[];
   /** ✅ 基于 invoices 重新构建 sending 索引（初始化/批量覆盖时使用） */
   rebuildSendingIndex: () => void;
+
+  /** ✅ 更新链上状态缓存 */
+  updateChainStatus: (invoiceId: AleoField, status: InvoiceStatus, hash: AleoField | null) => void;
+  /** ✅ 读取链上状态缓存（含 TTL） */
+  getChainStatus: (invoiceId: AleoField) => InvoiceStatus | null;
 }

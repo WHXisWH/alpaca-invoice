@@ -5,7 +5,7 @@ Privacy-preserving B2B invoice and payment system built on Aleo blockchain. Uses
 ## Features
 
 - **Privacy-First**: Transaction amounts and party details encrypted on-chain
-- **Two-Step Payment**: Secure payment flow via credits.aleo + zk_invoice.aleo
+- **Two-Step Payment**: Secure payment flow via credits.aleo + zk_invoice_v2.aleo
 - **Dual Records**: Both seller and buyer receive independent invoice records
 - **Audit Support**: Off-chain selective disclosure via wallet-signed audit packages (permissioned + expiring) and shareable audit keys
 - **IndexedDB Storage**: Encrypted local persistence with integrity verification
@@ -57,7 +57,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ┌─────────────────────────────────────────────────────────────┐
 │                   Aleo Blockchain (Testnet)                  │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                  zk_invoice.aleo                       │  │
+│  │                  zk_invoice_v2.aleo                    │  │
 │  │  create_invoice | mark_as_paid | cancel_invoice       │  │
 │  │  verify_invoice | verify_payment | create_seller_receipt│ │
 │  └───────────────────────────────────────────────────────┘  │
@@ -114,7 +114,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 The project has two layers of tests:
 
-**Smart Contract (Leo)** — 20 test cases covering all `zk_invoice.aleo` transitions (create, verify, pay, cancel, receipt, end-to-end lifecycle). Run with `leo test` or `./run_tests.sh`.
+**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2.aleo` with mappings/async/ZK proofs. Legacy `zk_invoice.aleo` info kept only as historical reference.
 
 **Service Unit Tests (Vitest)** — Unit tests for core services including WalletService, CryptoService, AleoProtocolService, StorageService, InvoiceStatusValidator, PollingService, and InvoiceStore. Run with `npx vitest`.
 
@@ -130,7 +130,7 @@ The project has two layers of tests:
 
 ## Deployment
 
-- **Program ID**: `zk_invoice.aleo`
+- **Program ID**: `zk_invoice_v2.aleo` (legacy: `zk_invoice.aleo` for historical records)
 - **Network**: Aleo Testnet Beta
 - **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
 

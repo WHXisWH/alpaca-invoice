@@ -2,11 +2,13 @@ import {
   AleoAddress,
   AleoField,
   AleoTransactionId,
+  InvoiceStatus,
   Microcredits
 } from '@/lib/types';
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
 import { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
+import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
 
 /**
  * AleoProtocolService implementation class
@@ -19,6 +21,9 @@ export class AleoProtocolService implements IAleoProtocolService {
   private networkClient: AleoNetworkClient;
   private programManager: ProgramManager | null = null;
   private network: WalletAdapterNetwork;
+  private programSourceCache: string | null = null;
+  private statusCache: Map<string, { ts: number; status: InvoiceStatus | null }> = new Map();
+  private hashCache: Map<string, { ts: number; hash: AleoField | null }> = new Map();
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
     const baseUrl = this.getBaseUrlForNetwork(network);
@@ -38,6 +43,51 @@ export class AleoProtocolService implements IAleoProtocolService {
       this.programManager = new ProgramManager(baseUrl);
     }
     return this.programManager;
+  }
+
+  private async getProgramSource(): Promise<string> {
+    if (this.programSourceCache) return this.programSourceCache;
+    const src = await this.networkClient.getProgram(PROGRAM_ID);
+    if (!src || typeof src !== 'string') {
+      throw new ProtocolServiceError(
+        ProtocolError.NODE_CONNECTION_FAILED,
+        'Failed to fetch program source for compute_invoice_id',
+        { programId: PROGRAM_ID }
+      );
+    }
+    this.programSourceCache = src;
+    return src;
+  }
+
+  /**
+   * Compute invoice_id deterministically by running compute_invoice_id locally (no fee).
+   * Falls back to on-chain program source fetched via Aleo explorer.
+   */
+  async computeInvoiceIdOffline(params: {
+    seller: AleoAddress;
+    buyer: AleoAddress;
+    amount: Microcredits;
+    dueDate: number;
+    nonce: AleoField;
+  }): Promise<AleoField> {
+    const program = await this.getProgramSource();
+    const pm = this.getProgramManager();
+    const inputs = [
+      params.seller,
+      params.buyer,
+      `${params.amount.toString()}u64`,
+      `${params.dueDate}u32`,
+      params.nonce
+    ];
+    const { outputs } = await pm.run(program, 'compute_invoice_id', inputs, false);
+    if (!outputs || !outputs[0]) {
+      throw new ProtocolServiceError(
+        ProtocolError.INVALID_RECORD,
+        'compute_invoice_id returned empty output',
+        { inputs }
+      );
+    }
+    return String(outputs[0]) as AleoField;
   }
 
   /**
@@ -95,7 +145,7 @@ export class AleoProtocolService implements IAleoProtocolService {
   async getPublicBalance(address: AleoAddress): Promise<Microcredits> {
     try {
       const balance = await this.networkClient.getProgramMappingValue(
-        'credits.aleo',
+        CREDITS_PROGRAM_ID,
         'account',
         address
       );
@@ -161,10 +211,10 @@ export class AleoProtocolService implements IAleoProtocolService {
    *
    * Can query any Mapping of any program, for example:
    * - credits.aleo account mapping (balance query)
-   * - zk_invoice.aleo invoice_status mapping (invoice status query)
+   * - zk_invoice_v2.aleo invoice_status mapping (invoice status query)
    * - Any custom program's Mapping
    *
-   * @param programId Program identifier (e.g., "zk_invoice.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v2.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
    * @param key Mapping key (Field type)
    * @returns Mapping value (string format), or null if it does not exist
@@ -201,6 +251,58 @@ export class AleoProtocolService implements IAleoProtocolService {
         { programId, mappingName, key, originalError: error }
       );
     }
+  }
+
+  async getInvoiceHash(invoiceId: AleoField): Promise<AleoField | null> {
+    const cache = this.hashCache.get(invoiceId);
+    const now = Date.now();
+    if (cache && now - cache.ts < 30_000) return cache.hash;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_registry', invoiceId);
+    if (!raw) return null;
+    const val = raw.replace(/["']?/g, '') as AleoField;
+    this.hashCache.set(invoiceId, { ts: now, hash: val });
+    return val;
+  }
+
+  async getInvoiceStatus(invoiceId: AleoField): Promise<InvoiceStatus | null> {
+    const cache = this.statusCache.get(invoiceId);
+    const now = Date.now();
+    if (cache && now - cache.ts < 30_000) return cache.status;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_status', invoiceId);
+    if (!raw) return null;
+    const clean = raw.replace(/u8$/i, '').replace(/["']/g, '');
+    const num = Number(clean);
+    if (Number.isNaN(num)) return null;
+    const status =
+      num === 0 ? InvoiceStatus.PENDING :
+      num === 1 ? InvoiceStatus.PAID :
+      num === 2 ? InvoiceStatus.CANCELLED :
+      num === 3 ? InvoiceStatus.EXPIRED : null;
+    this.statusCache.set(invoiceId, { ts: now, status });
+    return status;
+  }
+
+  async getInvoiceCount(seller: AleoAddress): Promise<number> {
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_count', seller);
+    if (!raw) return 0;
+    const clean = raw.replace(/u64$/i, '').replace(/["']/g, '');
+    const num = Number(clean);
+    return Number.isNaN(num) ? 0 : num;
+  }
+
+  async verifyInvoiceOnChain(
+    invoiceId: AleoField,
+    localHash: AleoField
+  ): Promise<{
+    exists: boolean;
+    hashMatch: boolean;
+    chainStatus: InvoiceStatus | null;
+  }> {
+    const chainHash = await this.getInvoiceHash(invoiceId);
+    const exists = chainHash !== null;
+    const hashMatch = exists ? chainHash === localHash : false;
+    const chainStatus = await this.getInvoiceStatus(invoiceId);
+    return { exists, hashMatch, chainStatus };
   }
 
   /**

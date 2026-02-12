@@ -3,10 +3,12 @@ import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
 import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // Service instances (singleton pattern, lazy initialization)
 let storageServiceInstance: StorageService | null = null;
 let cryptoServiceInstance: CryptoService | null = null;
+let protocolServiceInstance: AleoProtocolService | null = null;
 
 const getStorageService = (): StorageService => {
   if (!storageServiceInstance) {
@@ -20,6 +22,13 @@ const getCryptoService = (): CryptoService => {
     cryptoServiceInstance = new CryptoService();
   }
   return cryptoServiceInstance;
+};
+
+const getProtocolService = (): AleoProtocolService => {
+  if (!protocolServiceInstance) {
+    protocolServiceInstance = new AleoProtocolService();
+  }
+  return protocolServiceInstance;
 };
 
 // Table name constant
@@ -59,6 +68,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   invoices: [],
   currentInvoice: null,  // Currently selected invoice
   sendingInvoiceHashes: {},  // Global SENDING index
+  chainStatusCache: {},
+  chainStatusCache: {},
 
   /**
    * Add invoice: receive invoice -> save to IndexedDB -> update memory
@@ -270,6 +281,24 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         sendingInvoiceHashes: newSending
       };
     });
+  },
+
+  updateChainStatus: (invoiceId, status, hash) => {
+    const now = Date.now();
+    useInvoiceStore.setState((state) => ({
+      chainStatusCache: {
+        ...state.chainStatusCache,
+        [invoiceId]: { status, hash, lastQueried: now }
+      }
+    }));
+  },
+
+  getChainStatus: (invoiceId) => {
+    const entry = useInvoiceStore.getState().chainStatusCache[invoiceId];
+    if (!entry) return null;
+    // 30s TTL
+    if (Date.now() - entry.lastQueried > 30000) return null;
+    return entry.status;
   },
 
   /**
@@ -834,5 +863,22 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     console.log(`[Store.rebuildSendingIndex] Rebuilt index with ${count} SENDING invoice(s)`);
 
     set({ sendingInvoiceHashes: newSending });
+  },
+
+  updateChainStatus: (invoiceId, status, hash) => {
+    const now = Date.now();
+    set((state) => ({
+      chainStatusCache: {
+        ...state.chainStatusCache,
+        [invoiceId]: { status, hash, lastQueried: now }
+      }
+    }));
+  },
+
+  getChainStatus: (invoiceId) => {
+    const entry = get().chainStatusCache[invoiceId];
+    if (!entry) return null;
+    if (Date.now() - entry.lastQueried > 30000) return null;
+    return entry.status;
   }
 }));

@@ -2,6 +2,7 @@ import type { WalletContextState } from '@demox-labs/aleo-wallet-adapter-react';
 import { DecryptPermission } from '@demox-labs/aleo-wallet-adapter-base';
 import { IWalletService, WalletServiceError, WalletError } from './IWalletService';
 import { getNetworkFromEnv } from '@/lib/network';
+import { PROGRAM_ID, LEGACY_PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
 
 /**
  * 适配器：将 WalletContextState 桥接到 IWalletService
@@ -13,7 +14,7 @@ import { getNetworkFromEnv } from '@/lib/network';
  */
 export function createWalletAdapter(walletContext: WalletContextState): IWalletService {
   const network = getNetworkFromEnv();
-  const programs = ['credits.aleo', 'zk_invoice.aleo'];
+  const programs = [CREDITS_PROGRAM_ID, PROGRAM_ID, LEGACY_PROGRAM_ID];
 
   return {
     // 适配 connect 方法：将无参数接口转换为需要参数的实际调用

@@ -8,8 +8,35 @@ export default function AuditValidator() {
   const { validate } = useAuditController();
   const [pkgText, setPkgText] = useState('');
   const [auditKey, setAuditKey] = useState('');
-  const [result, setResult] = useState<{ ok: boolean; message: string; details?: any } | null>(null);
+  const [result, setResult] = useState<{
+    ok: boolean;
+    message: string;
+    details?: any;
+    chain?: {
+      exists: boolean;
+      hashMatch: boolean;
+      status: string | null;
+    };
+  } | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const handleExport = () => {
+    if (!result || !result.ok) return;
+    const snapshot = {
+      verifiedAt: new Date().toISOString(),
+      decrypted: result.details,
+      chain: result.chain
+    };
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+      type: 'application/json'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit-snapshot.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleValidate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +49,16 @@ export default function AuditValidator() {
         setResult({
           ok: true,
           message: 'Audit package is valid',
-          details: outcome.decrypted
+          details: outcome.decrypted,
+          chain: outcome.chainVerification
+            ? {
+                exists: outcome.chainVerification.invoiceExistsOnChain,
+                hashMatch: outcome.chainVerification.hashMatchesChain,
+                status: outcome.chainVerification.chainStatus !== null
+                  ? outcome.chainVerification.chainStatus.toString()
+                  : null
+              }
+            : undefined
         });
       } else {
         setResult({
@@ -87,6 +123,22 @@ export default function AuditValidator() {
             <pre className="mt-2 max-h-56 overflow-auto rounded border border-slate-200 bg-white p-2 text-xs text-slate-900">
               {JSON.stringify(result.details, null, 2)}
             </pre>
+          )}
+          {result.chain && (
+            <div className="mt-2 space-y-1 rounded border border-slate-200 bg-white p-2 text-xs text-slate-900">
+              <div>Chain verification:</div>
+              <div>- Exists: {result.chain.exists ? 'yes' : 'no'}</div>
+              <div>- Hash match: {result.chain.hashMatch ? 'yes' : 'no'}</div>
+              <div>- Status: {result.chain.status ?? 'unknown'}</div>
+            </div>
+          )}
+          {result.ok && (
+            <button
+              onClick={handleExport}
+              className="mt-2 rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              Export snapshot
+            </button>
           )}
         </div>
       )}
