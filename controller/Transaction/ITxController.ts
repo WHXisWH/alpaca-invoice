@@ -29,4 +29,18 @@ export interface ITxController {
    * 3. Update local state
    */
   executeCancel(invoice: Invoice): Promise<AleoTransactionId>;
+
+  /**
+   * Set audit authorization for an invoice (seller only).
+   * @param invoice Invoice metadata (used to locate the on-chain record)
+   * @param auditKeyHash field hash of the audit key
+   * @param scopesBitmask bitmask of allowed fields (u64)
+   * @param expiresAt Unix seconds expiry
+   */
+  executeSetAuditAuthorization(
+    invoice: Invoice,
+    auditKeyHash: string,
+    scopesBitmask: bigint,
+    expiresAt: number
+  ): Promise<AleoTransactionId>;
 }

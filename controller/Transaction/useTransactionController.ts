@@ -120,8 +120,44 @@ export function useTransactionController(): ITxController {
         startTx('HASHING');
         updateProgress(10, 'HASHING - Computing invoice hash...');
 
-        // Compute invoice hash
-        const invoiceHash = await cryptoService.computeInvoiceHash(params.details);
+        // Prepare on-chain parameters
+        updateProgress(20, 'PREPARING - Preparing transaction parameters...');
+        const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
+
+        // Generate random nonce
+        const nonceField = await cryptoService.hashObjectToField(
+          `NONCE-${Date.now()}-${Math.random()}`
+        );
+
+        // Derive supporting fields from details
+        const lineItemsSum = params.details.lineItems.reduce(
+          (acc, item) => acc + BigInt(item.amount ?? Math.round(item.quantity * item.unitPrice)),
+          0n
+        );
+        const expectedTotal = BigInt(Math.round(params.details.total));
+        const taxRateBps = BigInt(Math.round((params.details.taxRate ?? 0) * 10000));
+        const orderIdField = await cryptoService.hashObjectToField(params.details.invoiceNumber);
+        const currencyField = (() => {
+          const n = Number(params.details.currency);
+          if (!Number.isNaN(n) && n > 0) return `${BigInt(n)}field` as AleoField;
+          return `0field` as AleoField;
+        })();
+        const itemsHashField = await cryptoService.hashObjectToField(params.details.lineItems);
+        const memoHashField = await cryptoService.hashObjectToField(params.details.notes ?? '');
+
+        // Compute invoice hash via contract helper for parity
+        const invoiceHash = await protocolService.computeInvoiceHashOffline({
+          seller: publicKey as AleoAddress,
+          buyer: buyerAddress,
+          amount: params.amount,
+          taxAmount: BigInt(Math.round(params.details.taxAmount)),
+          dueDate: dueTimestamp,
+          nonce: nonceField,
+          orderId: orderIdField,
+          currency: currencyField,
+          itemsHash: itemsHashField,
+          memoHash: memoHashField
+        });
 
         // Debug log: record original data and computed hash
         console.log('🔍 [CREATE] Original details:', JSON.stringify(params.details, null, 2));
@@ -129,25 +165,10 @@ export function useTransactionController(): ITxController {
         console.log('🔍 [CREATE] Computed hash:', invoiceHash);
 
         updateProgress(15, `✓ Invoice hash: ${invoiceHash.slice(0, 20)}...`);
-
-        // Prepare on-chain parameters
-        updateProgress(20, 'PREPARING - Preparing transaction parameters...');
-        const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
         const amountStr = `${params.amount.toString()}u64`;
-        const orderId = '0field' as AleoField; // Placeholder until order linkage is provided
+        const orderId = orderIdField;
         const taxAmount = `${BigInt(Math.max(0, Math.floor(params.details.taxAmount || 0)))}u64`;
         const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
-
-        // Generate random nonce
-        const nonceField = await cryptoService.computeInvoiceHash({
-          invoiceNumber: `NONCE-${Date.now()}-${Math.random()}`,
-          lineItems: [],
-          subtotal: 0,
-          taxRate: 0,
-          taxAmount: 0,
-          total: 0,
-          currency: 'CREDITS'
-        });
 
         updateProgress(25, '✓ Transaction parameters prepared');
 
@@ -184,7 +205,13 @@ export function useTransactionController(): ITxController {
             nonceField,
             currentTime,
             orderId,
-            taxAmount
+            taxAmount,
+            currencyField,
+            itemsHashField,
+            memoHashField,
+            `${lineItemsSum}u64`,
+            `${expectedTotal}u64`,
+            `${taxRateBps}u64`
           ],
           publicKey: publicKey,
           programId: PROGRAM_ID,
@@ -370,6 +397,8 @@ export function useTransactionController(): ITxController {
           currency: 'CREDITS'
         });
 
+        const paidAt = `${Math.floor(Date.now() / 1000)}u32`;
+
         updateProgress(50, 'Submitting payment transaction...');
 
         // 3. Call mark_as_paid transition
@@ -378,7 +407,8 @@ export function useTransactionController(): ITxController {
           functionName: 'mark_as_paid',
           inputs: [
             invoiceRecord,
-            paymentNonce
+            paymentNonce,
+            paidAt
           ],
           publicKey: publicKey,
           programId: PROGRAM_ID,
@@ -524,6 +554,68 @@ export function useTransactionController(): ITxController {
     currentLog: logs[logs.length - 1] || '',
     executeCreateInvoice,
     executePay,
-    executeCancel
+    executeCancel,
+    executeSetAuditAuthorization: async (
+      invoice: Invoice,
+      auditKeyHash: string,
+      scopesBitmask: bigint,
+      expiresAt: number
+    ): Promise<AleoTransactionId> => {
+      if (!publicKey) {
+        throw new WalletServiceError(
+          WalletError.UNAUTHORIZED,
+          'Wallet not connected. Please connect your wallet first.'
+        );
+      }
+      if (!walletService) {
+        throw new WalletServiceError(
+          WalletError.NOT_INSTALLED,
+          'Wallet service not initialized.'
+        );
+      }
+      if (invoice.seller !== publicKey) {
+        throw new WalletServiceError(
+          WalletError.UNAUTHORIZED,
+          'Only the seller can set audit authorization for this invoice.'
+        );
+      }
+
+      startTx('REQUESTING');
+      updateProgress(10, 'Fetching invoice record from chain...');
+
+      const { rawRecord } = await scanInvoiceRecord(invoice.invoiceHash, invoice.id);
+      if (!rawRecord) {
+        completeTx();
+        throw new Error('Invoice record not found on chain. Please sync and try again.');
+      }
+
+      const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
+      const requestId = await walletService.requestTransaction({
+        functionName: 'set_audit_authorization',
+        inputs: [
+          rawRecord,
+          auditKeyHash as AleoField,
+          `${scopesBitmask.toString()}u64`,
+          `${expiresAt}u32`,
+          currentTime
+        ],
+        publicKey,
+        programId: PROGRAM_ID,
+        fee: 1000000,
+        chainId: getChainIdFromNetwork(getNetworkFromEnv())
+      });
+
+      if (!requestId) {
+        completeTx();
+        throw new WalletServiceError(
+          WalletError.UNAUTHORIZED,
+          'Audit authorization transaction failed - no response from wallet'
+        );
+      }
+
+      updateProgress(100, '✓ Audit authorization submitted');
+      completeTx();
+      return requestId as AleoTransactionId;
+    }
   };
 }

@@ -94,6 +94,39 @@ export interface IAleoProtocolService {
   getInvoiceCount(seller: AleoAddress): Promise<number>;
 
   /**
+   * Fetch commitments and cached anchors.
+   */
+  getInvoiceCommitment(invoiceId: AleoField): Promise<AleoField | null>;
+  getInvoiceFieldCommitments(invoiceId: AleoField): Promise<any | null>;
+  getRulesResult(invoiceId: AleoField): Promise<AleoField | null>;
+  getAuditAuthorization(invoiceId: AleoField): Promise<{
+    audit_key_hash: AleoField;
+    scopes_bitmask: bigint;
+    expires_at: number;
+    issuer: AleoAddress;
+  } | null>;
+  getAuditCounter(seller: AleoAddress): Promise<number>;
+
+  /**
+   * On-chain assertions (wrapping contract assert_* transitions)
+   */
+  assertRules(invoiceId: AleoField, rulesHash: AleoField): Promise<void>;
+  assertAmount(
+    invoice: any,
+    expectedHash: AleoField,
+    min: bigint,
+    max: bigint
+  ): Promise<void>;
+  assertOwnership(
+    invoice: any,
+    expectedHash: AleoField,
+    seller: AleoAddress,
+    buyer: AleoAddress
+  ): Promise<void>;
+  assertCommitment(invoiceId: AleoField, root: AleoField): Promise<void>;
+  assertCounter(seller: AleoAddress, expected: bigint): Promise<void>;
+
+  /**
    * Verify invoice hash matches on-chain anchor and return status.
    */
   verifyInvoiceOnChain(

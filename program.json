@@ -1,5 +1,5 @@
 {
-  "program": "zk_invoice_v2.aleo",
+  "program": "zk_invoice_v2_2.aleo",
   "version": "0.2.0",
   "description": "Privacy-preserving B2B/B2C invoice system with public anchors and ZK audit proofs",
   "license": "MIT",

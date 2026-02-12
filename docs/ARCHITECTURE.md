@@ -31,9 +31,9 @@ Alpaca Invoice is a privacy-preserving B2B invoice system built on the Aleo bloc
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Aleo Blockchain                                  │
 │   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │                 zk_invoice_v2.aleo Program                      │   │
+│   │                 zk_invoice_v2_2.aleo Program                    │   │
 │   │  Transitions: create_invoice, mark_as_paid, cancel_invoice,     │   │
-│   │               verify_invoice, verify_payment, create_seller_receipt │
+│   │               set_audit_authorization, assert_* anchors         │   │
 │   │  + ZK proofs (tax/range/ownership), mappings, async finalize     │   │
 │   │  Records: InvoiceRecord, PaymentRecord, AuditReport (opt)        │   │
 │   └─────────────────────────────────────────────────────────────────┘   │
@@ -211,7 +211,7 @@ credits.aleo/transfer_private
 Step 3: Mark as Paid
         │
         ▼
-zk_invoice_v2.aleo/mark_as_paid
+zk_invoice_v2_2.aleo/mark_as_paid
         │
         ├─ Input: InvoiceRecord
         ├─ Input: payment_nonce
@@ -532,7 +532,7 @@ User Interface
 ## 8. Deployment
 
 ### Contract
-- **Program ID**: `zk_invoice_v2.aleo` (legacy `zk_invoice.aleo` kept for historical queries)
+- **Program ID**: `zk_invoice_v2_2.aleo` (legacy ids kept only for historical reads)
 - **Network**: Aleo Testnet
 - **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
 

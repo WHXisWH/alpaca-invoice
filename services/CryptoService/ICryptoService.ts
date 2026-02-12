@@ -135,4 +135,64 @@ export interface ICryptoService {
    * @throws {CryptoServiceError} May throw ENCRYPTION_FAILED
    */
   deriveMasterKey(signature: string): Promise<string>;
+
+  /**
+    * Evaluate audit rules (R1–R5) and return rules hash + per-rule flags.
+    */
+  evaluateAuditRules(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    currentTime: number;
+    lineItemsSum: bigint;
+    expectedTotal: bigint;
+    taxRateBps: bigint;
+    invoiceHash: AleoField;
+  }): Promise<{ rulesHash: AleoField; r1: boolean; r2: boolean; r3: boolean; r4: boolean; r5: boolean }>;
+
+  /**
+    * Build commitments root and field commitments aligned with contract tags.
+    */
+  buildFieldCommitments(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    buyer: string;
+    seller: string;
+    currency: AleoField;
+    itemsHash: AleoField;
+    memoHash: AleoField;
+    orderId: AleoField;
+    nonce: AleoField;
+  }): Promise<{ root: AleoField; fields: Record<string, AleoField> }>;
+
+  /**
+    * Generate audit package (minimal disclosure) with proofs/anchors.
+    */
+  generateAuditPackage(input: {
+    invoiceId: AleoField;
+    invoiceHash: AleoField;
+    rulesHash: AleoField;
+    fieldCommitments: Record<string, AleoField>;
+    commitmentsRoot: AleoField;
+    auditKeyHash: AleoField;
+    scopesBitmask: bigint;
+    expiresAt: number;
+    selectedFields: string[]; // names to disclose
+    payload: any; // disclosed values per selectedFields
+    signature?: string; // optional signer sig
+    programId: string;
+    version?: string;
+  }): Promise<any>;
+
+  /**
+    * Verify audit package by recomputing and calling on-chain anchors via provided protocol adapter.
+    */
+  verifyAuditPackage(pkg: any, adapter: {
+    assertRules: (invoiceId: AleoField, rulesHash: AleoField) => Promise<void>;
+    assertAmount: (invoice: any, hash: AleoField, min: bigint, max: bigint) => Promise<void>;
+    assertOwnership: (invoice: any, hash: AleoField, seller: string, buyer: string) => Promise<void>;
+    assertCommitment: (invoiceId: AleoField, root: AleoField) => Promise<void>;
+    assertCounter?: (seller: string, expected: bigint) => Promise<void>;
+  }): Promise<{ valid: boolean; reason?: string }>;
 }
