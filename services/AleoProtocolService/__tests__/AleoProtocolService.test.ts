@@ -12,7 +12,9 @@ const {
   mockBuildAuthorization,
   mockEstimateFeeForAuthorization,
   mockAuthorization,
-  MockProgramManager
+  MockProgramManager,
+  mockGetProgram,
+  mockRun
 } = vi.hoisted(() => {
   const mockGetProgramMappingValue = vi.fn();
   const mockGetLatestHeight = vi.fn();
@@ -20,6 +22,8 @@ const {
   const mockGetTransaction = vi.fn();
   const mockBuildAuthorization = vi.fn();
   const mockEstimateFeeForAuthorization = vi.fn();
+  const mockGetProgram = vi.fn();
+  const mockRun = vi.fn();
   
   // Mock Authorization 对象
   const mockAuthorization = {
@@ -30,6 +34,7 @@ const {
   const MockProgramManager = vi.fn().mockImplementation(() => ({
     buildAuthorization: mockBuildAuthorization,
     estimateFeeForAuthorization: mockEstimateFeeForAuthorization,
+    run: mockRun,
   }));
   
   return {
@@ -41,6 +46,8 @@ const {
     mockEstimateFeeForAuthorization,
     mockAuthorization,
     MockProgramManager,
+    mockGetProgram,
+    mockRun
   };
 });
 
@@ -51,6 +58,7 @@ vi.mock('@provablehq/sdk', () => ({
     getLatestHeight: mockGetLatestHeight,
     submitTransaction: mockSubmitTransaction,
     getTransaction: mockGetTransaction,
+    getProgram: mockGetProgram,
   })),
   ProgramManager: MockProgramManager,
 }));
@@ -71,12 +79,52 @@ describe('AleoProtocolService', () => {
     mockBuildAuthorization.mockReset();
     mockEstimateFeeForAuthorization.mockReset();
     MockProgramManager.mockClear();
+    mockGetProgram.mockReset();
+    mockRun.mockReset();
     
     service = new AleoProtocolService(WalletAdapterNetwork.TestnetBeta);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('computeInvoiceIdOffline', () => {
+    it('should return invoice_id from program manager run', async () => {
+      mockGetProgram.mockResolvedValue('program source');
+      mockRun.mockResolvedValue({ outputs: ['123field'] });
+      const res = await service.computeInvoiceIdOffline({
+        seller: mockAddress,
+        buyer: mockAddress,
+        amount: 1n,
+        dueDate: 1,
+        nonce: '1field' as any
+      });
+      expect(res).toBe('123field');
+      expect(mockRun).toHaveBeenCalled();
+    });
+
+    it('throws when run returns empty outputs', async () => {
+      mockGetProgram.mockResolvedValue('program source');
+      mockRun.mockResolvedValue({ outputs: [] });
+      await expect(service.computeInvoiceIdOffline({
+        seller: mockAddress,
+        buyer: mockAddress,
+        amount: 1n,
+        dueDate: 1,
+        nonce: '1field' as any
+      })).rejects.toBeInstanceOf(ProtocolServiceError);
+    });
+  });
+
+  describe('mapping cache', () => {
+    it('should cache invoice status within TTL', async () => {
+      mockGetProgramMappingValue.mockResolvedValueOnce('1u8');
+      const first = await service.getInvoiceStatus('abcfield' as any);
+      const second = await service.getInvoiceStatus('abcfield' as any);
+      expect(first).toBe(second);
+      expect(mockGetProgramMappingValue).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getPublicBalance', () => {
@@ -233,7 +281,7 @@ describe('AleoProtocolService', () => {
   });
 
   describe('estimateExecutionFee', () => {
-    const mockProgramName = 'zk_invoice.aleo';
+    const mockProgramName = 'zk_invoice_v2.aleo';
     const mockFunctionName = 'create_invoice';
     const mockInputs = ['aleo1test', '1000000u64', '1234567890u32'];
 
@@ -315,7 +363,7 @@ describe('AleoProtocolService', () => {
       // Assert
       expect(fee).toBe(250_000n); // 降级值
       expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleWarnSpy).toHaveBeenCalledWith('使用降级费用估算值: 250,000 microcredits');
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Using fallback fee estimate: 250,000 microcredits');
 
       consoleErrorSpy.mockRestore();
       consoleWarnSpy.mockRestore();
@@ -338,7 +386,7 @@ describe('AleoProtocolService', () => {
       // Assert
       expect(fee).toBe(250_000n); // 降级值
       expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleWarnSpy).toHaveBeenCalledWith('使用降级费用估算值: 250,000 microcredits');
+      expect(consoleWarnSpy).toHaveBeenCalledWith('Using fallback fee estimate: 250,000 microcredits');
 
       consoleErrorSpy.mockRestore();
       consoleWarnSpy.mockRestore();
@@ -411,7 +459,7 @@ describe('AleoProtocolService', () => {
         transitions: [
           {
             id: {
-              program: 'zk_invoice.aleo',
+              program: 'zk_invoice_v2.aleo',
               function: 'create_invoice'
             },
             outputs: [
@@ -447,7 +495,7 @@ describe('AleoProtocolService', () => {
 
       // Act
       const result = await service.verifyRecordOnChain(mockTransactionId, {
-        programId: 'zk_invoice.aleo'
+        programId: 'zk_invoice_v2.aleo'
       });
 
       // Assert
@@ -474,7 +522,7 @@ describe('AleoProtocolService', () => {
 
       // Act
       const result = await service.verifyRecordOnChain(mockTransactionId, {
-        programId: 'zk_invoice.aleo'
+        programId: 'zk_invoice_v2.aleo'
       });
 
       // Assert
@@ -544,7 +592,7 @@ describe('AleoProtocolService', () => {
 
       // Act
       const result = await service.verifyRecordOnChain(mockTransactionId, {
-        programId: 'zk_invoice.aleo',
+        programId: 'zk_invoice_v2.aleo',
         functionName: 'create_invoice',
         expectedOutputsCount: 2
       });
@@ -573,7 +621,7 @@ describe('AleoProtocolService', () => {
         id: mockTransactionId,
         transitions: [
           {
-            program: 'zk_invoice.aleo',
+            program: 'zk_invoice_v2.aleo',
             function: 'create_invoice',
             outputs: [
               { type: 'record', value: 'record1...' }
@@ -585,7 +633,7 @@ describe('AleoProtocolService', () => {
 
       // Act
       const result = await service.verifyRecordOnChain(mockTransactionId, {
-        programId: 'zk_invoice.aleo',
+        programId: 'zk_invoice_v2.aleo',
         functionName: 'create_invoice',
         expectedOutputsCount: 1
       });
@@ -617,7 +665,7 @@ describe('AleoProtocolService', () => {
 
       // Act
       const result = await service.verifyRecordOnChain(mockTransactionId, {
-        programId: 'zk_invoice.aleo'
+        programId: 'zk_invoice_v2.aleo'
       });
 
       // Assert
@@ -633,7 +681,7 @@ describe('AleoProtocolService', () => {
           transitions: [
             {
               id: {
-                program: 'zk_invoice.aleo',
+                program: 'zk_invoice_v2.aleo',
                 function: 'create_invoice'
               }
             }
@@ -652,4 +700,3 @@ describe('AleoProtocolService', () => {
     });
   });
 });
-

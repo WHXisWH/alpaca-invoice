@@ -8,14 +8,17 @@ import type {
   AuditKeyConfig,
   EncryptedPayload,
   Invoice,
-  InvoiceDetails
+  InvoiceDetails,
+  InvoiceStatus
 } from './types';
 import { encryptInvoiceDetails, decryptInvoiceDetails } from './crypto';
+import { PROGRAM_ID as DEFAULT_PROGRAM_ID } from './contract';
+import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoProtocolService';
 
 /**
  * Audit package schema (versioned for forward compatibility)
  */
-export interface AuditPackage {
+export interface AuditPackageV1 {
   version: 1;
   invoiceId: AleoField;
   invoiceHash: AleoField;
@@ -28,6 +31,24 @@ export interface AuditPackage {
   cipherHash: string; // sha256(iv + ciphertext) hex
   signature: string; // wallet signature over canonical string
 }
+
+export interface AuditPackageV2 {
+  version: 2;
+  programId: string;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  expiresAt: number;
+  auditorAddress: AleoAddress;
+  issuedAt: number;
+  signerAddress: AleoAddress;
+  cipher: EncryptedPayload;
+  cipherHash: string;
+  signature: string;
+  chainVerifiable: boolean;
+}
+
+export type AuditPackage = AuditPackageV1 | AuditPackageV2;
 
 function getWebCrypto(): Crypto {
   if (typeof globalThis.crypto !== 'undefined') return globalThis.crypto as Crypto;
@@ -105,10 +126,13 @@ export function buildAuditMessage(input: {
   expiresAt: number;
   permissions: string[];
   cipherHash: string;
+  programId?: string;
+  version?: number;
 }): string {
   const sortedPerms = [...input.permissions].sort().join(',');
   return [
-    'AUDIT_PACKAGE_V1',
+    input.version === 2 ? 'AUDIT_PACKAGE_V2' : 'AUDIT_PACKAGE_V1',
+    input.programId || DEFAULT_PROGRAM_ID,
     input.invoiceId,
     input.invoiceHash,
     input.auditorAddress,
@@ -126,9 +150,22 @@ export async function createAuditPackage(params: {
   signerAddress: AleoAddress;
   auditKey: string;
   signMessage: (message: string) => Promise<string>;
+  programId?: string;
+  chainVerifiable?: boolean;
+  version?: 1 | 2;
 }): Promise<{ pkg: AuditPackage; key: AuditKey }> {
-  const { invoice, permissions, auditorAddress, expiresAt, signerAddress, auditKey, signMessage } =
-    params;
+  const {
+    invoice,
+    permissions,
+    auditorAddress,
+    expiresAt,
+    signerAddress,
+    auditKey,
+    signMessage,
+    programId = DEFAULT_PROGRAM_ID,
+    chainVerifiable = true,
+    version = 2
+  } = params;
 
   const filtered = filterDetailsByPermissions(invoice, permissions);
   if (!filtered.details && !filtered.amount && !filtered.seller && !filtered.buyer) {
@@ -144,23 +181,44 @@ export async function createAuditPackage(params: {
     auditorAddress,
     expiresAt,
     permissions,
-    cipherHash
+    cipherHash,
+    programId,
+    version
   });
   const signature = await signMessage(message);
 
-  const pkg: AuditPackage = {
-    version: 1,
-    invoiceId: invoice.id,
-    invoiceHash: invoice.invoiceHash,
-    permissions,
-    expiresAt,
-    auditorAddress,
-    issuedAt: Date.now(),
-    signerAddress,
-    cipher,
-    cipherHash,
-    signature
-  };
+  const issuedAt = Date.now();
+
+  const pkg: AuditPackage =
+    version === 2
+      ? {
+          version: 2,
+          programId,
+          invoiceId: invoice.id,
+          invoiceHash: invoice.invoiceHash,
+          permissions,
+          expiresAt,
+          auditorAddress,
+          issuedAt,
+          signerAddress,
+          cipher,
+          cipherHash,
+          signature,
+          chainVerifiable
+        }
+      : {
+          version: 1,
+          invoiceId: invoice.id,
+          invoiceHash: invoice.invoiceHash,
+          permissions,
+          expiresAt,
+          auditorAddress,
+          issuedAt,
+          signerAddress,
+          cipher,
+          cipherHash,
+          signature
+        };
 
   const key: AuditKey = {
     key: auditKey,
@@ -182,12 +240,18 @@ export async function validateAuditPackage(params: {
   auditKey: string;
   expectedInvoiceHash?: AleoField;
   computeInvoiceHash: (details: InvoiceDetails) => Promise<AleoField>;
+  protocolService?: IAleoProtocolService;
 }): Promise<{
   valid: boolean;
   reason?: string;
   decrypted?: any;
+  chainVerification?: {
+    invoiceExistsOnChain: boolean;
+    hashMatchesChain: boolean;
+    chainStatus: InvoiceStatus | null;
+  };
 }> {
-  const { pkg, auditKey, expectedInvoiceHash, computeInvoiceHash } = params;
+  const { pkg, auditKey, expectedInvoiceHash, computeInvoiceHash, protocolService } = params;
 
   if (Date.now() > pkg.expiresAt) {
     return { valid: false, reason: 'Audit package expired' };
@@ -209,17 +273,42 @@ export async function validateAuditPackage(params: {
   }
 
   // Integrity check against invoice_hash
-  if (pkg.invoiceHash && decrypted?.details) {
+  const targetHash = pkg.invoiceHash || expectedInvoiceHash;
+  if (targetHash && decrypted?.details) {
     const hash = await computeInvoiceHash(decrypted.details);
-    const cleanChainHash = pkg.invoiceHash.replace(/field\.(private|public)$/, 'field');
+    const cleanChainHash = targetHash.replace(/field\.(private|public)$/, 'field');
     if (hash !== cleanChainHash) {
-      return { valid: false, reason: 'Decrypted details do not match on-chain invoice_hash' };
+      return { valid: false, reason: 'Decrypted details do not match invoice_hash' };
     }
   } else if (expectedInvoiceHash) {
     const hash = await computeInvoiceHash(decrypted.details || decrypted);
     if (hash !== expectedInvoiceHash) {
       return { valid: false, reason: 'Invoice hash mismatch' };
     }
+  }
+
+  // Optional chain verification for version 2 packages
+  if (pkg.version === 2 && pkg.chainVerifiable && protocolService) {
+    const chain = await protocolService.verifyInvoiceOnChain(pkg.invoiceId, pkg.invoiceHash);
+    if (!chain.exists) {
+      return { valid: false, reason: 'INVOICE_NOT_FOUND_ON_CHAIN', decrypted };
+    }
+    if (!chain.hashMatch) {
+      return { valid: false, reason: 'HASH_MISMATCH_WITH_CHAIN', decrypted, chainVerification: {
+        invoiceExistsOnChain: chain.exists,
+        hashMatchesChain: chain.hashMatch,
+        chainStatus: chain.chainStatus ?? null
+      }};
+    }
+    return {
+      valid: true,
+      decrypted,
+      chainVerification: {
+        invoiceExistsOnChain: chain.exists,
+        hashMatchesChain: chain.hashMatch,
+        chainStatus: chain.chainStatus ?? null
+      }
+    };
   }
 
   return { valid: true, decrypted };

@@ -9,9 +9,9 @@ import {
   type PaymentResult,
   type PaymentReceipt
 } from '@/lib/types';
+import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
+import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
 
-const PROGRAM_ID = 'zk_invoice.aleo';
-const CREDITS_PROGRAM = 'credits.aleo';
 const RECEIPTS_KEY = 'zk_invoice_receipts';
 
 function getWallet() {
@@ -52,6 +52,7 @@ export const paymentService = {
     amount: bigint;
   }): Promise<PaymentResult> {
     const wallet = getWallet();
+    const chainId = getChainIdFromNetwork(getNetworkFromEnv());
 
     if (!wallet.publicKey) {
       throw new Error('Wallet not connected');
@@ -60,7 +61,7 @@ export const paymentService = {
     console.log('Step 1/2: Fetching credits records...');
 
     // Get credits record plaintexts from wallet (not metadata)
-    const creditsPlaintextsResponse = await wallet.requestRecordPlaintexts(CREDITS_PROGRAM);
+    const creditsPlaintextsResponse = await wallet.requestRecordPlaintexts(CREDITS_PROGRAM_ID);
     const creditsPlaintexts = creditsPlaintextsResponse.records || [];
     console.log('Credits plaintexts:', creditsPlaintexts);
 
@@ -83,12 +84,13 @@ export const paymentService = {
       address: wallet.publicKey,
       chainId: 'testnetbeta',
       transitions: [{
-        program: CREDITS_PROGRAM,
+        program: CREDITS_PROGRAM_ID,
         functionName: 'transfer_private',
         inputs: [creditsRecord, params.recipientAddress, `${params.amount.toString()}u64`]
       }],
       fee: 1000000,
-      feePrivate: false
+      feePrivate: false,
+      chainId
     });
 
     if (!transferResponse || !transferResponse.transactionId) {
@@ -113,7 +115,9 @@ export const paymentService = {
 
     // Find the matching invoice record by invoice_id
     const matchingRecord = invoicePlaintexts.find(
-      (r: any) => !r.spent && r.data?.invoice_id === invoice.id
+      (r: any) =>
+        !r.spent &&
+        (r.data?.invoice_id === invoice.id || r.data?.invoice_hash === invoice.invoiceHash)
     );
 
     if (!matchingRecord) {
@@ -131,10 +135,11 @@ export const paymentService = {
       transitions: [{
         program: PROGRAM_ID,
         functionName: 'mark_as_paid',
-        inputs: [invoiceRecord, paymentNonce]
+        inputs: [invoiceRecord, paymentNonce, `${Math.floor(Date.now() / 1000)}u32`]
       }],
       fee: 1000000,
-      feePrivate: false
+      feePrivate: false,
+      chainId
     });
 
     if (!markPaidResponse || !markPaidResponse.transactionId) {

@@ -5,6 +5,7 @@ import {
   WalletError,
   RequestTransactionParams
 } from './IWalletService';
+import { PROGRAM_ID as DEFAULT_PROGRAM_ID } from '@/lib/contract';
 
 /**
  * WalletService implementation class
@@ -420,7 +421,7 @@ export class WalletService {
 
   /**
    * Request Records (wraps the wallet adapter's requestRecords method)
-   * @param program Program ID (e.g., 'zk_invoice.aleo' or 'credits.aleo')
+   * @param program Program ID (e.g., 'zk_invoice_v2.aleo' or 'credits.aleo')
    * @returns An object containing a records array
    * @throws {WalletServiceError} May throw UNAUTHORIZED, DECRYPTION_FAILED
    *
@@ -478,7 +479,7 @@ export class WalletService {
       functionName,
       inputs,
       publicKey,
-      programId = 'zk_invoice.aleo',
+      programId = DEFAULT_PROGRAM_ID,
       feeRecord,
       fee = 250_000,
       chainId

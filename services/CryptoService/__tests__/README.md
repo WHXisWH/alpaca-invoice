@@ -75,7 +75,7 @@
 **示例用法**：
 ```typescript
 // ✅ 正确：使用 wallet.requestRecords() 获取已解密数据
-const records = await wallet.requestRecords('zk_invoice.aleo');
+const records = await wallet.requestRecords('zk_invoice_v2.aleo');
 for (const record of records.records) {
   // record.data 已经是解密后的 JSON 字符串
   const parsed = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
@@ -256,7 +256,7 @@ npm test -- --coverage
 **当前实现**：
 ```typescript
 // 处理已解密的 JSON 数据
-const records = await wallet.requestRecords('zk_invoice.aleo');
+const records = await wallet.requestRecords('zk_invoice_v2.aleo');
 const parsed = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
   JSON.stringify(records[0].data)
 );
@@ -329,4 +329,3 @@ const sampleInvoice: InvoiceDetails = {
   - 更新 `parseAleoRecord` 测试说明（从 `decryptAleoRecord` 更名）
   - 更新哈希算法说明（反映实际 SHA-256 + 模运算实现）
 - **维护者**: Aleo Privacy Invoice System Team
-

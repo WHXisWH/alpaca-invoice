@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Basic smoke runner for zk_invoice.aleo transitions using inputs/* defaults.
+# Basic smoke runner for zk_invoice_v2.aleo transitions using inputs/* defaults.
 # Replace placeholder addresses/fields in inputs/ before running.
 
 echo "Running create_invoice..."

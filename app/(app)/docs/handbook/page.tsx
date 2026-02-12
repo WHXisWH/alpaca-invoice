@@ -59,7 +59,7 @@ const faqs = [
     icon: Globe,
     question: 'Which network does this run on?',
     answer:
-      'Alpaca Invoice currently runs on the Aleo Testnet. The smart contract program ID is zk_invoice.aleo. Testnet credits have no real monetary value.',
+      'Alpaca Invoice currently runs on the Aleo Testnet. The smart contract program ID is zk_invoice_v2.aleo (legacy: zk_invoice.aleo for history only). Testnet credits have no real monetary value.',
   },
   {
     icon: Monitor,

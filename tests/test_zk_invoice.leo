@@ -1,9 +1,9 @@
-// Comprehensive test suite for zk_invoice.aleo
-// This file contains all test cases for the invoice management system
+// Comprehensive test suite for zk_invoice_v2.aleo
+// Covers async transitions, mapping-safe inputs, and ZK proof helpers
 
-import zk_invoice.aleo;
+import zk_invoice_v2.aleo;
 
-program test_zk_invoice.aleo {
+program test_zk_invoice_v2.aleo {
 
     // ========== Test Constants ==========
     const TEST_SELLER: address = aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc;
@@ -13,18 +13,24 @@ program test_zk_invoice.aleo {
     const TEST_INVOICE_HASH: field = 123456789field;
     const TEST_NONCE: field = 99999field;
     const TEST_PAYMENT_NONCE: field = 88888field;
+    const TEST_NOW: u32 = 1700000000u32;
+    const TEST_ORDER_ID: field = 0field;
+    const TEST_TAX: u64 = 0u64;
 
     // ========== Test Case 1: Create Invoice - Happy Path ==========
     // Tests the successful creation of an invoice with valid parameters
     transition test_create_invoice_success() -> bool {
         // Call create_invoice as seller
-        let (seller_record, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Verify seller_record fields
@@ -34,7 +40,10 @@ program test_zk_invoice.aleo {
             seller_record.amount == TEST_AMOUNT &&
             seller_record.due_date == TEST_DUE_DATE &&
             seller_record.invoice_hash == TEST_INVOICE_HASH &&
-            seller_record.status == 0u8;  // STATUS_PENDING
+            seller_record.created_at == TEST_NOW &&
+            seller_record.status == 0u8 &&  // STATUS_PENDING
+            seller_record.order_id == TEST_ORDER_ID &&
+            seller_record.tax_amount == TEST_TAX;
 
         // Verify buyer_record fields
         let buyer_check: bool =
@@ -42,7 +51,9 @@ program test_zk_invoice.aleo {
             buyer_record.seller == TEST_SELLER &&
             buyer_record.buyer == TEST_BUYER &&
             buyer_record.amount == TEST_AMOUNT &&
-            buyer_record.status == 0u8;  // STATUS_PENDING
+            buyer_record.status == 0u8 &&  // STATUS_PENDING
+            buyer_record.order_id == TEST_ORDER_ID &&
+            buyer_record.tax_amount == TEST_TAX;
 
         // Verify both records have the same invoice_id
         let id_match: bool = seller_record.invoice_id == buyer_record.invoice_id;
@@ -56,13 +67,16 @@ program test_zk_invoice.aleo {
         // Ensure amount is positive
         assert(amount > 0u64);
 
-        let (seller_record, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 amount,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         return seller_record.amount == amount && buyer_record.amount == amount;
@@ -77,22 +91,28 @@ program test_zk_invoice.aleo {
         // Ensure buyers are different
         assert_neq(buyer1, buyer2);
 
-        let (seller_record1, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record1, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 buyer1,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let (seller_record2, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record2, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 buyer2,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE + 1field  // Different nonce to ensure different ID
+                TEST_NONCE + 1field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Invoice IDs should be different
@@ -102,22 +122,28 @@ program test_zk_invoice.aleo {
     // ========== Test Case 4: Create Invoice with Different Nonces ==========
     // Tests that different nonces generate different invoice IDs
     transition test_create_invoice_different_nonces() -> bool {
-        let (record1, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (record1, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                1field
+                1field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let (record2, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (record2, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                2field
+                2field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Different nonces should produce different invoice_ids
@@ -127,16 +153,19 @@ program test_zk_invoice.aleo {
     // ========== Test Case 5: Verify Invoice - Match Hash ==========
     // Tests successful invoice hash verification
     transition test_verify_invoice_match() -> bool {
-        let (seller_record, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let is_valid: bool = zk_invoice.aleo/verify_invoice(
+        let is_valid: bool = zk_invoice_v2.aleo/verify_invoice(
             seller_record,
             TEST_INVOICE_HASH
         );
@@ -147,17 +176,20 @@ program test_zk_invoice.aleo {
     // ========== Test Case 6: Verify Invoice - Mismatch Hash ==========
     // Tests invoice verification failure with wrong hash
     transition test_verify_invoice_mismatch() -> bool {
-        let (seller_record, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         let wrong_hash: field = TEST_INVOICE_HASH + 1field;
-        let is_valid: bool = zk_invoice.aleo/verify_invoice(
+        let is_valid: bool = zk_invoice_v2.aleo/verify_invoice(
             seller_record,
             wrong_hash
         );
@@ -170,20 +202,24 @@ program test_zk_invoice.aleo {
     // Tests successful payment marking by buyer
     transition test_mark_as_paid_success() -> bool {
         // First create an invoice
-        let (_, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Mark as paid (caller must be buyer)
-        let (receipt, updated_invoice): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (receipt, updated_invoice, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_record,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Verify payment receipt fields
@@ -204,29 +240,34 @@ program test_zk_invoice.aleo {
     // Tests seller receipt creation after payment
     transition test_create_seller_receipt() -> bool {
         // First create invoice and mark as paid
-        let (_, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let (buyer_receipt, _): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (buyer_receipt, _, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_record,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Seller creates their receipt
         let seller_receipt: PaymentRecord =
-            zk_invoice.aleo/create_seller_receipt(
+            zk_invoice_v2.aleo/create_seller_receipt(
                 buyer_receipt.invoice_id,
                 TEST_BUYER,
                 TEST_SELLER,
                 TEST_AMOUNT,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Verify seller receipt fields
@@ -247,18 +288,21 @@ program test_zk_invoice.aleo {
     // Tests successful invoice cancellation by seller
     transition test_cancel_invoice_success() -> bool {
         // Create an invoice
-        let (seller_record, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Cancel invoice (caller must be seller)
-        let cancelled_invoice: InvoiceRecord =
-            zk_invoice.aleo/cancel_invoice(seller_record);
+        let (cancelled_invoice, _): (InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/cancel_invoice(seller_record);
 
         // Verify status changed to CANCELLED
         let status_check: bool = cancelled_invoice.status == 2u8;  // STATUS_CANCELLED
@@ -277,23 +321,27 @@ program test_zk_invoice.aleo {
     // Tests successful payment verification
     transition test_verify_payment_match() -> bool {
         // Create invoice and mark as paid
-        let (_, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let (receipt, updated_invoice): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (receipt, updated_invoice, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_record,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Verify payment matches invoice
-        let is_valid: bool = zk_invoice.aleo/verify_payment(
+        let is_valid: bool = zk_invoice_v2.aleo/verify_payment(
             receipt,
             updated_invoice
         );
@@ -305,33 +353,40 @@ program test_zk_invoice.aleo {
     // Tests payment verification failure with mismatched invoice
     transition test_verify_payment_mismatch() -> bool {
         // Create two invoices
-        let (_, buyer_record1): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record1, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                1field
+                1field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
-        let (_, buyer_record2): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record2, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT + 100u64,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                2field
+                2field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Mark first invoice as paid
-        let (receipt1, _): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (receipt1, _, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_record1,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Try to verify with second invoice (should fail)
-        let is_valid: bool = zk_invoice.aleo/verify_payment(
+        let is_valid: bool = zk_invoice_v2.aleo/verify_payment(
             receipt1,
             buyer_record2
         );
@@ -344,40 +399,45 @@ program test_zk_invoice.aleo {
     // Tests the complete invoice lifecycle from creation to payment
     transition test_complete_workflow() -> bool {
         // Step 1: Seller creates invoice
-        let (seller_invoice, buyer_invoice): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_invoice, buyer_invoice, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Step 2: Buyer verifies invoice hash
-        let is_valid_invoice: bool = zk_invoice.aleo/verify_invoice(
+        let is_valid_invoice: bool = zk_invoice_v2.aleo/verify_invoice(
             buyer_invoice,
             TEST_INVOICE_HASH
         );
 
         // Step 3: Buyer marks invoice as paid
-        let (buyer_receipt, paid_invoice): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (buyer_receipt, paid_invoice, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_invoice,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Step 4: Seller creates their receipt
         let seller_receipt: PaymentRecord =
-            zk_invoice.aleo/create_seller_receipt(
+            zk_invoice_v2.aleo/create_seller_receipt(
                 paid_invoice.invoice_id,
                 TEST_BUYER,
                 TEST_SELLER,
                 TEST_AMOUNT,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Step 5: Verify payment matches invoice
-        let is_valid_payment: bool = zk_invoice.aleo/verify_payment(
+        let is_valid_payment: bool = zk_invoice_v2.aleo/verify_payment(
             buyer_receipt,
             paid_invoice
         );
@@ -396,33 +456,42 @@ program test_zk_invoice.aleo {
     // Tests creating and managing multiple invoices
     transition test_multiple_invoices() -> bool {
         // Create first invoice
-        let (invoice1, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (invoice1, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 1000u64,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                1field
+                1field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Create second invoice
-        let (invoice2, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (invoice2, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 2000u64,
                 TEST_DUE_DATE + 86400u32,
                 TEST_INVOICE_HASH + 1field,
-                2field
+                2field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Create third invoice
-        let (invoice3, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (invoice3, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 3000u64,
                 TEST_DUE_DATE + 172800u32,
                 TEST_INVOICE_HASH + 2field,
-                3field
+                3field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Verify all invoices have unique IDs
@@ -445,13 +514,16 @@ program test_zk_invoice.aleo {
     transition test_max_amount() -> bool {
         let max_amount: u64 = 18446744073709551615u64;  // Max u64
 
-        let (seller_record, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 max_amount,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         return seller_record.amount == max_amount &&
@@ -463,13 +535,16 @@ program test_zk_invoice.aleo {
     transition test_min_amount() -> bool {
         let min_amount: u64 = 1u64;
 
-        let (seller_record, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_record, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 min_amount,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         return seller_record.amount == min_amount &&
@@ -480,21 +555,25 @@ program test_zk_invoice.aleo {
     // Tests that invoice status progresses correctly through lifecycle
     transition test_status_progression() -> bool {
         // Create invoice (PENDING)
-        let (_, buyer_record): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_record, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
         let is_pending: bool = buyer_record.status == 0u8;
 
         // Mark as paid (PAID)
-        let (_, paid_invoice): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (_, paid_invoice, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_record,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
         let is_paid: bool = paid_invoice.status == 1u8;
 
@@ -505,21 +584,24 @@ program test_zk_invoice.aleo {
     // Tests the cancellation workflow
     transition test_cancellation_workflow() -> bool {
         // Create invoice
-        let (seller_invoice, _): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_invoice, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Verify initial status is PENDING
         let is_pending: bool = seller_invoice.status == 0u8;
 
         // Cancel invoice
-        let cancelled_invoice: InvoiceRecord =
-            zk_invoice.aleo/cancel_invoice(seller_invoice);
+        let (cancelled_invoice, _): (InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/cancel_invoice(seller_invoice);
 
         // Verify status changed to CANCELLED
         let is_cancelled: bool = cancelled_invoice.status == 2u8;
@@ -535,30 +617,35 @@ program test_zk_invoice.aleo {
     // Tests that buyer and seller receipts have matching payment IDs
     transition test_payment_id_consistency() -> bool {
         // Create invoice
-        let (_, buyer_invoice): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_invoice, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Buyer marks as paid
-        let (buyer_receipt, _): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (buyer_receipt, _, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_invoice,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Seller creates receipt with same parameters
         let seller_receipt: PaymentRecord =
-            zk_invoice.aleo/create_seller_receipt(
+            zk_invoice_v2.aleo/create_seller_receipt(
                 buyer_invoice.invoice_id,
                 TEST_BUYER,
                 TEST_SELLER,
                 TEST_AMOUNT,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Payment IDs should match
@@ -569,37 +656,45 @@ program test_zk_invoice.aleo {
     // Tests that different payment nonces generate different payment IDs
     transition test_different_payment_nonces() -> bool {
         // Create invoice
-        let (_, buyer_invoice): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_invoice, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Mark as paid with first nonce
-        let (receipt1, _): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (receipt1, _, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_invoice,
-                1field
+                1field,
+                TEST_NOW
             );
 
         // Create another invoice
-        let (_, buyer_invoice2): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (_, buyer_invoice2, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE + 1field
+                TEST_NONCE + 1field,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Mark as paid with second nonce
-        let (receipt2, _): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (receipt2, _, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_invoice2,
-                2field
+                2field,
+                TEST_NOW
             );
 
         // Payment IDs should be different
@@ -610,13 +705,16 @@ program test_zk_invoice.aleo {
     // Tests that core invoice fields remain unchanged after operations
     transition test_invoice_immutability() -> bool {
         // Create invoice
-        let (seller_invoice, buyer_invoice): (InvoiceRecord, InvoiceRecord) =
-            zk_invoice.aleo/create_invoice(
+        let (seller_invoice, buyer_invoice, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
                 TEST_BUYER,
                 TEST_AMOUNT,
                 TEST_DUE_DATE,
                 TEST_INVOICE_HASH,
-                TEST_NONCE
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
             );
 
         // Store original values
@@ -626,10 +724,11 @@ program test_zk_invoice.aleo {
         let original_buyer: address = buyer_invoice.buyer;
 
         // Mark as paid
-        let (_, paid_invoice): (PaymentRecord, InvoiceRecord) =
-            zk_invoice.aleo/mark_as_paid(
+        let (_, paid_invoice, _): (PaymentRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/mark_as_paid(
                 buyer_invoice,
-                TEST_PAYMENT_NONCE
+                TEST_PAYMENT_NONCE,
+                TEST_NOW
             );
 
         // Verify core fields unchanged (only status should change)
@@ -643,5 +742,117 @@ program test_zk_invoice.aleo {
         let status_changed: bool = paid_invoice.status != buyer_invoice.status;
 
         return fields_unchanged && status_changed;
+    }
+
+    // ========== Test Case 21: Tax compliance proof ==========
+    transition test_tax_compliance_true() -> bool {
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
+                TEST_BUYER,
+                TEST_AMOUNT,
+                TEST_DUE_DATE,
+                TEST_INVOICE_HASH,
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                100000u64 // 10% of 1,000,000
+            );
+
+        let ok: bool = zk_invoice_v2.aleo/prove_tax_compliance(
+            seller_record,
+            1000u64,      // 10% in basis points
+            100000u64
+        );
+        return ok;
+    }
+
+    transition test_tax_compliance_false() -> bool {
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
+                TEST_BUYER,
+                TEST_AMOUNT,
+                TEST_DUE_DATE,
+                TEST_INVOICE_HASH,
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                90000u64
+            );
+
+        let ok: bool = zk_invoice_v2.aleo/prove_tax_compliance(
+            seller_record,
+            1000u64,
+            90000u64
+        );
+        return !ok;
+    }
+
+    // ========== Test Case 22: Amount range proof ==========
+    transition test_amount_in_range_true() -> bool {
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
+                TEST_BUYER,
+                TEST_AMOUNT,
+                TEST_DUE_DATE,
+                TEST_INVOICE_HASH,
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
+            );
+
+        let ok: bool = zk_invoice_v2.aleo/prove_amount_in_range(
+            seller_record,
+            500000u64,
+            2000000u64
+        );
+        return ok;
+    }
+
+    transition test_amount_in_range_false() -> bool {
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
+                TEST_BUYER,
+                TEST_AMOUNT,
+                TEST_DUE_DATE,
+                TEST_INVOICE_HASH,
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
+            );
+
+        let ok: bool = zk_invoice_v2.aleo/prove_amount_in_range(
+            seller_record,
+            2000000u64,
+            3000000u64
+        );
+        return !ok;
+    }
+
+    // ========== Test Case 23: Ownership proof succeeds when mapping matches ==========
+    transition test_ownership_proof_succeeds() -> bool {
+        let (seller_record, _, _): (InvoiceRecord, InvoiceRecord, Future) =
+            zk_invoice_v2.aleo/create_invoice(
+                TEST_BUYER,
+                TEST_AMOUNT,
+                TEST_DUE_DATE,
+                TEST_INVOICE_HASH,
+                TEST_NONCE,
+                TEST_NOW,
+                TEST_ORDER_ID,
+                TEST_TAX
+            );
+        // populate mapping via finalize_create_invoice
+        zk_invoice_v2.aleo/finalize_create_invoice(
+            seller_record.invoice_id,
+            seller_record.invoice_hash,
+            TEST_SELLER
+        );
+
+        let (is_party, _): (bool, Future) = zk_invoice_v2.aleo/prove_invoice_ownership(
+            seller_record
+        );
+        return is_party;
     }
 }

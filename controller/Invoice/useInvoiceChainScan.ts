@@ -9,8 +9,7 @@ import { AleoField, Invoice } from '@/lib/types';
 import { parseSingleRecord } from '@/lib/recordParser';
 import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId, buildInvoiceFromRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
-
-const PROGRAM_ID = 'zk_invoice.aleo';
+import { PROGRAM_ID } from '@/lib/contract';
 
 /**
  * Hook: 链上扫描逻辑（统一版本，可复用）
@@ -399,4 +398,3 @@ export function useInvoiceChainScan() {
     scanAllRecords // 向后兼容
   };
 }
-

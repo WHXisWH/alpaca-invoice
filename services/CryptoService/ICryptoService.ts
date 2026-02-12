@@ -64,7 +64,7 @@ export interface ICryptoService {
    * Complete invoice verification flow:
    * ```typescript
    * // 1. Get decrypted on-chain Records from the wallet
-   * const records = await wallet.requestRecords('zk_invoice.aleo');
+   * const records = await wallet.requestRecords('zk_invoice_v2.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );

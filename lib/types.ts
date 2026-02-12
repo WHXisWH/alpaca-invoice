@@ -98,3 +98,41 @@ export interface AuditKey {
   signature: string;
   issuedAt: number;
 }
+
+export interface AuditPackageV1 {
+  version: 1;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  expiresAt: number;
+  auditorAddress: AleoAddress;
+  issuedAt: number;
+  signerAddress: AleoAddress;
+  cipher: EncryptedPayload;
+  cipherHash: string;
+  signature: string;
+}
+
+export interface AuditPackageV2 {
+  version: 2;
+  programId: string;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  expiresAt: number;
+  auditorAddress: AleoAddress;
+  issuedAt: number;
+  signerAddress: AleoAddress;
+  cipher: EncryptedPayload;
+  cipherHash: string;
+  signature: string;
+  chainVerifiable: boolean;
+}
+
+export type AuditPackage = AuditPackageV1 | AuditPackageV2;
+
+export interface ChainVerificationResult {
+  invoiceExistsOnChain: boolean;
+  hashMatchesChain: boolean;
+  chainStatus: InvoiceStatus | null;
+}

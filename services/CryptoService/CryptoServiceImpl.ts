@@ -190,7 +190,7 @@ export class CryptoService implements ICryptoService {
    * Complete verification flow example:
    * ```typescript
    * // 1. Get on-chain Record
-   * const records = await wallet.requestRecords('zk_invoice.aleo');
+   * const records = await wallet.requestRecords('zk_invoice_v2.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );

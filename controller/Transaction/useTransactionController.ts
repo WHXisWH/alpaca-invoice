@@ -11,11 +11,11 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
+import { PROGRAM_ID } from '@/lib/contract';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // Initialize service instance (used inside the hook)
 const cryptoService = new CryptoService();
-
-const PROGRAM_ID = 'zk_invoice.aleo';
 
 /**
  * Transaction Controller Hook
@@ -34,6 +34,7 @@ export function useTransactionController(): ITxController {
     const adapter = createWalletAdapter(wallet);
     return new WalletService(adapter);
   }, [wallet]);
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
 
   /**
    * Execute the full create-invoice flow
@@ -133,6 +134,9 @@ export function useTransactionController(): ITxController {
         updateProgress(20, 'PREPARING - Preparing transaction parameters...');
         const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
         const amountStr = `${params.amount.toString()}u64`;
+        const orderId = '0field' as AleoField; // Placeholder until order linkage is provided
+        const taxAmount = `${BigInt(Math.max(0, Math.floor(params.details.taxAmount || 0)))}u64`;
+        const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
 
         // Generate random nonce
         const nonceField = await cryptoService.computeInvoiceHash({
@@ -155,6 +159,21 @@ export function useTransactionController(): ITxController {
         // Request transaction via wallet service (wallet generates proof and prepares broadcast in the background)
         // Get chainId from environment variable, consistent with useWalletController
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+        // Pre-compute invoice_id locally via compute_invoice_id (for record parity)
+        let invoiceId: AleoField | null = null;
+        try {
+          invoiceId = await protocolService.computeInvoiceIdOffline({
+            seller: publicKey as AleoAddress,
+            buyer: buyerAddress,
+            amount: params.amount,
+            dueDate: dueTimestamp,
+            nonce: nonceField
+          });
+          updateProgress(28, `✓ Invoice ID computed: ${invoiceId.slice(0, 12)}...`);
+        } catch (e) {
+          console.warn('computeInvoiceIdOffline failed, will fall back to hash as ID', e);
+        }
+
         const requestId = await walletService.requestTransaction({
           functionName: 'create_invoice',
           inputs: [
@@ -162,7 +181,10 @@ export function useTransactionController(): ITxController {
             amountStr,
             `${dueTimestamp}u32`,
             invoiceHash,
-            nonceField
+            nonceField,
+            currentTime,
+            orderId,
+            taxAmount
           ],
           publicKey: publicKey,
           programId: PROGRAM_ID,
@@ -181,7 +203,7 @@ export function useTransactionController(): ITxController {
         // The wallet generates proof and prepares broadcast in the background, without blocking subsequent flow
         updateProgress(35, `✓ Transaction request submitted (requestId: ${requestId.slice(0, 20)}...)`);
 
-        const invoiceId = invoiceHash;
+        const invoiceId = (invoiceId ?? invoiceHash) as AleoField;
 
         // ==================== Phase 3: Local encrypted archival & instant redirect ====================
 

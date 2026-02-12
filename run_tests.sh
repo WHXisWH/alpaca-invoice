@@ -184,7 +184,7 @@ print_summary() {
 main() {
     echo -e "${BLUE}"
     echo "╔════════════════════════════════════════╗"
-    echo "║   zk_invoice.aleo Test Suite          ║"
+    echo "║   zk_invoice_v2.aleo Test Suite       ║"
     echo "╔════════════════════════════════════════╗"
     echo -e "${NC}\n"
 

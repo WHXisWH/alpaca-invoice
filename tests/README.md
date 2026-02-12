@@ -1,6 +1,6 @@
-# zk_invoice.aleo Test Suite
+# zk_invoice_v2.aleo Test Suite (legacy zk_invoice.aleo retained for history)
 
-This folder holds the full Leo test suite for the `zk_invoice.aleo` contract plus helper scripts.
+This folder holds the Leo test scaffolding. Wave2 uses `zk_invoice_v2.aleo`; legacy references are retained only for history.
 
 ## What’s Covered (20 cases)
 - **create_invoice**: happy path, min/max amount, different buyers/nonces.
