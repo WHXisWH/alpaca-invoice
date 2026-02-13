@@ -1,6 +1,8 @@
 # Alpaca Invoice
 
-Privacy-preserving B2B invoice and payment system built on Aleo blockchain. Uses zero-knowledge proofs to protect transaction privacy while enabling off-chain, permissioned audit packages.
+Privacy-preserving B2B invoice system on Aleo. Private Records plus public anchors (hash, commitments, rules_result, audit auth/counter) enable selective, chain-verifiable audits.
+
+**Current contract:** `zk_invoice_v2_2.aleo` (testnet) — tx `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`
 
 ## Features
 
@@ -57,9 +59,9 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ┌─────────────────────────────────────────────────────────────┐
 │                   Aleo Blockchain (Testnet)                  │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                  zk_invoice_v2.aleo                    │  │
+│  │                 zk_invoice_v2_2.aleo                  │  │
 │  │  create_invoice | mark_as_paid | cancel_invoice       │  │
-│  │  verify_invoice | verify_payment | create_seller_receipt│ │
+│  │  set_audit_authorization | assert_* anchors           │  │
 │  └───────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │                   credits.aleo                         │  │
@@ -72,12 +74,15 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 | Function | Role | Description |
 |----------|------|-------------|
-| `create_invoice` | Seller | Create invoice, returns 2 InvoiceRecords |
-| `mark_as_paid` | Buyer | Mark invoice as paid, returns PaymentRecord |
-| `cancel_invoice` | Seller | Cancel pending invoice |
-| `verify_invoice` | Anyone | Verify invoice hash integrity |
-| `verify_payment` | Anyone | Verify payment matches invoice |
-| `create_seller_receipt` | Seller | Generate seller receipt |
+| `create_invoice` | Seller | Create invoice (async finalize writes hash/commitments/rules_result caches) |
+| `mark_as_paid` | Buyer | Mark invoice as paid (async) |
+| `cancel_invoice` | Seller | Cancel pending invoice (async) |
+| `set_audit_authorization` | Seller | Set audit_key_hash + scopes + expiry |
+| `assert_rules_anchor` | Anyone | Assert cached rules_result |
+| `assert_commitment_anchor` | Anyone | Assert commitment root |
+| `assert_amount_anchor` | Anyone | Assert amount range vs record |
+| `assert_ownership_anchor` | Anyone | Assert seller/buyer vs record |
+| `assert_audit_counter_anchor` | Anyone | Assert seller audit counter |
 
 ## Project Structure
 
@@ -114,7 +119,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 The project has two layers of tests:
 
-**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2.aleo` with mappings/async/ZK proofs. Legacy `zk_invoice.aleo` info kept only as historical reference.
+**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2_2.aleo` with mappings/async/ZK proofs (rules, amount, ownership, commitments, audit auth/counter).
 
 **Service Unit Tests (Vitest)** — Unit tests for core services including WalletService, CryptoService, AleoProtocolService, StorageService, InvoiceStatusValidator, PollingService, and InvoiceStore. Run with `npx vitest`.
 
@@ -130,14 +135,15 @@ The project has two layers of tests:
 
 ## Deployment
 
-- **Program ID**: `zk_invoice_v2.aleo` (legacy: `zk_invoice.aleo` for historical records)
+- **Program ID**: `zk_invoice_v2_2.aleo` (legacy IDs only for history reads)
 - **Network**: Aleo Testnet Beta
-- **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
+- **Deployment TX**: `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`
 
 ## Documentation
 
 - [Architecture](./docs/ARCHITECTURE.md) - Technical architecture and data flows
 - [Business Flow](./docs/BUSINESS_FLOW.md) - Complete business logic flows
+- [Audit Package API](./docs/API_AUDIT_PACKAGE.md) - v2.2 schema, scopes bitmask, examples
 
 ## License
 

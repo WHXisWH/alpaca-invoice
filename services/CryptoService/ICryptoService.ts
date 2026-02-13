@@ -196,4 +196,18 @@ export interface ICryptoService {
     details: InvoiceDetails | Partial<any>,
     auditKey: Uint8Array
   ): Promise<EncryptedPayload>;
+
+  /**
+   * Evaluate audit rules (R1–R5) and return rules hash + per-rule flags.
+   */
+  evaluateAuditRules(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    currentTime: number;
+    lineItemsSum: bigint;
+    expectedTotal: bigint;
+    taxRateBps: bigint;
+    invoiceHash: AleoField;
+  }): Promise<{ rulesHash: AleoField; r1: boolean; r2: boolean; r3: boolean; r4: boolean; r5: boolean }>;
 }

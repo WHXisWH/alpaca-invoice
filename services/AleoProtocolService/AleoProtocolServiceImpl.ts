@@ -33,6 +33,10 @@ export class AleoProtocolService implements IAleoProtocolService {
   private programSourceCache: string | null = null;
   private statusCache: Map<string, { ts: number; status: InvoiceStatus | null }> = new Map();
   private hashCache: Map<string, { ts: number; hash: AleoField | null }> = new Map();
+  private commitmentCache: Map<string, { ts: number; value: AleoField | null }> = new Map();
+  private rulesCache: Map<string, { ts: number; value: AleoField | null }> = new Map();
+  private authCache: Map<string, { ts: number; value: any | null }> = new Map();
+  private counterCache: Map<string, { ts: number; value: bigint | null }> = new Map();
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
     this.network = network;
@@ -99,6 +103,46 @@ export class AleoProtocolService implements IAleoProtocolService {
       throw new ProtocolServiceError(
         ProtocolError.INVALID_RECORD,
         'compute_invoice_id returned empty output',
+        { inputs }
+      );
+    }
+    return String(outputs[0]) as AleoField;
+  }
+
+  /**
+   * Compute invoice_hash deterministically via contract helper (no fee).
+   */
+  async computeInvoiceHashOffline(params: {
+    seller: AleoAddress;
+    buyer: AleoAddress;
+    amount: Microcredits;
+    taxAmount: Microcredits;
+    dueDate: number;
+    nonce: AleoField;
+    orderId: AleoField;
+    currency: AleoField;
+    itemsHash: AleoField;
+    memoHash: AleoField;
+  }): Promise<AleoField> {
+    const program = await this.getProgramSource();
+    const pm = await this.getProgramManager();
+    const inputs = [
+      params.seller,
+      params.buyer,
+      `${params.amount.toString()}u64`,
+      `${params.taxAmount.toString()}u64`,
+      `${params.dueDate}u32`,
+      params.nonce,
+      params.orderId,
+      params.currency,
+      params.itemsHash,
+      params.memoHash
+    ];
+    const { outputs } = await pm.run(program, 'compute_invoice_hash', inputs, false);
+    if (!outputs || !outputs[0]) {
+      throw new ProtocolServiceError(
+        ProtocolError.INVALID_RECORD,
+        'compute_invoice_hash returned empty output',
         { inputs }
       );
     }
@@ -321,6 +365,117 @@ export class AleoProtocolService implements IAleoProtocolService {
     const hashMatch = exists ? chainHash === localHash : false;
     const chainStatus = await this.getInvoiceStatus(invoiceId);
     return { exists, hashMatch, chainStatus };
+  }
+
+  async getInvoiceCommitment(invoiceId: AleoField): Promise<AleoField | null> {
+    const key = `commit-${invoiceId}`;
+    const now = Date.now();
+    const cached = this.commitmentCache.get(key);
+    if (cached && now - cached.ts < 30_000) return cached.value;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_commitment_cache', invoiceId);
+    const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
+    this.commitmentCache.set(key, { ts: now, value: val });
+    return val;
+  }
+
+  async getInvoiceFieldCommitments(invoiceId: AleoField): Promise<any | null> {
+    const key = `fields-${invoiceId}`;
+    const now = Date.now();
+    const cached = this.rulesCache.get(key);
+    if (cached && now - cached.ts < 30_000) return cached.value;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_field_commitments_cache', invoiceId);
+    if (!raw) {
+      this.rulesCache.set(key, { ts: now, value: null });
+      return null;
+    }
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    this.rulesCache.set(key, { ts: now, value: parsed });
+    return parsed;
+  }
+
+  async getRulesResult(invoiceId: AleoField): Promise<AleoField | null> {
+    const key = `rules-${invoiceId}`;
+    const now = Date.now();
+    const cached = this.rulesCache.get(key);
+    if (cached && now - cached.ts < 30_000) return cached.value as AleoField | null;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_rules_cache', invoiceId);
+    const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
+    this.rulesCache.set(key, { ts: now, value: val });
+    return val;
+  }
+
+  async getAuditAuthorization(invoiceId: AleoField): Promise<any | null> {
+    const key = `auth-${invoiceId}`;
+    const now = Date.now();
+    const cached = this.authCache.get(key);
+    if (cached && now - cached.ts < 30_000) return cached.value;
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_auth_cache', invoiceId);
+    if (!raw) {
+      this.authCache.set(key, { ts: now, value: null });
+      return null;
+    }
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    this.authCache.set(key, { ts: now, value: parsed });
+    return parsed;
+  }
+
+  async getAuditCounter(seller: AleoAddress): Promise<number> {
+    const key = `counter-${seller}`;
+    const now = Date.now();
+    const cached = this.counterCache.get(key);
+    if (cached && now - cached.ts < 30_000 && cached.value !== null) return Number(cached.value);
+    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_counter_cache', seller);
+    const val = raw ? BigInt(String(raw).replace(/u64$/i, '').replace(/["']/g, '')) : 0n;
+    this.counterCache.set(key, { ts: now, value: val });
+    return Number(val);
+  }
+
+  async assertRules(invoiceId: AleoField, rulesHash: AleoField): Promise<void> {
+    await this.callAssert('assert_rules_anchor', [invoiceId, rulesHash]);
+  }
+
+  async assertAmount(
+    invoice: any,
+    expectedHash: AleoField,
+    min: bigint,
+    max: bigint
+  ): Promise<void> {
+    await this.callAssert('assert_amount_anchor', [
+      invoice,
+      expectedHash,
+      `${min.toString()}u64`,
+      `${max.toString()}u64`
+    ]);
+  }
+
+  async assertOwnership(
+    invoice: any,
+    expectedHash: AleoField,
+    seller: AleoAddress,
+    buyer: AleoAddress
+  ): Promise<void> {
+    await this.callAssert('assert_ownership_anchor', [invoice, expectedHash, seller, buyer]);
+  }
+
+  async assertCommitment(invoiceId: AleoField, root: AleoField): Promise<void> {
+    await this.callAssert('assert_commitment_anchor', [invoiceId, root]);
+  }
+
+  async assertCounter(seller: AleoAddress, expected: bigint): Promise<void> {
+    await this.callAssert('assert_audit_counter_anchor', [seller, `${expected.toString()}u64`]);
+  }
+
+  private async callAssert(functionName: string, inputs: any[]): Promise<void> {
+    const pm = await this.getProgramManager();
+    const program = await this.getProgramSource();
+    const { outputs } = await pm.run(program, functionName, inputs, false);
+    if (outputs === undefined) {
+      throw new ProtocolServiceError(
+        ProtocolError.TRANSACTION_REJECTED,
+        `Assert call failed: ${functionName}`,
+        { inputs }
+      );
+    }
   }
 
   /**
