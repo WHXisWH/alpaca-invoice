@@ -6,7 +6,9 @@ import type { AleoAddress, AleoField } from '@/lib/types';
 import { AuditPackage } from '@/lib/audit';
 
 export default function AuditKeyGenerator() {
-  const { generate } = useAuditController();
+  const { generate, downloadPackage, loading } = useAuditController();
+  
+  // UI state: form values
   const [invoiceId, setInvoiceId] = useState('');
   const [expiresAt, setExpiresAt] = useState(
     new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0]
@@ -17,8 +19,8 @@ export default function AuditKeyGenerator() {
     'READ_PARTIES',
     'READ_DETAILS'
   ]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  
+  // UI state: result
   const [result, setResult] = useState<{ auditKey: string; pkg: AuditPackage } | null>(null);
 
   const permissionsList = useMemo(
@@ -39,22 +41,12 @@ export default function AuditKeyGenerator() {
 
   const handleDownload = () => {
     if (!result) return;
-    const blob = new Blob([JSON.stringify(result.pkg, null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `audit-package-${result.pkg.invoiceId}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadPackage(result.pkg, result.pkg.invoiceId);
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setResult(null);
-    setLoading(true);
     try {
       const { pkg, auditKey } = await generate({
         invoiceId: invoiceId.trim() as AleoField,
@@ -64,9 +56,8 @@ export default function AuditKeyGenerator() {
       });
       setResult({ auditKey, pkg });
     } catch (err: any) {
-      setError(err?.message || 'Failed to generate audit package');
-    } finally {
-      setLoading(false);
+      // Error is already handled by unified error handler
+      // Just prevent further execution
     }
   };
 
@@ -127,8 +118,6 @@ export default function AuditKeyGenerator() {
           {loading ? 'Generating...' : 'Generate'}
         </button>
       </form>
-
-      {error && <p className="text-sm text-red-600">{error}</p>}
 
       {result && (
         <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-800">

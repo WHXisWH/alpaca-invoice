@@ -577,6 +577,20 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
+   * Convert payload to JSON-serializable form (e.g. audit filtered data may include bigint, Date).
+   * Used before passing to lib/crypto encryptInvoiceDetails.
+   */
+  private serializableForEncryption(obj: unknown): Record<string, unknown> {
+    return JSON.parse(
+      JSON.stringify(obj, (_key, value) => {
+        if (typeof value === 'bigint') return value.toString();
+        if (value instanceof Date) return value.toISOString();
+        return value;
+      })
+    ) as Record<string, unknown>;
+  }
+
+  /**
    * Encrypt with raw audit key (no key derivation)
    * 
    * @param details Invoice details or partial invoice to encrypt
@@ -612,9 +626,12 @@ export class CryptoService implements ICryptoService {
         );
       }
 
+      // Normalize payload for JSON serialization (e.g. audit filtered data may have bigint, Date)
+      const serializable = this.serializableForEncryption(details);
+
       // Direct call to lib/crypto without key derivation
       // This uses the audit key as-is for AES-GCM encryption
-      return await encryptDetails(details as any, auditKey);
+      return await encryptDetails(serializable as InvoiceDetails, auditKey);
     } catch (error: any) {
       // Already a CryptoServiceError, rethrow directly
       if (error instanceof CryptoServiceError) {
