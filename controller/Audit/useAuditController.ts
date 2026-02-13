@@ -9,36 +9,8 @@ import { PROGRAM_ID } from '@/lib/contract';
 import type { AleoAddress, AleoField } from '@/lib/types';
 import type { AuditPackage } from '@/types/audit-package';
 import { AuditService } from '@/services/AuditService/AuditServiceImpl';
-
-const FIELD_SCOPE_IDS: Record<string, number> = {
-  amount: 1,
-  tax_amount: 2,
-  due_date: 3,
-  buyer: 4,
-  seller: 5,
-  currency: 6,
-  items_hash: 7,
-  memo_hash: 8,
-  order_id: 9
-};
-
-const DEFAULT_FIELDS = ['amount', 'tax_amount', 'buyer', 'seller', 'due_date'];
-
-const toSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
-
-const sumLineItems = (lineItems: { quantity: number; unitPrice: number }[]) =>
-  lineItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-
-const buildScopesBitmask = (fields: string[]): bigint => {
-  let mask = 0n;
-  for (const f of fields) {
-    const id = FIELD_SCOPE_IDS[f];
-    if (id) {
-      mask |= 1n << BigInt(id - 1);
-    }
-  }
-  return mask;
-};
+import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
+import { toSeconds, sumLineItems, buildScopesBitmask } from './auditHelpers';
 
 /**
  * Audit Controller Hook
@@ -61,6 +33,14 @@ export function useAuditController() {
   const { getAllInvoices } = useInvoiceStore.getState();
   const { handleError } = useErrorHandler();
   const [loading, setLoading] = useState(false);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  // Form & result state (owned by controller so the UI layer stays presentational)
+  const [invoices, setInvoices] = useState<{ id: AleoField; invoiceHash: AleoField }[]>([]);
+  const [invoiceId, setInvoiceId] = useState('');
+  const [expiresAt, setExpiresAt] = useState(() => getDefaultAuditExpiresAt());
+  const [fields, setFields] = useState<string[]>(() => [...DEFAULT_FIELDS]);
+  const [result, setResult] = useState<AuditPackage | null>(null);
 
   const cryptoService = useMemo(() => new CryptoService(), []);
   const protocolService = useMemo(() => new AleoProtocolService(), []);
@@ -107,6 +87,37 @@ export function useAuditController() {
     },
     [handleError]
   );
+
+  /**
+   * Load invoice options for the audit UI (id + invoiceHash).
+   * Refreshes from store and updates controller's invoices state.
+   */
+  const loadInvoiceOptions = useCallback(async () => {
+    setLoadingInvoices(true);
+    try {
+      const list = await getAllInvoices({ refreshMemory: true });
+      console.log('list', list);
+      setInvoices(
+        list.map((inv) => ({ id: inv.id, invoiceHash: inv.invoiceHash }))
+      );
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }, [getAllInvoices]);
+
+  const toggleField = useCallback((key: string) => {
+    setFields((prev) =>
+      prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]
+    );
+  }, []);
+
+  /**
+   * Download the current audit package result (if any).
+   */
+  const downloadResult = useCallback(() => {
+    if (!result) return;
+    downloadPackage(result, result.invoice_id);
+  }, [result, downloadPackage]);
 
   /**
    * Generate an audit package referencing on-chain anchors plus minimal disclosed fields.
@@ -232,6 +243,34 @@ export function useAuditController() {
   );
 
   /**
+   * Generate audit package from current form state (invoiceId, expiresAt, fields).
+   */
+  const generateFromForm = useCallback(async () => {
+    setResult(null);
+    try {
+      const pkg = await generate({
+        invoiceId: invoiceId.trim() as AleoField,
+        expiresAt: new Date(expiresAt).getTime(),
+        selectedFields: fields
+      });
+      setResult(pkg);
+    } catch {
+      // Error is already handled by unified error handler
+    }
+  }, [generate, invoiceId, expiresAt, fields]);
+
+  /**
+   * Form submit handler: preventDefault + generateFromForm (for use as form onSubmit).
+   */
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      generateFromForm();
+    },
+    [generateFromForm]
+  );
+
+  /**
    * Verify an audit package by recomputing rules hash and calling on-chain asserts.
    */
   const verify = useCallback(
@@ -330,5 +369,26 @@ export function useAuditController() {
     [auditService, handleError, protocolService]
   );
 
-  return { generate, verify, downloadPackage, loading, publicKey };
+  return {
+    generate,
+    verify,
+    downloadPackage,
+    loadInvoiceOptions,
+    loading,
+    loadingInvoices,
+    publicKey,
+    fieldsList: AUDIT_FIELDS_LIST,
+    // Form state (controller-owned)
+    invoices,
+    invoiceId,
+    expiresAt,
+    fields,
+    result,
+    // Form actions
+    setInvoiceId,
+    setExpiresAt,
+    toggleField,
+    downloadResult,
+    handleSubmit
+  };
 }

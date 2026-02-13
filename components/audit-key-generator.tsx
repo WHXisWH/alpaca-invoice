@@ -1,97 +1,38 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { useAuditController } from '@/controller/Audit/useAuditController';
-import type { AleoField } from '@/lib/types';
-import type { AuditPackage } from '@/types/audit-package';
-import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 
 export default function AuditKeyGenerator() {
-  const { generate, downloadPackage, loading } = useAuditController();
-  const { getAllInvoices } = useInvoiceStore.getState();
-  const [invoices, setInvoices] = useState<{ id: AleoField; invoiceHash: AleoField }[]>([]);
-  const [invoiceId, setInvoiceId] = useState('');
-  const [expiresAt, setExpiresAt] = useState(
-    new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0]
-  );
-  const [fields, setFields] = useState<string[]>([
-    'amount',
-    'tax_amount',
-    'buyer',
-    'seller',
-    'due_date'
-  ]);
-  const [result, setResult] = useState<AuditPackage | null>(null);
-  const [loadingList, setLoadingList] = useState(false);
-
-  const fieldsList = useMemo(
-    () => [
-      { key: 'amount', label: 'Amount' },
-      { key: 'tax_amount', label: 'Tax amount' },
-      { key: 'due_date', label: 'Due date' },
-      { key: 'buyer', label: 'Buyer' },
-      { key: 'seller', label: 'Seller' },
-      { key: 'currency', label: 'Currency' },
-      { key: 'items_hash', label: 'Items hash' },
-      { key: 'memo_hash', label: 'Memo hash' },
-      { key: 'order_id', label: 'Order ID' }
-    ],
-    []
-  );
-
-  const loadInvoices = async () => {
-    setLoadingList(true);
-    try {
-      const list = await getAllInvoices({ refreshMemory: true });
-      setInvoices(
-        list.map((inv) => ({
-          id: inv.id,
-          invoiceHash: inv.invoiceHash
-        }))
-      );
-    } finally {
-      setLoadingList(false);
-    }
-  };
-
-  const toggleField = (key: string) => {
-    setFields((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
-  };
-
-  const handleDownload = () => {
-    if (!result) return;
-    downloadPackage(result, result.invoice_id);
-  };
-
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResult(null);
-    try {
-      const pkg = await generate({
-        invoiceId: invoiceId.trim() as AleoField,
-        expiresAt: new Date(expiresAt).getTime(),
-        selectedFields: fields
-      });
-      setResult(pkg);
-    } catch (err: any) {
-      // Error is already handled by unified error handler
-      // Just prevent further execution
-    }
-  };
+  const {
+    invoices,
+    invoiceId,
+    expiresAt,
+    fields,
+    result,
+    setInvoiceId,
+    setExpiresAt,
+    toggleField,
+    loadInvoiceOptions,
+    downloadResult,
+    handleSubmit,
+    loading,
+    loadingInvoices,
+    fieldsList
+  } = useAuditController();
 
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <form onSubmit={handleGenerate} className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-3">
         <div className="text-sm font-semibold text-slate-900">Generate Audit Package</div>
         <div className="flex items-center justify-between text-xs text-slate-600">
           <span>Select or paste an invoice ID</span>
           <button
             type="button"
-            onClick={loadInvoices}
-            disabled={loadingList}
+            onClick={loadInvoiceOptions}
+            disabled={loadingInvoices}
             className="rounded border border-slate-200 px-2 py-1 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
-            {loadingList ? 'Loading…' : 'Refresh list'}
+            {loadingInvoices ? 'Loading…' : 'Refresh list'}
           </button>
         </div>
         <div className="space-y-1">
@@ -158,7 +99,7 @@ export default function AuditKeyGenerator() {
           </pre>
           <div className="flex gap-2">
             <button
-              onClick={handleDownload}
+              onClick={downloadResult}
               className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
             >
               Download JSON
