@@ -1,91 +1,114 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import {
-  AuditPackage,
-  createAuditPackage,
-  randomAuditKey,
-  validateAuditPackage
-} from '@/lib/audit';
-import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
-import { PROGRAM_ID } from '@/lib/contract';
+import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
+import { createAuditService } from '@/services/AuditService/createAuditService';
+import type {
+  GenerateAuditPackageParams,
+  GenerateAuditPackageResult
+} from '@/services/AuditService/IAuditService';
+import { AuditPackage } from '@/lib/audit';
 
-const cryptoService = new CryptoService();
-
+/**
+ * Audit Controller Hook
+ * 
+ * Responsibilities:
+ * - Bridge React context (wallet, stores) to service layer
+ * - Manage loading state for UI
+ * - Use unified error handler for consistent error reporting
+ * - Provide high-level controller methods for components
+ * 
+ * Pattern:
+ * - Similar to wallet service pattern
+ * - Uses factory function to create service with injected dependencies
+ * - Uses unified error handler for consistent error reporting
+ * - Reuses wallet service's signMessage (no duplication of encoding/decoding)
+ */
 export function useAuditController() {
   const { getAllInvoices } = useInvoiceStore.getState();
   const walletContext = useWallet();
-  const { publicKey, masterKey } = useUserStore();
+  const { publicKey } = useUserStore();
+  const { handleError } = useErrorHandler();
 
-  const signerAddress = useMemo(() => publicKey as AleoAddress | null, [publicKey]);
-  // Protocol service for optional on-chain verification
-  const protocolService = useMemo(() => new AleoProtocolService(), []);
+  // Loading state
+  const [loading, setLoading] = useState(false);
 
-  const generate = useCallback(
-    async (options: {
-      invoiceId: AleoField;
-      auditorAddress: AleoAddress;
-      expiresAt: number;
-      permissions: string[];
-    }): Promise<{ pkg: AuditPackage; auditKey: string }> => {
-      if (!signerAddress) throw new Error('Wallet not connected');
-      if (!masterKey) throw new Error('Master key missing. Please sign to derive it.');
-
-      const invoices = await getAllInvoices({ masterKey, refreshMemory: false });
-      const invoice =
-        invoices.find((inv: Invoice) => inv.id === options.invoiceId) ||
-        invoices.find((inv: Invoice) => inv.invoiceHash === options.invoiceId);
-
-      if (!invoice) {
-        throw new Error('Invoice not found in local storage. Please sync invoices first.');
-      }
-      if (!invoice.details) {
-        throw new Error('Invoice details are missing; cannot generate audit package.');
-      }
-
-      const auditKey = randomAuditKey();
-      const signMessage = async (message: string) => {
-        if (!walletContext.signMessage) {
-          throw new Error('Wallet does not support signMessage');
-        }
-        const encoder = new TextEncoder();
-        const decoder = new TextDecoder();
-        const sigBytes = await walletContext.signMessage(encoder.encode(message));
-        return decoder.decode(sigBytes);
-      };
-
-      const { pkg } = await createAuditPackage({
-        invoice,
-        permissions: options.permissions,
-        auditorAddress: options.auditorAddress,
-        expiresAt: options.expiresAt,
-        signerAddress,
-        auditKey,
-        signMessage,
-        programId: PROGRAM_ID,
-        version: 2,
-        chainVerifiable: true
-      });
-
-      return { pkg, auditKey };
-    },
-    [getAllInvoices, masterKey, signerAddress]
+  // Create wallet service adapter (reuse existing wallet adapter)
+  const walletService = useMemo(
+    () => createWalletAdapter(walletContext),
+    [walletContext]
   );
 
+  // Create audit service instance with injected dependencies
+  // Note: masterKey is NOT passed; service will derive it internally using CryptoService
+  const auditService = useMemo(
+    () => createAuditService(walletService, publicKey, getAllInvoices),
+    [walletService, publicKey, getAllInvoices]
+  );
+
+  /**
+   * Generate audit package with loading and error handling
+   */
+  const generate = useCallback(
+    async (params: GenerateAuditPackageParams): Promise<GenerateAuditPackageResult> => {
+      setLoading(true);
+      try {
+        const result = await auditService.generate(params);
+        return result;
+      } catch (err: any) {
+        handleError(err);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [auditService, handleError]
+  );
+
+  /**
+   * Validate audit package with loading and error handling
+   */
   const validate = useCallback(
     async (pkg: AuditPackage, auditKey: string) => {
-      return validateAuditPackage({
-        pkg,
-        auditKey,
-        computeInvoiceHash: (details) => cryptoService.computeInvoiceHash(details),
-        protocolService
-      });
+      setLoading(true);
+      try {
+        const result = await auditService.validate(pkg, auditKey);
+        return result;
+      } catch (err: any) {
+        handleError(err);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
     },
-    [protocolService]
+    [auditService, handleError]
   );
 
-  return { generate, validate };
+  /**
+   * Download audit package as JSON file
+   */
+  const downloadPackage = useCallback((pkg: AuditPackage, invoiceId: string) => {
+    try {
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-package-${invoiceId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      handleError(err);
+    }
+  }, [handleError]);
+
+  return {
+    generate,
+    validate,
+    downloadPackage,
+    loading
+  };
 }

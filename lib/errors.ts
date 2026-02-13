@@ -1,6 +1,7 @@
 import { ServiceError } from '@/lib/service-errors';
 import { WalletError } from '@/services/WalletService/IWalletService';
 import { ProtocolError } from '@/services/AleoProtocolService/IAleoProtocolService';
+import { AuditError } from '@/services/AuditService/IAuditService';
 
 /**
  * User-friendly error types (for the UI layer)
@@ -139,6 +140,17 @@ const SERVICE_ERROR_MAPPINGS: Record<string, Record<string, ErrorType>> = {
     [ProtocolError.TRANSACTION_REJECTED]: ErrorType.TRANSACTION_REJECTED,
     [ProtocolError.SYNC_TIMEOUT]: ErrorType.NETWORK_ERROR,
     [ProtocolError.MAPPING_NOT_FOUND]: ErrorType.INVOICE_NOT_FOUND
+  },
+  AuditService: {
+    [AuditError.NOT_CONNECTED]: ErrorType.WALLET_NOT_CONNECTED,
+    [AuditError.MISSING_MASTER_KEY]: ErrorType.DECRYPTION_FAILED,
+    [AuditError.INVALID_INPUT]: ErrorType.INVALID_INVOICE_DATA,
+    [AuditError.INVOICE_NOT_FOUND]: ErrorType.INVOICE_NOT_FOUND,
+    [AuditError.MISSING_DETAILS]: ErrorType.INVALID_INVOICE_DATA,
+    [AuditError.INVALID_PACKAGE]: ErrorType.INVALID_INVOICE_DATA,
+    [AuditError.GENERATION_FAILED]: ErrorType.UNKNOWN_ERROR,
+    [AuditError.VALIDATION_FAILED]: ErrorType.INVALID_INVOICE_DATA,
+    [AuditError.SIGN_NOT_SUPPORTED]: ErrorType.WALLET_CONNECTION_FAILED
   }
 };
 

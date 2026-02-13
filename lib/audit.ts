@@ -4,14 +4,12 @@ import { Buffer } from 'buffer';
 import type {
   AleoAddress,
   AleoField,
-  AuditKey,
-  AuditKeyConfig,
   EncryptedPayload,
   Invoice,
   InvoiceDetails,
   InvoiceStatus
 } from './types';
-import { encryptInvoiceDetails, decryptInvoiceDetails } from './crypto';
+import { decryptInvoiceDetails } from './crypto';
 import { PROGRAM_ID as DEFAULT_PROGRAM_ID } from './contract';
 import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoProtocolService';
 
@@ -140,99 +138,6 @@ export function buildAuditMessage(input: {
     sortedPerms,
     input.cipherHash
   ].join('|');
-}
-
-export async function createAuditPackage(params: {
-  invoice: Invoice;
-  permissions: string[];
-  auditorAddress: AleoAddress;
-  expiresAt: number;
-  signerAddress: AleoAddress;
-  auditKey: string;
-  signMessage: (message: string) => Promise<string>;
-  programId?: string;
-  chainVerifiable?: boolean;
-  version?: 1 | 2;
-}): Promise<{ pkg: AuditPackage; key: AuditKey }> {
-  const {
-    invoice,
-    permissions,
-    auditorAddress,
-    expiresAt,
-    signerAddress,
-    auditKey,
-    signMessage,
-    programId = DEFAULT_PROGRAM_ID,
-    chainVerifiable = true,
-    version = 2
-  } = params;
-
-  const filtered = filterDetailsByPermissions(invoice, permissions);
-  if (!filtered.details && !filtered.amount && !filtered.seller && !filtered.buyer) {
-    throw new Error('No data selected for disclosure. Please choose at least one permission.');
-  }
-
-  const keyBytes = auditKeyToBytes(auditKey);
-  const cipher = await encryptInvoiceDetails(filtered as any, keyBytes);
-  const cipherHash = await hashCipher(cipher);
-  const message = buildAuditMessage({
-    invoiceId: invoice.id,
-    invoiceHash: invoice.invoiceHash,
-    auditorAddress,
-    expiresAt,
-    permissions,
-    cipherHash,
-    programId,
-    version
-  });
-  const signature = await signMessage(message);
-
-  const issuedAt = Date.now();
-
-  const pkg: AuditPackage =
-    version === 2
-      ? {
-          version: 2,
-          programId,
-          invoiceId: invoice.id,
-          invoiceHash: invoice.invoiceHash,
-          permissions,
-          expiresAt,
-          auditorAddress,
-          issuedAt,
-          signerAddress,
-          cipher,
-          cipherHash,
-          signature,
-          chainVerifiable
-        }
-      : {
-          version: 1,
-          invoiceId: invoice.id,
-          invoiceHash: invoice.invoiceHash,
-          permissions,
-          expiresAt,
-          auditorAddress,
-          issuedAt,
-          signerAddress,
-          cipher,
-          cipherHash,
-          signature
-        };
-
-  const key: AuditKey = {
-    key: auditKey,
-    config: {
-      invoiceIds: [invoice.id],
-      permissions,
-      expiresAt,
-      auditorAddress
-    },
-    signature,
-    issuedAt: pkg.issuedAt
-  };
-
-  return { pkg, key };
 }
 
 export async function validateAuditPackage(params: {
