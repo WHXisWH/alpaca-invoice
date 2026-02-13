@@ -32,19 +32,19 @@ const steps = [
     icon: CreditCard,
     title: '3. Pay an Invoice',
     description:
-      'Open a received invoice from the "Invoices" page. Review the details and click "Pay". The system performs a two-step process: a private credit transfer followed by an on-chain status update.',
-  },
-  {
-    icon: Receipt,
-    title: '4. View Receipts',
-    description:
-      'After payment, both seller and buyer can view payment receipts on the "Receipts" page. These serve as cryptographic proof of payment.',
+      'Open a received invoice from the "Invoices" page. Review details and click "Pay". The app submits mark_as_paid with paid_at timestamp on zk_invoice_v2_2.aleo.',
   },
   {
     icon: ShieldCheck,
-    title: '5. Audit & Verification',
+    title: '4. Generate Audit Package',
     description:
-      'Use the "Audit Center" to generate time-limited, permission-scoped audit packages for selective disclosure to auditors, without revealing your full transaction history.',
+      'Go to "/audit" → choose your invoice → pick fields (scopes), set expiry. The package contains rules_hash, commitments_root, field commitments, scopes bitmask, and program_id.',
+  },
+  {
+    icon: Receipt,
+    title: '5. Verify Package',
+    description:
+      'Paste the package JSON + audit key in the validator. The app recomputes rules, checks on-chain anchors (commitment/rules/auth/counter) and shows R1–R5 results.',
   },
 ];
 
@@ -59,7 +59,7 @@ const faqs = [
     icon: Globe,
     question: 'Which network does this run on?',
     answer:
-      'Alpaca Invoice currently runs on the Aleo Testnet. The smart contract program ID is zk_invoice_v2.aleo (legacy: zk_invoice.aleo for history only). Testnet credits have no real monetary value.',
+      'Aleo Testnet only. Current program: zk_invoice_v2_2.aleo (tx at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78). Testnet credits have no real monetary value.',
   },
   {
     icon: Monitor,

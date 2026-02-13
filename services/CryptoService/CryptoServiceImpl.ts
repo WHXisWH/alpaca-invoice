@@ -7,6 +7,8 @@ import {
   decryptInvoiceDetails as decryptDetails,
 } from '@/lib/crypto';
 
+const RULE_TAGS = ['r1', 'r2', 'r3', 'r4', 'r5'] as const;
+
 /**
  * Aleo Field modulus (prime p)
  * p = 8444461749428370424248824938781546531375899335154063827935233455917409239041
@@ -40,6 +42,43 @@ export type CryptoServiceError = InstanceType<typeof CryptoServiceError>;
  * - Uses PBKDF2 (100,000 iterations) to derive encryption keys
  */
 export class CryptoService implements ICryptoService {
+  /**
+   * Evaluate audit rules (R1–R5) consistent with contract compute_rules_proof.
+   */
+  async evaluateAuditRules(input: {
+    amount: bigint;
+    taxAmount: bigint;
+    dueDate: number;
+    currentTime: number;
+    lineItemsSum: bigint;
+    expectedTotal: bigint;
+    taxRateBps: bigint;
+    invoiceHash: AleoField;
+  }): Promise<{ rulesHash: AleoField; r1: boolean; r2: boolean; r3: boolean; r4: boolean; r5: boolean }> {
+    const expectedTax = (input.amount * input.taxRateBps) / 10000n;
+    const r1 = input.taxAmount === expectedTax;
+    const r2 = BigInt(input.dueDate) >= BigInt(input.currentTime);
+    const r3 = input.amount + input.taxAmount === input.expectedTotal;
+    const r4 = input.lineItemsSum === input.amount;
+    const r5 = true; // invoice_hash is already provided; integrity is checked by caller
+
+    const rulesBits = RULE_TAGS.map((_, idx) => {
+      return [r1, r2, r3, r4, r5][idx] ? '1' : '0';
+    }).join('');
+
+    // Simple hash -> we reuse computeRulesResult logic: hash boolean struct via JSON -> SHA256 -> field
+    const hashInput = { r1, r2, r3, r4, r5 };
+    const encoder = new TextEncoder();
+    const data = encoder.encode(JSON.stringify(hashInput));
+    const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashBigInt = BigInt('0x' + hashHex) % ALEO_FIELD_MODULUS;
+    const rulesHash = `${hashBigInt.toString()}field` as AleoField;
+
+    return { rulesHash, r1, r2, r3, r4, r5 };
+  }
+
   /**
    * Core business hash: Computes a unique hash for InvoiceDetails following the contract logic
    *

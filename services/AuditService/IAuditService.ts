@@ -56,6 +56,52 @@ export interface ValidateAuditPackageResult {
 }
 
 /**
+ * Protocol adapter for audit package verification (on-chain assertions).
+ */
+export interface AuditVerifyAdapter {
+  assertRules: (invoiceId: AleoField, rulesHash: AleoField) => Promise<void>;
+  assertAmount: (invoice: any, hash: AleoField, min: bigint, max: bigint) => Promise<void>;
+  assertOwnership: (invoice: any, hash: AleoField, seller: string, buyer: string) => Promise<void>;
+  assertCommitment: (invoiceId: AleoField, root: AleoField) => Promise<void>;
+  assertCounter?: (seller: string, expected: bigint) => Promise<void>;
+}
+
+/**
+ * Input for building field commitments.
+ */
+export interface BuildFieldCommitmentsInput {
+  amount: bigint;
+  taxAmount: bigint;
+  dueDate: number;
+  buyer: string;
+  seller: string;
+  currency: AleoField;
+  itemsHash: AleoField;
+  memoHash: AleoField;
+  orderId: AleoField;
+  nonce: AleoField;
+}
+
+/**
+ * Input for generating an audit package (minimal disclosure with proofs/anchors).
+ */
+export interface GenerateAuditPackageInput {
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  rulesHash: AleoField;
+  fieldCommitments: Record<string, AleoField>;
+  commitmentsRoot: AleoField;
+  auditKeyHash: AleoField;
+  scopesBitmask: bigint;
+  expiresAt: number;
+  selectedFields: string[];
+  payload: any;
+  signature?: string;
+  programId: string;
+  version?: string;
+}
+
+/**
  * IAuditService interface
  * Responsibility: Encapsulate audit operations, handle generation and validation of audit packages
  * 
@@ -87,4 +133,19 @@ export interface IAuditService {
    * @throws {AuditServiceError} May throw VALIDATION_FAILED
    */
   validate(pkg: AuditPackage, auditKey: string): Promise<ValidateAuditPackageResult>;
+
+  /**
+   * Build commitments root and field commitments aligned with contract tags.
+   */
+  buildFieldCommitments(input: BuildFieldCommitmentsInput): Promise<{ root: AleoField; fields: Record<string, AleoField> }>;
+
+  /**
+   * Generate audit package (minimal disclosure) with proofs/anchors.
+   */
+  generateAuditPackage(input: GenerateAuditPackageInput): Promise<any>;
+
+  /**
+   * Verify audit package by recomputing and calling on-chain anchors via provided protocol adapter.
+   */
+  verifyAuditPackage(pkg: any, adapter: AuditVerifyAdapter): Promise<{ valid: boolean; reason?: string }>;
 }

@@ -20,17 +20,17 @@
 - **Optional extras**: Commitment-based invoice_count left as future toggle; audit report Record optional.
 
 ## 3. What We Built in Wave 2
-### 3.1 Smart Contract (`zk_invoice_v2.aleo`)
+### 3.1 Smart Contract (`zk_invoice_v2_2.aleo`)
 - Added mappings: `invoice_registry`, `invoice_status`, `invoice_count`.
 - Converted core flows to async/finalize: `create_invoice`, `mark_as_paid`, `cancel_invoice`.
 - Record schema extensions: `order_id`, `tax_amount`, fixed `created_at`, `paid_at`.
 - Helper: `compute_invoice_id` transition for deterministic IDs.
-- ZK proofs: `prove_tax_compliance`, `prove_amount_in_range`, `prove_invoice_ownership` (finalize checks mapping).
+- ZK proofs: `prove_tax_compliance`, `prove_amount_in_range`, `prove_invoice_ownership`; anchors validated via `assert_rules_anchor`, `assert_amount_anchor`, `assert_ownership_anchor`.
 - Optional Record: `AuditReport` (not critical path).
-- Deployment: testnet `zk_invoice_v2.aleo` (tx `at1u8j3krev6u...`). Program metadata updated.
+- Deployment: testnet `zk_invoice_v2_2.aleo` (tx `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`). Program metadata updated.
 
 ### 3.2 Frontend / Services
-- **Program switch**: All service/constants use `zk_invoice_v2.aleo`; legacy ID kept only for history.
+- **Program switch**: All service/constants use `zk_invoice_v2_2.aleo`; legacy ID kept only for history reads.
 - **Transaction params**: New args (`current_time`, `order_id`, `tax_amount`, `paid_at`) wired in controllers and services.
 - **Invoice ID parity**: Frontend computes invoice_id via offline `compute_invoice_id` (ProgramManager.run) before submit; fallback only if unavailable.
 - **Mapping helpers**: `getInvoiceHash/Status/Count`, `verifyInvoiceOnChain`; 30s caches for hash/status.
@@ -55,11 +55,10 @@
 - **View key risk** → Documented: view key for self-decrypt only; not for sharing.
 
 ## 5. Current Open Items / Optional Work (Wave 3 candidates)
-- **Commitment-based invoice_count** toggle (hide seller address while preserving counts).
-- **Audit report Record statistics** (public stats without leaking results).
-- **Multi-role workspace UX** (issuer/finance/auditor views) and demo assets.
-- **Further doc cleanup**: minor legacy references and any remaining non-English comments outside Wave2 doc.
-- **Security**: npm reports vulnerabilities; audit/fix pending (may involve breaking changes).
+- **E2E polish**: create→audit→verify→pay/cancel full flow automation; negative cases (expired key, wrong rules_hash, unauthorized scopes).
+- **Audit report stats**: optional public stats without leaking details.
+- **Multi-role workspace UX**: issuer/finance/auditor views + demo data.
+- **Security**: npm audit fixes (may introduce breaking changes).
 
 ## 6. How to Verify (Quick Checklist)
 - `npx next lint` → passes.  

@@ -1,4 +1,4 @@
-import type { AleoAddress, Invoice, AuditKey } from '@/lib/types';
+import type { AleoAddress, AleoField, Invoice, AuditKey } from '@/lib/types';
 import {
   AuditPackage,
   filterDetailsByPermissions,
@@ -15,8 +15,26 @@ import {
   AuditError,
   GenerateAuditPackageParams,
   GenerateAuditPackageResult,
-  ValidateAuditPackageResult
+  ValidateAuditPackageResult,
+  BuildFieldCommitmentsInput,
+  GenerateAuditPackageInput,
+  AuditVerifyAdapter
 } from './IAuditService';
+
+// Contract tag mapping (commit_field tag values) — used by buildFieldCommitments
+const FIELD_TAGS = {
+  amount: 1n,
+  tax_amount: 2n,
+  due_date: 3n,
+  buyer: 4n,
+  seller: 5n,
+  currency: 6n,
+  items_hash: 7n,
+  memo_hash: 8n,
+  order_id: 9n
+} as const;
+
+const ALEO_FIELD_MODULUS = BigInt('8444461749428370424248824938781546531375899335154063827935233455917409239041');
 
 /**
  * Dependencies for AuditService
@@ -293,6 +311,133 @@ export class AuditService implements IAuditService {
         'Failed to validate audit package',
         { originalError: error.message || error }
       );
+    }
+  }
+
+  /** Web Crypto for field commitments (SHA-256). */
+  private getWebCrypto(): Crypto {
+    if (typeof globalThis.crypto !== 'undefined') return globalThis.crypto as Crypto;
+    throw new Error('WebCrypto not available');
+  }
+
+  /** Hash object to AleoField (SHA-256 mod p). */
+  private async hashObjectToField(obj: Record<string, unknown>): Promise<AleoField> {
+    const canonical = JSON.stringify(obj);
+    const enc = new TextEncoder().encode(canonical);
+    const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
+    const hx = Array.from(new Uint8Array(h))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
+    return `${bi.toString()}field` as AleoField;
+  }
+
+  /**
+   * Build commitments root and field commitments aligned with contract tags.
+   */
+  async buildFieldCommitments(input: BuildFieldCommitmentsInput): Promise<{ root: AleoField; fields: Record<string, AleoField> }> {
+    const commitField = async (valueField: AleoField, salt: AleoField, tag: bigint): Promise<AleoField> => {
+      const payload = JSON.stringify({ val: valueField, salt, tag: `${tag}field` });
+      const enc = new TextEncoder().encode(payload);
+      const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
+      const hx = Array.from(new Uint8Array(h))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
+      return `${bi.toString()}field` as AleoField;
+    };
+
+    const salt = input.nonce;
+    const fields: Record<string, AleoField> = {};
+    fields.amount = await commitField(`${input.amount}field` as AleoField, salt, FIELD_TAGS.amount);
+    fields.tax_amount = await commitField(`${input.taxAmount}field` as AleoField, salt, FIELD_TAGS.tax_amount);
+    fields.due_date = await commitField(`${input.dueDate}field` as AleoField, salt, FIELD_TAGS.due_date);
+    fields.buyer = await commitField(`${input.buyer}field` as AleoField, salt, FIELD_TAGS.buyer);
+    fields.seller = await commitField(`${input.seller}field` as AleoField, salt, FIELD_TAGS.seller);
+    fields.currency = await commitField(input.currency, salt, FIELD_TAGS.currency);
+    fields.items_hash = await commitField(input.itemsHash, salt, FIELD_TAGS.items_hash);
+    fields.memo_hash = await commitField(input.memoHash, salt, FIELD_TAGS.memo_hash);
+    fields.order_id = await commitField(input.orderId, salt, FIELD_TAGS.order_id);
+
+    const root = await this.hashObjectToField(fields);
+    return { root, fields };
+  }
+
+  /**
+   * Generate audit package (minimal disclosure) with proofs/anchors.
+   */
+  async generateAuditPackage(input: GenerateAuditPackageInput): Promise<any> {
+    return {
+      version: input.version ?? '2.2',
+      program_id: input.programId,
+      invoice_id: input.invoiceId,
+      invoice_hash: input.invoiceHash,
+      rules_hash: input.rulesHash,
+      commitments_root: input.commitmentsRoot,
+      field_commitments: input.fieldCommitments,
+      audit_key_hash: input.auditKeyHash,
+      scopes_bitmask: input.scopesBitmask.toString(),
+      expires_at: input.expiresAt,
+      selected_fields: input.selectedFields,
+      payload: input.payload,
+      signature: input.signature
+    };
+  }
+
+  /**
+   * Verify audit package by recomputing and calling on-chain anchors via provided protocol adapter.
+   */
+  async verifyAuditPackage(pkg: any, adapter: AuditVerifyAdapter): Promise<{ valid: boolean; reason?: string }> {
+    try {
+      // expires_at may be in seconds (Unix) or ms; treat as seconds if value is small (< 1e12)
+      if (pkg.expires_at !== undefined && typeof pkg.expires_at === 'number') {
+        const now = pkg.expires_at >= 1e12 ? Date.now() : Math.floor(Date.now() / 1000);
+        if (now > pkg.expires_at) {
+          return { valid: false, reason: 'expired' };
+        }
+      }
+
+      if (!pkg.invoice_id || !pkg.commitments_root || !pkg.rules_hash || !pkg.field_commitments) {
+        return { valid: false, reason: 'missing_required_fields' };
+      }
+
+      if (pkg.payload && pkg.payload.amount && pkg.payload.tax_amount && pkg.payload.expected_total) {
+        const rules = await this.cryptoService.evaluateAuditRules({
+          amount: BigInt(pkg.payload.amount.toString()),
+          taxAmount: BigInt(pkg.payload.tax_amount.toString()),
+          dueDate: Number(pkg.payload.due_date ?? 0),
+          currentTime: Number(pkg.payload.current_time ?? 0),
+          lineItemsSum: BigInt(pkg.payload.line_items_sum ?? pkg.payload.amount),
+          expectedTotal: BigInt(pkg.payload.expected_total.toString()),
+          taxRateBps: BigInt(pkg.payload.tax_rate_bps ?? 0),
+          invoiceHash: pkg.invoice_hash as AleoField
+        });
+        if (rules.rulesHash !== pkg.rules_hash) {
+          return { valid: false, reason: 'rules_hash_mismatch' };
+        }
+      }
+
+      await adapter.assertRules(pkg.invoice_id as AleoField, pkg.rules_hash as AleoField);
+      await adapter.assertCommitment(pkg.invoice_id as AleoField, pkg.commitments_root as AleoField);
+
+      if (pkg.invoice_record) {
+        await adapter.assertAmount(
+          pkg.invoice_record,
+          pkg.invoice_hash as AleoField,
+          BigInt(pkg.payload?.min_amount ?? 0),
+          BigInt(pkg.payload?.max_amount ?? pkg.payload?.amount ?? 0)
+        );
+        await adapter.assertOwnership(
+          pkg.invoice_record,
+          pkg.invoice_hash as AleoField,
+          pkg.invoice_record.seller,
+          pkg.invoice_record.buyer
+        );
+      }
+
+      return { valid: true };
+    } catch (e: any) {
+      return { valid: false, reason: e?.message ?? 'assert_failed' };
     }
   }
 }
