@@ -29,8 +29,6 @@ const FIELD_TAGS = {
   order_id: 9n
 } as const;
 
-const ALEO_FIELD_MODULUS = BigInt('8444461749428370424248824938781546531375899335154063827935233455917409239041');
-
 /**
  * Dependencies for AuditService
  */
@@ -395,52 +393,27 @@ export class AuditService implements IAuditService {
     }
   }
 
-  /** Web Crypto for field commitments (SHA-256). */
-  private getWebCrypto(): Crypto {
-    if (typeof globalThis.crypto !== 'undefined') return globalThis.crypto as Crypto;
-    throw new Error('WebCrypto not available');
-  }
-
-  /** Hash object to AleoField (SHA-256 mod p). */
-  private async hashObjectToField(obj: Record<string, unknown>): Promise<AleoField> {
-    const canonical = JSON.stringify(obj);
-    const enc = new TextEncoder().encode(canonical);
-    const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
-    const hx = Array.from(new Uint8Array(h))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
-    return `${bi.toString()}field` as AleoField;
-  }
-
   /**
    * Build commitments root and field commitments aligned with contract tags.
+   * Uses BHP768 (commit_field) and Poseidon8 (root) via @provablehq/sdk.
+   * Field commitments match Leo commit_field(val, salt, tag); root uses Poseidon
+   * (for exact chain root, fetch via get_invoice_commitment).
    */
   async buildFieldCommitments(input: BuildFieldCommitmentsInput): Promise<{ root: AleoField; fields: Record<string, AleoField> }> {
-    const commitField = async (valueField: AleoField, salt: AleoField, tag: bigint): Promise<AleoField> => {
-      const payload = JSON.stringify({ val: valueField, salt, tag: `${tag}field` });
-      const enc = new TextEncoder().encode(payload);
-      const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
-      const hx = Array.from(new Uint8Array(h))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-      const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
-      return `${bi.toString()}field` as AleoField;
-    };
-
+    const { commitField, computeCommitmentRoot } = await import('./commitmentUtils');
     const salt = input.nonce;
     const fields: Record<string, AleoField> = {};
-    fields.amount = await commitField(`${input.amount}field` as AleoField, salt, FIELD_TAGS.amount);
-    fields.tax_amount = await commitField(`${input.taxAmount}field` as AleoField, salt, FIELD_TAGS.tax_amount);
-    fields.due_date = await commitField(`${input.dueDate}field` as AleoField, salt, FIELD_TAGS.due_date);
-    fields.buyer = await commitField(`${input.buyer}field` as AleoField, salt, FIELD_TAGS.buyer);
-    fields.seller = await commitField(`${input.seller}field` as AleoField, salt, FIELD_TAGS.seller);
-    fields.currency = await commitField(input.currency, salt, FIELD_TAGS.currency);
-    fields.items_hash = await commitField(input.itemsHash, salt, FIELD_TAGS.items_hash);
-    fields.memo_hash = await commitField(input.memoHash, salt, FIELD_TAGS.memo_hash);
-    fields.order_id = await commitField(input.orderId, salt, FIELD_TAGS.order_id);
+    fields.amount = commitField(`${input.amount}field` as AleoField, salt, `${FIELD_TAGS.amount}field` as AleoField);
+    fields.tax_amount = commitField(`${input.taxAmount}field` as AleoField, salt, `${FIELD_TAGS.tax_amount}field` as AleoField);
+    fields.due_date = commitField(`${input.dueDate}field` as AleoField, salt, `${FIELD_TAGS.due_date}field` as AleoField);
+    fields.buyer = commitField(input.buyer, salt, `${FIELD_TAGS.buyer}field` as AleoField);
+    fields.seller = commitField(input.seller, salt, `${FIELD_TAGS.seller}field` as AleoField);
+    fields.currency = commitField(input.currency, salt, `${FIELD_TAGS.currency}field` as AleoField);
+    fields.items_hash = commitField(input.itemsHash, salt, `${FIELD_TAGS.items_hash}field` as AleoField);
+    fields.memo_hash = commitField(input.memoHash, salt, `${FIELD_TAGS.memo_hash}field` as AleoField);
+    fields.order_id = commitField(input.orderId, salt, `${FIELD_TAGS.order_id}field` as AleoField);
 
-    const root = await this.hashObjectToField(fields);
+    const root = computeCommitmentRoot(fields);
     return { root, fields };
   }
 
