@@ -1,10 +1,33 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CryptoService, CryptoServiceError } from '../CryptoServiceImpl';
 import { CryptoError, AleoInvoiceRecord } from '../ICryptoService';
-import type { InvoiceDetails, EncryptedPayload, AleoField } from '@/lib/types';
+import type { InvoiceDetails, EncryptedPayload, AleoField, AleoAddress, InvoiceHashContext } from '@/lib/types';
 
 describe('CryptoService', () => {
   let service: CryptoService;
+
+  // Wave 2 mock fixtures matching contract InvoiceHashInput
+  const mockDetails: InvoiceDetails = {
+    invoiceNumber: 'INV-2026-001',
+    lineItems: [{ description: 'Item 1', quantity: 1, unitPrice: 1000, amount: 1000 }],
+    subtotal: 1000,
+    taxRate: 0.13,
+    taxAmount: 130,
+    total: 1130,
+    currency: 'USD',
+    notes: 'Wave 2 Test'
+  };
+
+  const mockContext: InvoiceHashContext = {
+    seller: 'aleo1sellerseller1234567890abcdefghijk' as AleoAddress,
+    buyer: 'aleo1buyerbuyer1234567890abcdefghijk' as AleoAddress,
+    orderId: '888888field' as AleoField,
+    nonce: '123456789field' as AleoField,
+    itemsHash: '111222333field' as AleoField,
+    memoHash: '444555666field' as AleoField,
+    currency: '999999field' as AleoField,
+    dueDate: Math.floor(Date.now() / 1000) + 86400
+  };
 
   beforeEach(() => {
     service = new CryptoService();
@@ -185,38 +208,158 @@ describe('CryptoService', () => {
       // Assert
       expect(hash1).not.toBe(hash2);
     });
+
+    it('should be insensitive to field order in legacy mode (sorted JSON)', async () => {
+      // Legacy mode (no context): sorted JSON produces same hash for same content
+      const details1: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0.1,
+        taxAmount: 10,
+        total: 110,
+        currency: 'USD',
+        notes: 'Note'
+      };
+      const details2: InvoiceDetails = {
+        currency: 'USD',
+        total: 110,
+        taxAmount: 10,
+        taxRate: 0.1,
+        subtotal: 100,
+        lineItems: [],
+        notes: 'Note',
+        invoiceNumber: 'INV-001'
+      };
+      const hash1 = await service.computeInvoiceHash(details1);
+      const hash2 = await service.computeInvoiceHash(details2);
+      expect(hash1).toBe(hash2);
+    });
   });
 
-  describe('encryptInvoiceDetails', () => {
-    it('should successfully encrypt invoice details', async () => {
-      // Arrange
+  describe('computeInvoiceHash (Wave 2 Protocol)', () => {
+    it('should generate hash based on specific fields matching Leo struct', async () => {
+      const hash = await service.computeInvoiceHash(mockDetails, mockContext);
+      expect(hash).toMatch(/^\d+field$/);
+      const hash2 = await service.computeInvoiceHash(mockDetails, mockContext);
+      expect(hash).toBe(hash2);
+    });
+
+    it('should detect changes in critical financial fields', async () => {
+      const hashOriginal = await service.computeInvoiceHash(mockDetails, mockContext);
+      const tamperedDetails = { ...mockDetails, taxAmount: 131 };
+      const hashTampered = await service.computeInvoiceHash(tamperedDetails, mockContext);
+      expect(hashOriginal).not.toBe(hashTampered);
+    });
+
+    it('should include orderId and currency in hash computation', async () => {
+      const hash1 = await service.computeInvoiceHash(mockDetails, mockContext);
+      const hash2 = await service.computeInvoiceHash(mockDetails, {
+        ...mockContext,
+        orderId: '999999field' as AleoField
+      });
+      expect(hash1).not.toBe(hash2);
+    });
+  });
+
+  describe('hashObjectToField', () => {
+    it('should return valid AleoField format for string input', async () => {
+      const result = await service.hashObjectToField('test-string');
+      expect(result).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(result)).toBe(true);
+    });
+
+    it('should return valid AleoField format for object input', async () => {
+      const result = await service.hashObjectToField({ a: 1, b: 'two' });
+      expect(result).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(result)).toBe(true);
+    });
+
+    it('should return valid AleoField format for array input', async () => {
+      const lineItems = [{ description: 'Item 1', quantity: 1, unitPrice: 100, amount: 100 }];
+      const result = await service.hashObjectToField(lineItems);
+      expect(result).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(result)).toBe(true);
+    });
+
+    it('should be deterministic: same input produces same hash', async () => {
+      const input = 'deterministic-test';
+      const h1 = await service.hashObjectToField(input);
+      const h2 = await service.hashObjectToField(input);
+      expect(h1).toBe(h2);
+    });
+
+    it('should produce different hashes for different inputs', async () => {
+      const h1 = await service.hashObjectToField('input-a');
+      const h2 = await service.hashObjectToField('input-b');
+      const h3 = await service.hashObjectToField({ x: 1 });
+      expect(h1).not.toBe(h2);
+      expect(h1).not.toBe(h3);
+      expect(h2).not.toBe(h3);
+    });
+
+    it('should compute itemsHash from lineItems (as in create_invoice flow)', async () => {
+      const itemsHash = await service.hashObjectToField(mockDetails.lineItems);
+      expect(itemsHash).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(itemsHash)).toBe(true);
+    });
+
+    it('should compute memoHash from notes (as in create_invoice flow)', async () => {
+      const memoHash = await service.hashObjectToField(mockDetails.notes ?? '');
+      expect(memoHash).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(memoHash)).toBe(true);
+    });
+
+    it('should compute orderId from invoiceNumber (as in create_invoice flow)', async () => {
+      const orderId = await service.hashObjectToField(mockDetails.invoiceNumber);
+      expect(orderId).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(orderId)).toBe(true);
+    });
+
+    it('should handle empty string input', async () => {
+      const result = await service.hashObjectToField('');
+      expect(result).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(result)).toBe(true);
+    });
+
+    it('should handle empty array input', async () => {
+      const result = await service.hashObjectToField([]);
+      expect(result).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(result)).toBe(true);
+    });
+
+    it('should produce different hash when lineItems content changes', async () => {
+      const items1 = [{ description: 'A', quantity: 1, amount: 100 }];
+      const items2 = [{ description: 'B', quantity: 1, amount: 100 }];
+      const h1 = await service.hashObjectToField(items1);
+      const h2 = await service.hashObjectToField(items2);
+      expect(h1).not.toBe(h2);
+    });
+  });
+
+  describe('encryptPayload (AES-GCM Wave 2)', () => {
+    it('should produce iv, ciphertext, and authTag (Wave 2 required)', async () => {
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
-        lineItems: [
-          { description: 'Item 1', quantity: 1, unitPrice: 100, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item 1', quantity: 1, unitPrice: 100, amount: 100 }],
         subtotal: 100,
         taxRate: 0.1,
         taxAmount: 10,
         total: 110,
         currency: 'USD'
       };
-      const masterKey = 'test-master-key-12345678901234567890'; // 32+ characters
+      const masterKey = 'test-master-key-32-chars-long-!!!';
 
-      // Act
-      const encrypted = await service.encryptInvoiceDetails(details, masterKey);
+      const encrypted = await service.encryptPayload(details, masterKey);
 
-      // Assert
-      expect(encrypted).toHaveProperty('iv');
-      expect(encrypted).toHaveProperty('ciphertext');
-      expect(encrypted.iv).toBeTruthy();
-      expect(encrypted.ciphertext).toBeTruthy();
-      expect(typeof encrypted.iv).toBe('string');
-      expect(typeof encrypted.ciphertext).toBe('string');
+      expect(encrypted.iv).toBeDefined();
+      expect(encrypted.ciphertext).toBeDefined();
+      expect(encrypted.authTag).toBeDefined();
+      expect(typeof encrypted.authTag).toBe('string');
+      expect(encrypted.authTag!.length).toBeGreaterThan(10);
     });
 
-    it('should generate different ciphertexts for the same details and key (because IV is random)', async () => {
-      // Arrange
+    it('should generate different iv, ciphertext, and authTag on each call (randomness)', async () => {
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
         lineItems: [],
@@ -228,19 +371,15 @@ describe('CryptoService', () => {
       };
       const masterKey = 'test-master-key-12345678901234567890';
 
-      // Act
-      const encrypted1 = await service.encryptInvoiceDetails(details, masterKey);
-      const encrypted2 = await service.encryptInvoiceDetails(details, masterKey);
+      const encrypted1 = await service.encryptPayload(details, masterKey);
+      const encrypted2 = await service.encryptPayload(details, masterKey);
 
-      // Assert
-      // IVs should be different (randomly generated)
       expect(encrypted1.iv).not.toBe(encrypted2.iv);
-      // Ciphertexts should also be different (because IVs are different)
       expect(encrypted1.ciphertext).not.toBe(encrypted2.ciphertext);
+      expect(encrypted1.authTag).not.toBe(encrypted2.authTag);
     });
 
-    it('should handle keys of different lengths', async () => {
-      // Arrange
+    it('should derive stable keys from short and long passwords (PBKDF2)', async () => {
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
         lineItems: [],
@@ -250,45 +389,64 @@ describe('CryptoService', () => {
         total: 100,
         currency: 'USD'
       };
-
       const shortKey = 'short';
       const longKey = 'this-is-a-very-long-master-key-with-many-characters-that-exceeds-32-bytes';
 
-      // Act & Assert
-      await expect(service.encryptInvoiceDetails(details, shortKey)).resolves.toBeDefined();
-      await expect(service.encryptInvoiceDetails(details, longKey)).resolves.toBeDefined();
+      const encShort = await service.encryptPayload(details, shortKey);
+      const encLong = await service.encryptPayload(details, longKey);
+
+      expect(encShort.iv).toBeTruthy();
+      expect(encShort.ciphertext).toBeTruthy();
+      expect(encShort.authTag).toBeTruthy();
+      expect(encLong.iv).toBeTruthy();
+      expect(encLong.ciphertext).toBeTruthy();
+      expect(encLong.authTag).toBeTruthy();
+      const decShort = await service.decryptPayload(encShort, shortKey);
+      const decLong = await service.decryptPayload(encLong, longKey);
+      expect(decShort).toEqual(details);
+      expect(decLong).toEqual(details);
     });
 
-    it('should throw CryptoServiceError when encryption fails', async () => {
-      // Arrange
+    it('should support selective disclosure (encrypt partial subset)', async () => {
+      const subset = { total: 100, currency: 'USD' };
+      const masterKey = 'test-master-key-1234567890123456';
+
+      const encrypted = await service.encryptPayload(subset as InvoiceDetails, masterKey);
+      expect(encrypted.iv).toBeTruthy();
+      expect(encrypted.ciphertext).toBeTruthy();
+      expect(encrypted.authTag).toBeTruthy();
+
+      const decrypted = await service.decryptPayload(encrypted, masterKey);
+      expect(decrypted).toEqual(subset);
+      expect(decrypted).not.toHaveProperty('notes');
+      expect(decrypted).not.toHaveProperty('lineItems');
+    });
+
+    it('should handle Aleo keywords and special chars in plaintext', async () => {
       const details: InvoiceDetails = {
-        invoiceNumber: 'INV-001',
+        invoiceNumber: 'INV-field-address',
         lineItems: [],
         subtotal: 100,
         taxRate: 0,
         taxAmount: 0,
         total: 100,
-        currency: 'USD'
+        currency: 'USD',
+        notes: 'Aleo keywords: field, address, u64'
       };
+      const masterKey = 'test-master-key-1234567890123456';
 
-      // Create a scenario that causes encryption to fail (e.g., passing null)
-      // Note: This depends on the actual encryption implementation and may need adjustment
-
-      // Act & Assert - test error type
-      // Here we test the normal case since it is difficult to simulate encryption failure
-      const result = await service.encryptInvoiceDetails(details, 'valid-key');
-      expect(result).toBeDefined();
+      const encrypted = await service.encryptPayload(details, masterKey);
+      const decrypted = await service.decryptPayload(encrypted, masterKey);
+      expect(decrypted).toEqual(details);
+      expect(decrypted.notes).toBe('Aleo keywords: field, address, u64');
     });
   });
 
-  describe('decryptInvoiceDetails', () => {
+  describe('decryptPayload (integrity protection)', () => {
     it('should successfully decrypt previously encrypted invoice details', async () => {
-      // Arrange
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-001',
-        lineItems: [
-          { description: 'Item 1', quantity: 2, unitPrice: 50, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item 1', quantity: 2, unitPrice: 50, amount: 100 }],
         subtotal: 100,
         taxRate: 0.15,
         taxAmount: 15,
@@ -298,42 +456,73 @@ describe('CryptoService', () => {
       };
       const masterKey = 'test-master-key-12345678901234567890';
 
-      // Act
-      const encrypted = await service.encryptInvoiceDetails(originalDetails, masterKey);
-      const decrypted = await service.decryptInvoiceDetails(encrypted, masterKey);
+      const encrypted = await service.encryptPayload(originalDetails, masterKey);
+      const decrypted = await service.decryptPayload(encrypted, masterKey);
 
-      // Assert
       expect(decrypted).toEqual(originalDetails);
     });
 
-    it('should handle invoices with complex data', async () => {
-      // Arrange
-      const complexDetails: InvoiceDetails = {
-        invoiceNumber: 'INV-COMPLEX-001',
-        lineItems: [
-          { description: 'Product A', quantity: 5, unitPrice: 123.45, amount: 617.25 },
-          { description: 'Product B', quantity: 3, unitPrice: 67.89, amount: 203.67 },
-          { description: 'Service C', quantity: 1, unitPrice: 500, amount: 500 }
-        ],
-        subtotal: 1320.92,
-        taxRate: 0.13,
-        taxAmount: 171.72,
-        total: 1492.64,
-        currency: 'CAD',
-        notes: 'Complex invoice with multiple items and special characters: @#$%^&*()'
+    it('should throw DECRYPTION_FAILED when ciphertext is tampered with', async () => {
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
       };
-      const masterKey = 'complex-key-with-special-chars-!@#$%';
+      const masterKey = 'test-master-key-1234567890123456';
+      const encrypted = await service.encryptPayload(details, masterKey);
 
-      // Act
-      const encrypted = await service.encryptInvoiceDetails(complexDetails, masterKey);
-      const decrypted = await service.decryptInvoiceDetails(encrypted, masterKey);
+      const tamperedPayload: EncryptedPayload = {
+        ...encrypted,
+        ciphertext: encrypted.ciphertext.slice(0, -4) + 'xxxx'
+      };
 
-      // Assert
-      expect(decrypted).toEqual(complexDetails);
+      await expect(
+        service.decryptPayload(tamperedPayload, masterKey)
+      ).rejects.toThrow(CryptoServiceError);
+
+      try {
+        await service.decryptPayload(tamperedPayload, masterKey);
+      } catch (error: any) {
+        expect(error.code).toBe(CryptoError.DECRYPTION_FAILED);
+        expect(error.message).not.toMatch(/correct-master-key|wrong-master-key/);
+      }
     });
 
-    it('should throw DECRYPTION_FAILED error when using the wrong key', async () => {
-      // Arrange
+    it('should throw DECRYPTION_FAILED when authTag is tampered with', async () => {
+      const details: InvoiceDetails = {
+        invoiceNumber: 'INV-001',
+        lineItems: [],
+        subtotal: 100,
+        taxRate: 0,
+        taxAmount: 0,
+        total: 100,
+        currency: 'USD'
+      };
+      const masterKey = 'test-master-key-1234567890123456';
+      const encrypted = await service.encryptPayload(details, masterKey);
+
+      expect(encrypted.authTag).toBeDefined();
+      const tamperedPayload: EncryptedPayload = {
+        ...encrypted,
+        authTag: encrypted.authTag!.slice(0, -4) + 'xxxx'
+      };
+
+      await expect(
+        service.decryptPayload(tamperedPayload, masterKey)
+      ).rejects.toThrow(CryptoServiceError);
+
+      try {
+        await service.decryptPayload(tamperedPayload, masterKey);
+      } catch (error: any) {
+        expect(error.code).toBe(CryptoError.DECRYPTION_FAILED);
+      }
+    });
+
+    it('should throw DECRYPTION_FAILED when using wrong key', async () => {
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
         lineItems: [],
@@ -346,55 +535,53 @@ describe('CryptoService', () => {
       const correctKey = 'correct-master-key-1234567890123456';
       const wrongKey = 'wrong-master-key-0987654321098765432';
 
-      const encrypted = await service.encryptInvoiceDetails(details, correctKey);
+      const encrypted = await service.encryptPayload(details, correctKey);
 
-      // Act & Assert
       await expect(
-        service.decryptInvoiceDetails(encrypted, wrongKey)
+        service.decryptPayload(encrypted, wrongKey)
       ).rejects.toThrow(CryptoServiceError);
 
       try {
-        await service.decryptInvoiceDetails(encrypted, wrongKey);
+        await service.decryptPayload(encrypted, wrongKey);
       } catch (error: any) {
         expect(error).toBeInstanceOf(CryptoServiceError);
         expect(error.code).toBe(CryptoError.DECRYPTION_FAILED);
-        expect(error.message).toContain('Failed to decrypt invoice details');
+        expect(error.message).not.toMatch(/correct-master-key|wrong-master-key/);
       }
     });
 
-    it('should throw an error when the ciphertext is corrupted', async () => {
-      // Arrange
-      const corruptedPayload: EncryptedPayload = {
+    it('should throw error for invalid Base64 payload (format error)', async () => {
+      const invalidPayload: EncryptedPayload = {
         iv: 'invalid-base64!!!',
         ciphertext: 'also-invalid!!!'
       };
       const masterKey = 'test-key';
 
-      // Act & Assert
       await expect(
-        service.decryptInvoiceDetails(corruptedPayload, masterKey)
+        service.decryptPayload(invalidPayload, masterKey)
       ).rejects.toThrow(CryptoServiceError);
     });
 
-    it('should throw an error when IV or ciphertext is empty', async () => {
-      // Arrange
+    it('should throw error when IV or ciphertext is empty', async () => {
+      const validB64 = 'AAAAAAAAAAAAAAAAAAAAAA==';
       const emptyIvPayload: EncryptedPayload = {
         iv: '',
-        ciphertext: 'some-ciphertext'
+        ciphertext: validB64,
+        authTag: validB64
       };
       const emptyCiphertextPayload: EncryptedPayload = {
-        iv: 'some-iv',
-        ciphertext: ''
+        iv: 'AAAAAAAAAAAAAAAA',
+        ciphertext: '',
+        authTag: validB64
       };
       const masterKey = 'test-key';
 
-      // Act & Assert
       await expect(
-        service.decryptInvoiceDetails(emptyIvPayload, masterKey)
+        service.decryptPayload(emptyIvPayload, masterKey)
       ).rejects.toThrow(CryptoServiceError);
 
       await expect(
-        service.decryptInvoiceDetails(emptyCiphertextPayload, masterKey)
+        service.decryptPayload(emptyCiphertextPayload, masterKey)
       ).rejects.toThrow(CryptoServiceError);
     });
   });
@@ -410,17 +597,22 @@ describe('CryptoService', () => {
      */
 
     it('should be able to parse a decrypted InvoiceRecord from wallet.requestRecords()', async () => {
-      // Arrange - simulate decrypted data returned by wallet.requestRecords('zk_invoice.aleo')
+      // Arrange - simulate decrypted data returned by wallet.requestRecords (Wave 2)
       const mockChainRecord: AleoInvoiceRecord = {
         owner: 'aleo1test123',
         invoice_id: '12345field',
-        invoice_hash: '9876543210field',  // Key field: used to verify data integrity
+        invoice_hash: '9876543210field',
         amount: '1000000',
+        tax_amount: '130000',
         seller: 'aleo1seller',
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: 0,
-        created_at: 1234567800
+        created_at: 1234567800,
+        order_id: '888888field',
+        currency: '999999field',
+        items_hash: '789field',
+        memo_hash: '012field'
       };
       const jsonString = JSON.stringify(mockChainRecord);
 
@@ -432,6 +624,31 @@ describe('CryptoService', () => {
       expect(result.invoice_hash).toBe('9876543210field');
       expect(result.invoice_id).toBe('12345field');
       expect(result.owner).toBe('aleo1test123');
+      expect(result.items_hash).toBe('789field');
+      expect(result.memo_hash).toBe('012field');
+    });
+
+    it('should parse Wave 2 fields (items_hash, memo_hash, order_id, currency)', async () => {
+      const mockChainRecord = {
+        invoice_id: '123field',
+        invoice_hash: '456field',
+        items_hash: '789field',
+        memo_hash: '012field',
+        order_id: '888field',
+        currency: '999field',
+        status: 0,
+        amount: '1000',
+        seller: 'aleo1seller',
+        buyer: 'aleo1buyer',
+        due_date: 1234567890,
+        created_at: 1234567800,
+        owner: 'aleo1owner'
+      };
+      const result = await service.parseAleoRecord<AleoInvoiceRecord>(JSON.stringify(mockChainRecord));
+      expect(result).toHaveProperty('items_hash', '789field');
+      expect(result).toHaveProperty('memo_hash', '012field');
+      expect(result).toHaveProperty('order_id', '888field');
+      expect(result).toHaveProperty('currency', '999field');
     });
 
     it('should support generic type inference', async () => {
@@ -455,29 +672,39 @@ describe('CryptoService', () => {
     });
 
     it('should be able to parse decrypted Records in array format (batch return)', async () => {
-      // Arrange
+      // Arrange (Wave 2 structure)
       const mockRecords: AleoInvoiceRecord[] = [
         {
           owner: 'aleo1test123',
           invoice_id: '11111field',
           invoice_hash: '111hash111field',
           amount: '1000000',
+          tax_amount: '130000',
           seller: 'aleo1seller1',
           buyer: 'aleo1buyer1',
           due_date: 1234567890,
           status: 0,
-          created_at: 1234567800
+          created_at: 1234567800,
+          order_id: '888field',
+          currency: '999field',
+          items_hash: '111field',
+          memo_hash: '222field'
         },
         {
           owner: 'aleo1test123',
           invoice_id: '22222field',
           invoice_hash: '222hash222field',
           amount: '2000000',
+          tax_amount: '260000',
           seller: 'aleo1seller2',
           buyer: 'aleo1buyer2',
           due_date: 1234567900,
           status: 1,
-          created_at: 1234567850
+          created_at: 1234567850,
+          order_id: '999field',
+          currency: '999field',
+          items_hash: '333field',
+          memo_hash: '444field'
         }
       ];
       const jsonString = JSON.stringify(mockRecords);
@@ -576,13 +803,10 @@ describe('CryptoService', () => {
      * - At viewing time, data integrity is verified by recomputing the hash
      */
 
-    it('should verify untampered invoice data as valid', async () => {
-      // Arrange - create invoice details
+    it('should verify untampered invoice data as valid (legacy mode)', async () => {
       const invoiceDetails: InvoiceDetails = {
         invoiceNumber: 'INV-VERIFY-001',
-        lineItems: [
-          { description: 'Item A', quantity: 2, unitPrice: 50, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item A', quantity: 2, unitPrice: 50, amount: 100 }],
         subtotal: 100,
         taxRate: 0.1,
         taxAmount: 10,
@@ -590,51 +814,42 @@ describe('CryptoService', () => {
         currency: 'USD',
         notes: 'Test verification'
       };
-
-      // Act - compute hash (simulating the operation at invoice creation)
       const computedHash = await service.computeInvoiceHash(invoiceDetails);
+      const isValid = await service.verifyInvoiceIntegrity(invoiceDetails, computedHash);
+      expect(isValid).toBe(true);
+    });
 
-      // Simulate the invoice_hash obtained from the on-chain Record
-      const chainInvoiceHash = computedHash;
-
-      // Verify integrity
-      const isValid = await service.verifyInvoiceIntegrity(invoiceDetails, chainInvoiceHash);
-
-      // Assert
+    it('should verify untampered invoice data as valid (Wave 2 with context)', async () => {
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const isValid = await service.verifyInvoiceIntegrity(mockDetails, chainHash, mockContext);
       expect(isValid).toBe(true);
     });
 
     it('should detect tampered invoice data', async () => {
-      // Arrange - create original invoice details
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-VERIFY-002',
-        lineItems: [
-          { description: 'Item A', quantity: 1, unitPrice: 100, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item A', quantity: 1, unitPrice: 100, amount: 100 }],
         subtotal: 100,
         taxRate: 0.1,
         taxAmount: 10,
         total: 110,
         currency: 'USD'
       };
-
-      // Compute original hash (simulating the hash stored on-chain)
       const chainInvoiceHash = await service.computeInvoiceHash(originalDetails);
-
-      // Act - tamper with local data (modify the amount)
       const tamperedDetails: InvoiceDetails = {
         ...originalDetails,
-        lineItems: [
-          { description: 'Item A', quantity: 1, unitPrice: 50, amount: 50 }  // Amount tampered
-        ],
+        lineItems: [{ description: 'Item A', quantity: 1, unitPrice: 50, amount: 50 }],
         subtotal: 50,
         total: 55
       };
-
-      // Verify the tampered data
       const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainInvoiceHash);
+      expect(isValid).toBe(false);
+    });
 
-      // Assert
+    it('should detect tampered invoice data (Wave 2 with context)', async () => {
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const tamperedDetails = { ...mockDetails, taxAmount: 131 };
+      const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainHash, mockContext);
       expect(isValid).toBe(false);
     });
 
@@ -667,39 +882,26 @@ describe('CryptoService', () => {
       expect(isValid).toBe(false);
     });
 
-    it('should be insensitive to field order (JSON normalization)', async () => {
-      // Arrange - create two objects with different field order but same content
+    it('should be insensitive to field order in legacy mode (JSON normalization)', async () => {
       const details1: InvoiceDetails = {
         invoiceNumber: 'INV-ORDER-001',
-        lineItems: [
-          { description: 'Item', quantity: 1, unitPrice: 100, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item', quantity: 1, unitPrice: 100, amount: 100 }],
         subtotal: 100,
         taxRate: 0.1,
         taxAmount: 10,
         total: 110,
         currency: 'USD'
       };
-
-      // Note: Although TypeScript object key order is deterministic in some cases,
-      // computeInvoiceHash internally uses Object.keys(details).sort()
-      // to ensure different orders produce the same hash
       const hash1 = await service.computeInvoiceHash(details1);
-
-      // Create an object with the same content (in practice TS object key order is preserved; this mainly verifies algorithm normalization)
       const details2: InvoiceDetails = {
         currency: 'USD',
         total: 110,
         taxAmount: 10,
         taxRate: 0.1,
         subtotal: 100,
-        lineItems: [
-          { description: 'Item', quantity: 1, unitPrice: 100, amount: 100 }
-        ],
+        lineItems: [{ description: 'Item', quantity: 1, unitPrice: 100, amount: 100 }],
         invoiceNumber: 'INV-ORDER-001'
       };
-
-      // Act & Assert - verify hashes are the same
       const isValid = await service.verifyInvoiceIntegrity(details2, hash1);
       expect(isValid).toBe(true);
     });
@@ -725,8 +927,8 @@ describe('CryptoService', () => {
      * 4. Decrypt local details -> verify integrity
      */
 
-    it('should complete the full flow from invoice creation to verification', async () => {
-      // ===== Phase 1: Invoice Creation =====
+    it('should complete the full flow from invoice creation to verification (Wave 2)', async () => {
+      // ===== Phase 1: Invoice Creation (Wave 2 with context) =====
       const invoiceDetails: InvoiceDetails = {
         invoiceNumber: 'INV-FULL-FLOW-001',
         lineItems: [
@@ -740,94 +942,88 @@ describe('CryptoService', () => {
         currency: 'CAD',
         notes: 'Complete flow test'
       };
-
-      // Compute invoice hash (for on-chain proof)
-      const invoiceHash = await service.computeInvoiceHash(invoiceDetails);
+      const flowContext: InvoiceHashContext = {
+        ...mockContext,
+        dueDate: Math.floor(Date.now() / 1000) + 86400
+      };
+      const invoiceHash = await service.computeInvoiceHash(invoiceDetails, flowContext);
       expect(invoiceHash).toMatch(/^\d+field$/);
 
       // ===== Phase 2: Local Encrypted Storage =====
       const masterKey = 'user-master-key-for-encryption';
-      const encryptedPayload = await service.encryptInvoiceDetails(invoiceDetails, masterKey);
-
+      const encryptedPayload = await service.encryptPayload(invoiceDetails, masterKey);
       expect(encryptedPayload.iv).toBeTruthy();
       expect(encryptedPayload.ciphertext).toBeTruthy();
-      // In a real scenario, this would be stored in IndexedDB
 
-      // ===== Phase 3: Simulate on-chain Record (wallet-decrypted) =====
+      // ===== Phase 3: Simulate on-chain Record (Wave 2) =====
       const mockChainRecord: AleoInvoiceRecord = {
         owner: 'aleo1qwerty123',
         invoice_id: '98765field',
-        invoice_hash: invoiceHash,  // Hash stored on-chain
-        amount: '1469000000',  // microcredits
-        seller: 'aleo1seller',
-        buyer: 'aleo1buyer',
-        due_date: Date.now() + 86400000,
+        invoice_hash: invoiceHash,
+        amount: '1469000000',
+        tax_amount: '169000000',
+        seller: flowContext.seller,
+        buyer: flowContext.buyer,
+        due_date: flowContext.dueDate,
         status: 0,
-        created_at: Date.now()
+        created_at: Math.floor(Date.now() / 1000),
+        order_id: flowContext.orderId,
+        currency: flowContext.currency,
+        items_hash: flowContext.itemsHash,
+        memo_hash: flowContext.memoHash
       };
-
-      // Parse on-chain Record
       const parsedRecord = await service.parseAleoRecord<AleoInvoiceRecord>(
         JSON.stringify(mockChainRecord)
       );
       expect(parsedRecord.invoice_hash).toBe(invoiceHash);
 
-      // ===== Phase 4: Decrypt local details and verify =====
-      // Read from IndexedDB and decrypt
-      const decryptedDetails = await service.decryptInvoiceDetails(encryptedPayload, masterKey);
-
-      // Verify integrity: compare the hash of local details with the on-chain hash
+      // ===== Phase 4: Decrypt and verify with context =====
+      const decryptedDetails = await service.decryptPayload(encryptedPayload, masterKey);
       const isValid = await service.verifyInvoiceIntegrity(
         decryptedDetails,
-        parsedRecord.invoice_hash as AleoField
+        parsedRecord.invoice_hash as AleoField,
+        flowContext
       );
-
-      // Assert
       expect(isValid).toBe(true);
       expect(decryptedDetails).toEqual(invoiceDetails);
     });
 
     it('should detect when local data has been tampered with', async () => {
-      // ===== Phase 1: Invoice Creation =====
       const originalDetails: InvoiceDetails = {
         invoiceNumber: 'INV-TAMPER-TEST-001',
-        lineItems: [
-          { description: 'Item', quantity: 1, unitPrice: 500, amount: 500 }
-        ],
+        lineItems: [{ description: 'Item', quantity: 1, unitPrice: 500, amount: 500 }],
         subtotal: 500,
         taxRate: 0.1,
         taxAmount: 50,
         total: 550,
         currency: 'USD'
       };
-
       const chainInvoiceHash = await service.computeInvoiceHash(originalDetails);
-
-      // ===== Phase 2: Encrypted storage (normal flow) =====
       const masterKey = 'test-master-key';
-      const encryptedPayload = await service.encryptInvoiceDetails(originalDetails, masterKey);
-
-      // ===== Phase 3: Simulate attacker tampering with stored data =====
-      // Decrypt and then manually modify the amount
-      const decryptedDetails = await service.decryptInvoiceDetails(encryptedPayload, masterKey);
+      const encryptedPayload = await service.encryptPayload(originalDetails, masterKey);
+      const decryptedDetails = await service.decryptPayload(encryptedPayload, masterKey);
       const tamperedDetails: InvoiceDetails = {
         ...decryptedDetails,
-        lineItems: [
-          { description: 'Item', quantity: 1, unitPrice: 50, amount: 50 }  // Tampered amount
-        ],
+        lineItems: [{ description: 'Item', quantity: 1, unitPrice: 50, amount: 50 }],
         subtotal: 50,
         total: 55
       };
-
-      // ===== Phase 4: Verification detects tampering =====
       const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainInvoiceHash);
-
-      // Assert
       expect(isValid).toBe(false);
-      // In a real application, this should:
-      // 1. Refuse to display the invoice
-      // 2. Log a security event
-      // 3. Alert the user that data may have been tampered with
+    });
+
+    it('should detect tampering with Wave 2 context', async () => {
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const masterKey = 'test-master-key';
+      const encryptedPayload = await service.encryptPayload(mockDetails, masterKey);
+      const decryptedDetails = await service.decryptPayload(encryptedPayload, masterKey);
+      const tamperedDetails = { ...decryptedDetails, taxAmount: 999 };
+      const isValid = await service.verifyInvoiceIntegrity(
+        tamperedDetails,
+        chainHash,
+        mockContext
+      );
+      expect(isValid).toBe(false);
     });
 
     it('should handle the case of an incorrect key', async () => {
@@ -848,11 +1044,11 @@ describe('CryptoService', () => {
       const wrongKey = 'wrong-master-key';
 
       // Encrypt with the correct key
-      const encrypted = await service.encryptInvoiceDetails(details, correctKey);
+      const encrypted = await service.encryptPayload(details, correctKey);
 
       // Act & Assert - decryption with the wrong key should fail
       await expect(
-        service.decryptInvoiceDetails(encrypted, wrongKey)
+        service.decryptPayload(encrypted, wrongKey)
       ).rejects.toThrow(CryptoServiceError);
     });
   });
@@ -1386,7 +1582,7 @@ describe('CryptoService', () => {
       await expect(service.hashCipher(null as any)).rejects.toThrow(CryptoServiceError);
     });
 
-    it('should handle real encrypted payload from encryptInvoiceDetails', async () => {
+    it('should handle real encrypted payload from encryptPayload', async () => {
       // Arrange
       const details: InvoiceDetails = {
         invoiceNumber: 'INV-001',
@@ -1398,7 +1594,7 @@ describe('CryptoService', () => {
         currency: 'USD'
       };
       const masterKey = 'test-master-key-1234567890123456';
-      const encrypted = await service.encryptInvoiceDetails(details, masterKey);
+      const encrypted = await service.encryptPayload(details, masterKey);
 
       // Act
       const hash = await service.hashCipher(encrypted);
@@ -1457,8 +1653,7 @@ describe('CryptoService', () => {
       // Act
       const encrypted = await service.encryptWithAuditKey(originalDetails, auditKey);
       // Note: We'd need a decryptWithAuditKey method for full round-trip, but we can use lib function
-      const { decryptInvoiceDetails } = await import('@/lib/crypto');
-      const decrypted = await decryptInvoiceDetails(encrypted, auditKey);
+      const decrypted = await service.decryptWithRawKey(encrypted, auditKey);
 
       // Assert
       expect(decrypted).toEqual(originalDetails);

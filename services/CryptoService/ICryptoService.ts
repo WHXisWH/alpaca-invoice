@@ -1,5 +1,5 @@
 // services/CryptoService.ts
-import { InvoiceDetails, AleoField, EncryptedPayload } from '@/lib/types';
+import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashContext } from '@/lib/types';
 
 /** * Crypto error enum */
 export enum CryptoError {
@@ -9,18 +9,24 @@ export enum CryptoError {
 }
 
 /**
- * Structure of on-chain InvoiceRecord (data decrypted by wallet.requestRecords())
+ * Structure of on-chain InvoiceRecord (Wave 2, data decrypted by wallet.requestRecords())
+ * Matches main.leo InvoiceRecord
  */
 export interface AleoInvoiceRecord {
   owner: string;           // Record owner address
   invoice_id: string;      // Unique invoice ID (Field format)
   invoice_hash: string;    // Invoice details hash (Field format, used for integrity verification)
   amount: string;          // Invoice amount (microcredits)
+  tax_amount?: string;     // Tax amount (microcredits) - Wave 2
   seller: string;          // Seller address
   buyer: string;           // Buyer address
   due_date: number;        // Due date (Unix timestamp)
-  status: number;          // Status (0=pending, 1=paid, 2=cancelled)
   created_at: number;      // Creation time (Unix timestamp)
+  status: number;          // Status (0=pending, 1=paid, 2=cancelled, 3=expired)
+  order_id?: string;       // Order linkage (0field if unused) - Wave 2
+  currency?: string;       // Currency code hashed to field - Wave 2
+  items_hash?: string;     // Hash/commitment of line items - Wave 2
+  memo_hash?: string;      // Optional memo hash (0field if unused) - Wave 2
   _nonce?: string;         // Record nonce (optional)
 }
 
@@ -45,18 +51,27 @@ export type AleoRecord = AleoInvoiceRecord | AleoPaymentRecord;
 
 export interface ICryptoService {
   /**
+   * Hash arbitrary input (string, object, or array) to AleoField.
+   * Used for nonce, itemsHash, memoHash, orderId in Wave 2 create_invoice flow.
+   * Uses SHA-256 then mod ALEO_FIELD_MODULUS.
+   *
+   * @param input String, object, or array to hash
+   * @returns AleoField (format: "123...field")
+   */
+  hashObjectToField(input: string | object): Promise<AleoField>;
+
+  /**
    * Core business hash: compute a unique hash from InvoiceDetails following the contract logic
    *
-   * Use cases:
-   * 1. When creating an invoice: compute the hash of invoice details and store it in the on-chain InvoiceRecord.invoice_hash
-   * 2. When verifying: recompute the hash of local details and compare it with the on-chain hash
-   *
-   * Uses SHA-256 algorithm with modular arithmetic to ensure the result is within the Aleo Field range
+   * Wave 2: When context is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
+   * order_id, currency, items_hash, memo_hash] to match InvoiceHashInput in main.leo.
+   * Fallback: When context is omitted, uses sorted JSON (legacy).
    *
    * @param details Invoice details object
+   * @param context Optional Wave 2 context (seller, buyer, orderId, nonce, itemsHash, memoHash, dueDate)
    * @returns AleoField corresponding to the contract field (format: "123...field")
    */
-  computeInvoiceHash(details: InvoiceDetails): Promise<AleoField>;
+  computeInvoiceHash(details: InvoiceDetails, context?: InvoiceHashContext): Promise<AleoField>;
 
   /**
    * Parse a decrypted InvoiceRecord from wallet.requestRecords()
@@ -71,7 +86,7 @@ export interface ICryptoService {
    *
    * // 2. Retrieve locally encrypted details from IndexedDB
    * const encryptedPayload = await storageService.getInvoice(chainRecord.invoice_id);
-   * const localDetails = await cryptoService.decryptInvoiceDetails(encryptedPayload, masterKey);
+   * const localDetails = await cryptoService.decryptPayload(encryptedPayload, masterKey);
    *
    * // 3. Verify integrity: recompute the hash and compare it with the on-chain hash
    * const isValid = await cryptoService.verifyInvoiceIntegrity(localDetails, chainRecord.invoice_hash);
@@ -86,11 +101,18 @@ export interface ICryptoService {
   /**
    * Verify invoice integrity: compare the hash of local details with the on-chain stored hash
    *
+   * Wave 2: When context is provided, recomputes hash using same context as creation.
+   *
    * @param localDetails Locally stored invoice details (decrypted from IndexedDB)
    * @param chainInvoiceHash The invoice_hash field from the on-chain Record
+   * @param context Optional Wave 2 context (must match the context used at creation)
    * @returns true indicates data is intact and untampered, false indicates data inconsistency
    */
-  verifyInvoiceIntegrity(localDetails: InvoiceDetails, chainInvoiceHash: AleoField): Promise<boolean>;
+  verifyInvoiceIntegrity(
+    localDetails: InvoiceDetails,
+    chainInvoiceHash: AleoField,
+    context?: InvoiceHashContext
+  ): Promise<boolean>;
 
   /**
    * Local encryption: encrypt invoice details and store them in IndexedDB
@@ -100,7 +122,7 @@ export interface ICryptoService {
    * @param masterKey User's locally derived key (string format)
    * @returns Encrypted payload (containing iv and ciphertext)
    */
-  encryptInvoiceDetails(details: InvoiceDetails, masterKey: string): Promise<EncryptedPayload>;
+  encryptPayload(details: InvoiceDetails, masterKey: string): Promise<EncryptedPayload>;
 
   /**
    * Local decryption: read and decrypt invoice details from IndexedDB
@@ -110,7 +132,15 @@ export interface ICryptoService {
    * @returns Decrypted invoice details
    * @throws {CryptoServiceError} DECRYPTION_FAILED if the key is incorrect or data is corrupted
    */
-  decryptInvoiceDetails(payload: EncryptedPayload, masterKey: string): Promise<InvoiceDetails>;
+  decryptPayload(payload: EncryptedPayload, masterKey: string): Promise<InvoiceDetails>;
+
+  /**
+   * Decrypt payload with raw Uint8Array key (for audit package validation).
+   */
+  decryptWithRawKey(
+    payload: EncryptedPayload,
+    encryptionKey: Uint8Array
+  ): Promise<InvoiceDetails>;
 
   /**
    * Derive a master key from a signature (used for local encryption of invoice details)
@@ -180,7 +210,7 @@ export interface ICryptoService {
   /**
    * Encrypt invoice details with raw audit key (without PBKDF2 derivation)
    * 
-   * Unlike encryptInvoiceDetails which uses a master key string,
+   * Unlike encryptPayload which uses a master key string,
    * this method accepts a raw Uint8Array key directly for audit packages.
    * No key derivation is performed.
    *

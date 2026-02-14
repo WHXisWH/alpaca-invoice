@@ -81,7 +81,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       try {
         // Encrypt details (if present)
         const encryptedDetails = invoice.details
-          ? await getCryptoService().encryptInvoiceDetails(invoice.details, masterKey)
+          ? await getCryptoService().encryptPayload(invoice.details, masterKey)
           : null;
 
         // Build storage data (directly using Invoice's basic fields)
@@ -213,7 +213,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
         // Encrypt updated details (if present)
         const encryptedDetails = updatedInvoice.details
-          ? await getCryptoService().encryptInvoiceDetails(updatedInvoice.details, masterKey)
+          ? await getCryptoService().encryptPayload(updatedInvoice.details, masterKey)
           : existing.encryptedDetails;
 
         // Build update data (directly using Invoice's basic fields)
@@ -354,7 +354,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
       // 3. Encrypt details (if present)
       const encryptedDetails = updatedInvoiceFull.details
-        ? await getCryptoService().encryptInvoiceDetails(updatedInvoiceFull.details, masterKey)
+        ? await getCryptoService().encryptPayload(updatedInvoiceFull.details, masterKey)
         : oldRecordData.encryptedDetails;
 
       // 4. Build storage data
@@ -465,7 +465,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         if (dbRecord) {
           // Decrypt details (if present)
           const details = dbRecord.encryptedDetails
-            ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
+            ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
           // Build complete invoice object (directly using stored fields, including metadata)
@@ -521,7 +521,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         try {
           // If no masterKey, details will be undefined (this is normal)
           const details = (masterKey && dbRecord.encryptedDetails)
-            ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
+            ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
           // Build complete invoice object (directly using stored fields, including metadata)
@@ -622,7 +622,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           try {
             // Encrypt details (if present)
             const encryptedDetails = invoice.details
-              ? await getCryptoService().encryptInvoiceDetails(invoice.details, masterKey)
+              ? await getCryptoService().encryptPayload(invoice.details, masterKey)
               : null;
 
             // Use the provided metadata or default values
@@ -716,7 +716,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         if (dbRecord) {
           // Decrypt details (if present)
           const details = dbRecord.encryptedDetails
-            ? await getCryptoService().decryptInvoiceDetails(dbRecord.encryptedDetails, masterKey)
+            ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
           // Build complete invoice object (including metadata)

@@ -1,16 +1,11 @@
-import type { AleoAddress, AleoField, Invoice, AuditKey } from '@/lib/types';
-import {
-  AuditPackage,
-  filterDetailsByPermissions,
-  buildAuditMessage,
-  validateAuditPackage
-} from '@/lib/audit';
+import type { AleoAddress, AleoField, Invoice, InvoiceDetails, AuditKey } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoProtocolService';
 import {
   IAuditService,
+  type AuditPackage,
   AuditServiceError,
   AuditError,
   GenerateAuditPackageParams,
@@ -101,6 +96,63 @@ export class AuditService implements IAuditService {
   }
 
   /**
+   * Filter invoice fields by permission scope
+   */
+  private filterDetailsByPermissions(invoice: Invoice, permissions: string[]): Partial<Invoice> {
+    const allow = (perm: string) => permissions.includes(perm);
+    const base: Partial<Invoice> = {
+      id: invoice.id,
+      invoiceHash: invoice.invoiceHash,
+      seller: allow('READ_PARTIES') ? invoice.seller : undefined,
+      buyer: allow('READ_PARTIES') ? invoice.buyer : undefined,
+      amount: allow('READ_AMOUNT') ? invoice.amount : undefined,
+      dueDate: invoice.dueDate,
+      createdAt: invoice.createdAt,
+      status: invoice.status
+    };
+
+    if (invoice.details && allow('READ_DETAILS')) {
+      base.details = invoice.details;
+    } else if (invoice.details && allow('READ_AMOUNT')) {
+      base.details = {
+        invoiceNumber: invoice.details.invoiceNumber,
+        subtotal: invoice.details.subtotal,
+        taxRate: invoice.details.taxRate,
+        taxAmount: invoice.details.taxAmount,
+        total: invoice.details.total,
+        currency: invoice.details.currency,
+        lineItems: allow('READ_LINE_ITEMS') ? invoice.details.lineItems : []
+      } as InvoiceDetails;
+    }
+
+    return base;
+  }
+
+  /**
+   * Build canonical audit message for signing
+   */
+  private buildAuditMessage(input: {
+    invoiceId: AleoField;
+    invoiceHash: AleoField;
+    expiresAt: number;
+    permissions: string[];
+    cipherHash: string;
+    programId?: string;
+    version?: number;
+  }): string {
+    const sortedPerms = [...input.permissions].sort().join(',');
+    return [
+      input.version === 2 ? 'AUDIT_PACKAGE_V2' : 'AUDIT_PACKAGE_V1',
+      input.programId || PROGRAM_ID,
+      input.invoiceId,
+      input.invoiceHash,
+      input.expiresAt,
+      sortedPerms,
+      input.cipherHash
+    ].join('|');
+  }
+
+  /**
    * Create audit package with encrypted invoice data
    * 
    * Internal orchestration method that:
@@ -122,7 +174,7 @@ export class AuditService implements IAuditService {
 
     try {
       // 1. Filter invoice data by permissions
-      const filtered = filterDetailsByPermissions(invoice, permissions);
+      const filtered = this.filterDetailsByPermissions(invoice, permissions);
       if (!filtered.details && !filtered.amount && !filtered.seller && !filtered.buyer) {
         throw new AuditServiceError(
           AuditError.INVALID_INPUT,
@@ -139,7 +191,7 @@ export class AuditService implements IAuditService {
       const cipherHash = await this.cryptoService.hashCipher(cipher);
       
       // 4. Build and sign canonical message
-      const message = buildAuditMessage({
+      const message = this.buildAuditMessage({
         invoiceId: invoice.id,
         invoiceHash: invoice.invoiceHash,
         expiresAt,
@@ -279,19 +331,61 @@ export class AuditService implements IAuditService {
    */
   async validate(pkg: AuditPackage, auditKey: string): Promise<ValidateAuditPackageResult> {
     try {
-      const result = await validateAuditPackage({
-        pkg,
-        auditKey,
-        computeInvoiceHash: (details) => this.cryptoService.computeInvoiceHash(details),
-        protocolService: this.protocolService
-      });
+      if (Date.now() > pkg.expiresAt) {
+        return { valid: false, reason: 'Audit package expired' };
+      }
 
-      return {
-        valid: result.valid,
-        reason: result.reason,
-        decrypted: result.decrypted,
-        chainVerification: result.chainVerification
-      };
+      const recomputedHash = await this.cryptoService.hashCipher(pkg.cipher);
+      if (recomputedHash !== pkg.cipherHash) {
+        return { valid: false, reason: 'Cipher hash mismatch (tampered payload)' };
+      }
+
+      let decrypted: any;
+      try {
+        const keyBytes = this.cryptoService.auditKeyToBytes(auditKey);
+        decrypted = await this.cryptoService.decryptWithRawKey(pkg.cipher, keyBytes);
+      } catch {
+        return { valid: false, reason: 'Failed to decrypt payload with provided audit key' };
+      }
+
+      const targetHash = pkg.invoiceHash;
+      if (targetHash && decrypted?.details) {
+        const hash = await this.cryptoService.computeInvoiceHash(decrypted.details);
+        const cleanChainHash = targetHash.replace(/field\.(private|public)$/, 'field');
+        if (hash !== cleanChainHash) {
+          return { valid: false, reason: 'Decrypted details do not match invoice_hash' };
+        }
+      }
+
+      if (pkg.version === 2 && pkg.chainVerifiable && this.protocolService) {
+        const chain = await this.protocolService.verifyInvoiceOnChain(pkg.invoiceId, pkg.invoiceHash);
+        if (!chain.exists) {
+          return { valid: false, reason: 'INVOICE_NOT_FOUND_ON_CHAIN', decrypted };
+        }
+        if (!chain.hashMatch) {
+          return {
+            valid: false,
+            reason: 'HASH_MISMATCH_WITH_CHAIN',
+            decrypted,
+            chainVerification: {
+              invoiceExistsOnChain: chain.exists,
+              hashMatchesChain: chain.hashMatch,
+              chainStatus: chain.chainStatus ?? null
+            }
+          };
+        }
+        return {
+          valid: true,
+          decrypted,
+          chainVerification: {
+            invoiceExistsOnChain: chain.exists,
+            hashMatchesChain: chain.hashMatch,
+            chainStatus: chain.chainStatus ?? null
+          }
+        };
+      }
+
+      return { valid: true, decrypted };
     } catch (error: any) {
       throw new AuditServiceError(
         AuditError.VALIDATION_FAILED,

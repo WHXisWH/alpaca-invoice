@@ -1,12 +1,7 @@
-import { InvoiceDetails, AleoField, EncryptedPayload } from '@/lib/types';
+import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashContext } from '@/lib/types';
 import { ICryptoService, CryptoError, AleoInvoiceRecord } from './ICryptoService';
 import { createServiceError } from '@/lib/service-errors';
 import { Buffer } from 'buffer';
-import {
-  encryptInvoiceDetails as encryptDetails,
-  decryptInvoiceDetails as decryptDetails,
-} from '@/lib/crypto';
-
 const RULE_TAGS = ['r1', 'r2', 'r3', 'r4', 'r5'] as const;
 
 /**
@@ -15,6 +10,7 @@ const RULE_TAGS = ['r1', 'r2', 'r3', 'r4', 'r5'] as const;
  * This is the scalar field modulus of the BLS12-377 curve used by the Aleo blockchain
  */
 const ALEO_FIELD_MODULUS = BigInt('8444461749428370424248824938781546531375899335154063827935233455917409239041');
+const AES_GCM_TAG_LENGTH = 16; // 128 bits
 
 /**
  * CryptoService error class
@@ -80,37 +76,66 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
+   * Hash arbitrary input (string, object, or array) to AleoField.
+   * SHA-256 of the serialized input, then mod ALEO_FIELD_MODULUS.
+   */
+  async hashObjectToField(input: string | object): Promise<AleoField> {
+    const canonical = typeof input === 'string' ? input : JSON.stringify(input);
+    const enc = new TextEncoder().encode(canonical);
+    const h = await this.getWebCrypto().subtle.digest('SHA-256', enc);
+    const hx = Array.from(new Uint8Array(h))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    const bi = BigInt('0x' + hx) % ALEO_FIELD_MODULUS;
+    return `${bi.toString()}field` as AleoField;
+  }
+
+  /**
    * Core business hash: Computes a unique hash for InvoiceDetails following the contract logic
    *
-   * Use cases:
-   * - On invoice creation: compute hash -> store in on-chain InvoiceRecord.invoice_hash
-   * - On verification: recompute hash from local details -> compare with on-chain hash (via verifyInvoiceIntegrity)
-   *
-   * Implementation details:
-   * 1. Uses SHA-256 algorithm to generate a 256-bit hash
-   * 2. Converts the hash value to BigInt
-   * 3. Applies modular arithmetic (hash % ALEO_FIELD_MODULUS) to ensure the result is within Field range
-   * 4. Returns an AleoField format string (e.g., "123456789field")
-   *
-   * Why modular arithmetic is needed:
-   * - Aleo Field is a finite field where all elements must be < ALEO_FIELD_MODULUS
-   * - SHA-256 may produce values larger than the modulus, requiring modular reduction to map into the valid range
-   * - This ensures the on-chain contract can correctly handle the hash values
+   * Wave 2: When context is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
+   * order_id, currency, items_hash, memo_hash] to match InvoiceHashInput in main.leo.
+   * Fallback: When context is omitted, uses sorted JSON (legacy).
    *
    * @param details Invoice details object
+   * @param context Optional Wave 2 context
    * @returns AleoField corresponding to the contract field
    */
-  async computeInvoiceHash(details: InvoiceDetails): Promise<AleoField> {
+  async computeInvoiceHash(details: InvoiceDetails, context?: InvoiceHashContext): Promise<AleoField> {
     try {
-      // 1. Normalize object: remove undefined values via JSON.parse(JSON.stringify())
-      // This ensures consistent object structure before and after encryption/decryption
-      const normalized = JSON.parse(JSON.stringify(details));
+      const crypto = this.getWebCrypto();
+      const encoder = new TextEncoder();
 
-      // 2. Deep sort object keys (recursively handle nested objects and arrays)
+      if (context) {
+        // Wave 2: fixed field order matching InvoiceHashInput in main.leo
+        const amount = BigInt(Math.round(details.subtotal));
+        const taxAmount = BigInt(Math.round(details.taxAmount));
+        const hashInput = {
+          seller: context.seller,
+          buyer: context.buyer,
+          amount: amount.toString(),
+          tax_amount: taxAmount.toString(),
+          due_date: context.dueDate.toString(),
+          nonce: context.nonce,
+          order_id: context.orderId,
+          currency: context.currency,
+          items_hash: context.itemsHash,
+          memo_hash: context.memoHash
+        };
+        const canonical = JSON.stringify(hashInput);
+        const data = encoder.encode(canonical);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashBigInt = BigInt('0x' + hashHex);
+        const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
+        return `${fieldValue.toString()}field` as AleoField;
+      }
+
+      // Legacy: sorted JSON hash
+      const normalized = JSON.parse(JSON.stringify(details));
       const sortObjectKeys = (obj: any): any => {
-        if (Array.isArray(obj)) {
-          return obj.map(item => sortObjectKeys(item));
-        }
+        if (Array.isArray(obj)) return obj.map(item => sortObjectKeys(item));
         if (obj !== null && typeof obj === 'object') {
           return Object.keys(obj)
             .sort()
@@ -121,37 +146,15 @@ export class CryptoService implements ICryptoService {
         }
         return obj;
       };
-
       const sortedNormalized = sortObjectKeys(normalized);
       const canonical = JSON.stringify(sortedNormalized);
-
-      // Debug logs
-      console.log('🔐 [computeInvoiceHash] Normalized object:', normalized);
-      console.log('🔐 [computeInvoiceHash] Sorted normalized:', sortedNormalized);
-      console.log('🔐 [computeInvoiceHash] Canonical JSON:', canonical);
-
-      // 3. Get browser native Crypto API
-      const encoder = new TextEncoder();
       const data = encoder.encode(canonical);
-      const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
-
-      // 4. Convert ArrayBuffer to BigInt (without using Buffer)
-      // Approach: wrap hashBuffer as Uint8Array, then process byte by byte
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
       const hashBigInt = BigInt('0x' + hashHex);
-
-      // 5. Apply modular arithmetic to ensure value is within Aleo Field range
       const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
-
-      // 6. Return AleoField format string
-      const result = `${fieldValue.toString()}field` as AleoField;
-      console.log('🔐 [computeInvoiceHash] Result hash:', result);
-
-      return result;
+      return `${fieldValue.toString()}field` as AleoField;
     } catch (error: any) {
       throw new CryptoServiceError(
         CryptoError.ENCRYPTION_FAILED,
@@ -163,25 +166,23 @@ export class CryptoService implements ICryptoService {
 
   /**
    * Local encryption of sensitive data: encrypts details with a private key before saving to StorageService
+   * Uses AES-GCM with iv, ciphertext, and authTag (Wave 2).
    *
    * @param details Original details
    * @param masterKey User's locally derived key (string format)
-   * @returns Encrypted payload
+   * @returns Encrypted payload { iv, ciphertext, authTag }
    */
-  async encryptInvoiceDetails(
+  async encryptPayload(
     details: InvoiceDetails,
     masterKey: string
   ): Promise<EncryptedPayload> {
     try {
-      // Convert masterKey string to Uint8Array
       const encryptionKey = await this.deriveEncryptionKey(masterKey);
-
-      // Use the encryption function from lib/crypto.ts
-      return await encryptDetails(details, encryptionKey);
+      return await this.encryptWithRawKey(details, encryptionKey);
     } catch (error: any) {
       throw new CryptoServiceError(
         CryptoError.ENCRYPTION_FAILED,
-        'Failed to encrypt invoice details',
+        'Failed to encrypt payload',
         { originalError: error }
       );
     }
@@ -190,33 +191,55 @@ export class CryptoService implements ICryptoService {
   /**
    * Local decryption of sensitive data
    *
-   * @param payload Encrypted payload
+   * @param payload Encrypted payload { iv, ciphertext, authTag? }
    * @param masterKey User's locally derived key (string format)
    * @returns Decrypted invoice details
    * @throws {CryptoServiceError} May throw DECRYPTION_FAILED
    */
-  async decryptInvoiceDetails(
+  async decryptPayload(
     payload: EncryptedPayload,
     masterKey: string
   ): Promise<InvoiceDetails> {
     try {
-      // Convert masterKey string to Uint8Array
       const encryptionKey = await this.deriveEncryptionKey(masterKey);
-
-      // Use the decryption function from lib/crypto.ts
-      return await decryptDetails(payload, encryptionKey);
+      return await this.decryptWithRawKey(payload, encryptionKey);
     } catch (error: any) {
-      // If decryption fails, throw a specific error
-      if (error instanceof CryptoServiceError) {
-        throw error;
-      }
-
+      if (error instanceof CryptoServiceError) throw error;
       throw new CryptoServiceError(
         CryptoError.DECRYPTION_FAILED,
-        'Failed to decrypt invoice details. Invalid master key or corrupted data.',
+        'Failed to decrypt payload. Invalid master key or corrupted data.',
         { originalError: error }
       );
     }
+  }
+
+  /**
+   * Decrypt payload with raw Uint8Array key (for audit package validation).
+   */
+  async decryptWithRawKey(
+    payload: EncryptedPayload,
+    encryptionKey: Uint8Array
+  ): Promise<InvoiceDetails> {
+    const crypto = this.getWebCrypto();
+    const iv = Buffer.from(payload.iv, 'base64');
+    let ciphertextBytes = Buffer.from(payload.ciphertext, 'base64');
+    if (payload.authTag) {
+      const tagBytes = Buffer.from(payload.authTag, 'base64');
+      ciphertextBytes = Buffer.concat([ciphertextBytes, tagBytes]);
+    }
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encryptionKey as BufferSource,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv as BufferSource },
+      key,
+      ciphertextBytes as BufferSource
+    );
+    return JSON.parse(new TextDecoder().decode(plaintext)) as InvoiceDetails;
   }
 
   /**
@@ -237,7 +260,7 @@ export class CryptoService implements ICryptoService {
    *
    * // 2. Get locally encrypted details from IndexedDB
    * const encryptedPayload = await storageService.getInvoice(chainRecord.invoice_id);
-   * const localDetails = await cryptoService.decryptInvoiceDetails(encryptedPayload, masterKey);
+   * const localDetails = await cryptoService.decryptPayload(encryptedPayload, masterKey);
    *
    * // 3. Verify integrity
    * const isValid = await cryptoService.verifyInvoiceIntegrity(
@@ -349,7 +372,8 @@ export class CryptoService implements ICryptoService {
    */
   async verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
-    chainInvoiceHash: AleoField
+    chainInvoiceHash: AleoField,
+    context?: InvoiceHashContext
   ): Promise<boolean> {
     if (!localDetails || typeof localDetails !== 'object') {
       throw new CryptoServiceError(
@@ -360,19 +384,8 @@ export class CryptoService implements ICryptoService {
     }
 
     try {
-      // Recompute hash from local details
-      const computedHash = await this.computeInvoiceHash(localDetails);
-
-      // Clean visibility modifiers from on-chain hash (extra safety, in case parseAleoRecord didn't clean it)
+      const computedHash = await this.computeInvoiceHash(localDetails, context);
       const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
-
-      // Debug logs
-      console.log('🔍 [verifyInvoiceIntegrity] Computed hash:', computedHash);
-      console.log('🔍 [verifyInvoiceIntegrity] Chain hash (original):', chainInvoiceHash);
-      console.log('🔍 [verifyInvoiceIntegrity] Chain hash (cleaned):', cleanChainHash);
-      console.log('🔍 [verifyInvoiceIntegrity] Match:', computedHash === cleanChainHash);
-
-      // Compare the two hash values
       return computedHash === cleanChainHash;
     } catch (error: any) {
       throw new CryptoServiceError(
@@ -616,8 +629,39 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
+   * AES-GCM encrypt with raw key. Produces { iv, ciphertext, authTag }.
+   */
+  private async encryptWithRawKey(
+    data: InvoiceDetails | Record<string, unknown>,
+    encryptionKey: Uint8Array
+  ): Promise<EncryptedPayload> {
+    const crypto = this.getWebCrypto();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(data));
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encryptionKey as BufferSource,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt']
+    );
+    const fullOutput = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv as BufferSource },
+      key,
+      plaintext as BufferSource
+    );
+    const buf = new Uint8Array(fullOutput);
+    const ciphertextBytes = buf.slice(0, buf.length - AES_GCM_TAG_LENGTH);
+    const authTagBytes = buf.slice(buf.length - AES_GCM_TAG_LENGTH);
+    return {
+      iv: Buffer.from(iv).toString('base64'),
+      ciphertext: Buffer.from(ciphertextBytes).toString('base64'),
+      authTag: Buffer.from(authTagBytes).toString('base64')
+    };
+  }
+
+  /**
    * Convert payload to JSON-serializable form (e.g. audit filtered data may include bigint, Date).
-   * Used before passing to lib/crypto encryptInvoiceDetails.
    */
   private serializableForEncryption(obj: unknown): Record<string, unknown> {
     return JSON.parse(
@@ -668,9 +712,7 @@ export class CryptoService implements ICryptoService {
       // Normalize payload for JSON serialization (e.g. audit filtered data may have bigint, Date)
       const serializable = this.serializableForEncryption(details);
 
-      // Direct call to lib/crypto without key derivation
-      // This uses the audit key as-is for AES-GCM encryption
-      return await encryptDetails(serializable as InvoiceDetails, auditKey);
+      return await this.encryptWithRawKey(serializable, auditKey);
     } catch (error: any) {
       // Already a CryptoServiceError, rethrow directly
       if (error instanceof CryptoServiceError) {

@@ -47,8 +47,25 @@ export interface Invoice {
 }
 
 export interface EncryptedPayload {
-  iv: string;
-  ciphertext: string;
+  iv: string;         // Initialization vector (Base64)
+  ciphertext: string; // Ciphertext (Base64)
+  authTag?: string;   // AES-GCM authentication tag (Base64) - Wave 2 required for tamper detection
+}
+
+/**
+ * Wave 2 contract context for invoice hash computation.
+ * Matches InvoiceHashInput in main.leo: seller, buyer, amount, tax_amount, due_date,
+ * nonce, order_id, currency, items_hash, memo_hash
+ */
+export interface InvoiceHashContext {
+  seller: AleoAddress;
+  buyer: AleoAddress;
+  orderId: AleoField;
+  nonce: AleoField;
+  itemsHash: AleoField;
+  memoHash: AleoField;
+  currency: AleoField;
+  dueDate: number;
 }
 
 export interface CreateInvoiceParams {
