@@ -4,6 +4,7 @@ import { AuditServiceError, AuditError } from '../IAuditService';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import type { Invoice, InvoiceDetails, AleoAddress, AleoField, AuditPackage } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
+import { PROGRAM_ID } from '@/lib/contract';
 
 describe('AuditService', () => {
   let service: AuditService;
@@ -11,34 +12,61 @@ describe('AuditService', () => {
   let mockInvoice: Invoice;
 
   beforeEach(async () => {
+    // Off-chain details (for audit decryption and frontend display, corresponding to InvoiceDetails)
     const details: InvoiceDetails = {
-      invoiceNumber: 'INV-001',
+      invoiceNumber: 'INV-2026-001',
       lineItems: [
-        { description: 'Service A', quantity: 1, unitPrice: 100, amount: 100 }
+        {
+          description: 'Advanced Cloud Service',
+          quantity: 1,
+          unitPrice: 1000000,
+          amount: 1000000
+        }
       ],
-      subtotal: 100,
-      taxRate: 0.1,
-      taxAmount: 10,
-      total: 110,
-      currency: 'USD'
+      subtotal: 1000000,
+      taxRate: 0.13,
+      taxAmount: 130000,
+      total: 1130000,
+      currency: 'USD',
+      notes: 'Service period: Feb 2026'
     };
 
     // Use real hash of details so generate->validate integrity check passes
     const cryptoService = new CryptoService();
     const invoiceHash = (await cryptoService.computeInvoiceHash(details)) as AleoField;
 
-    // Create mock invoice with details
+    // Mock invoice aligned with main.leo InvoiceRecord structure
     mockInvoice = {
-      id: '12345field' as AleoField,
-      invoiceHash,
-      seller: 'aleo1seller' as AleoAddress,
-      buyer: 'aleo1buyer' as AleoAddress,
+      // 1. Basic Record fields (strictly corresponding to InvoiceRecord struct in main.leo)
+      id: '50231998723415field' as AleoField,
+      owner: 'aleo1seller1234567890abcdefghijk' as AleoAddress,
+      seller: 'aleo1seller1234567890abcdefghijk' as AleoAddress,
+      buyer: 'aleo1buyer1234567890abcdefghijk' as AleoAddress,
+
+      // 2. Financial details (for R1-R5 rule validation)
       amount: 1000000n,
-      dueDate: new Date(Date.now() + 86400000),
+      taxAmount: 130000n,
+
+      // 3. Time and business identifiers (u32 Unix second timestamps -> Date)
+      dueDate: new Date(1798761600 * 1000), // 2026-12-31
+      createdAt: new Date(1739520000 * 1000), // 2026-02-14
+
+      // 4. Hash anchors (critical for audit verification)
+      invoiceHash,
+      itemsHash: '111222333field' as AleoField,
+      memoHash: '444555666field' as AleoField,
+      orderId: '8888888field' as AleoField,
+      currency: '8483728field' as AleoField,
+
+      // 5. Status and extensions
       status: InvoiceStatus.PENDING,
-      createdAt: new Date(),
+
+      // 6. Additional business fields (not in contract Record, but needed for AuditPackage generation)
+      nonce: '123456789field' as AleoField,
+
+      // 7. Off-chain details (for frontend display after audit decryption)
       details
-    };
+    } as Invoice;
 
     // Mock dependencies
     mockDeps = {
@@ -62,7 +90,7 @@ describe('AuditService', () => {
     it('should successfully generate an audit package with valid inputs', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
@@ -77,7 +105,7 @@ describe('AuditService', () => {
 
       // Verify audit package structure
       expect(result.pkg.version).toBe(2);
-      expect(result.pkg.invoiceId).toBe('12345field');
+      expect(result.pkg.invoiceId).toBe('50231998723415field');
       expect(result.pkg.permissions).toEqual(['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']);
       expect(result.pkg.signerAddress).toBe('aleo1signer');
       
@@ -85,6 +113,7 @@ describe('AuditService', () => {
       if (result.pkg.version === 2) {
         expect(result.pkg.chainVerifiable).toBe(true);
         expect(result.pkg.programId).toBeDefined();
+        expect(result.pkg.programId).toBe(PROGRAM_ID);
       }
 
       // Verify cipher
@@ -123,13 +152,13 @@ describe('AuditService', () => {
 
       // Assert
       expect(result).toBeDefined();
-      expect(result.pkg.invoiceId).toBe('12345field'); // Should use actual invoice id
+      expect(result.pkg.invoiceId).toBe('50231998723415field'); // Should use actual invoice id
     });
 
     it('should generate different audit keys for each call', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -183,7 +212,7 @@ describe('AuditService', () => {
       });
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -228,7 +257,7 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -247,7 +276,7 @@ describe('AuditService', () => {
     it('should throw INVALID_INPUT error when no permissions result in data', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: [] // Empty permissions - no data will be selected
       };
@@ -266,7 +295,7 @@ describe('AuditService', () => {
     it('should handle READ_AMOUNT permission only', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -281,7 +310,7 @@ describe('AuditService', () => {
     it('should handle READ_PARTIES permission only', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_PARTIES']
       };
@@ -296,7 +325,7 @@ describe('AuditService', () => {
     it('should handle READ_DETAILS permission', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -311,7 +340,7 @@ describe('AuditService', () => {
     it('should handle multiple permissions', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS', 'READ_LINE_ITEMS']
       };
@@ -329,7 +358,7 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -350,7 +379,7 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -369,7 +398,7 @@ describe('AuditService', () => {
       // Arrange
       const beforeTime = Date.now();
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -386,7 +415,7 @@ describe('AuditService', () => {
     it('should set correct programId', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -398,6 +427,7 @@ describe('AuditService', () => {
       expect(result.pkg.version).toBe(2);
       if (result.pkg.version === 2) {
         expect(result.pkg.programId).toBeDefined();
+        expect(result.pkg.programId).toBe(PROGRAM_ID);
         expect(result.pkg.programId).toMatch(/\.aleo$/);
       }
     });
@@ -426,7 +456,7 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -443,7 +473,7 @@ describe('AuditService', () => {
     it('should use same master key derivation message format', async () => {
       // Arrange
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -462,7 +492,7 @@ describe('AuditService', () => {
     it('should validate a legitimate audit package', async () => {
       // Arrange - Generate a real package first
       const generateParams = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
@@ -481,7 +511,7 @@ describe('AuditService', () => {
     it('should reject package with wrong audit key', async () => {
       // Arrange - Generate a real package
       const generateParams = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -500,7 +530,7 @@ describe('AuditService', () => {
     it('should reject expired audit package', async () => {
       // Arrange - Generate package that's already expired
       const generateParams = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() - 1000, // Already expired
         permissions: ['READ_AMOUNT']
       };
@@ -516,10 +546,11 @@ describe('AuditService', () => {
     });
 
     it('should throw VALIDATION_FAILED when validation throws error', async () => {
-      // Arrange - Create invalid package
+      // Arrange - Create invalid package (V2 shape with programId but missing required fields)
       const invalidPackage: any = {
         version: 2,
-        // Missing required fields
+        programId: PROGRAM_ID,
+        // Missing required fields (invoiceId, invoiceHash, cipher, etc.)
       };
 
       // Act & Assert
@@ -535,7 +566,7 @@ describe('AuditService', () => {
     it('should return decrypted data for valid package', async () => {
       // Arrange
       const generateParams = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -583,7 +614,7 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -604,7 +635,7 @@ describe('AuditService', () => {
     it('should complete full generate-validate cycle', async () => {
       // Arrange
       const generateParams = {
-        invoiceId: '12345field' as AleoField,
+        invoiceId: '50231998723415field' as AleoField,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
