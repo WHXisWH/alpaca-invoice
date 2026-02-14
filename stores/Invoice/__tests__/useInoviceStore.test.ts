@@ -11,8 +11,8 @@ const { mockStorageService, mockCryptoService } = vi.hoisted(() => {
   };
 
   const mockCryptoService = {
-    encryptInvoiceDetails: vi.fn().mockResolvedValue({ iv: 'test-iv', ciphertext: 'encrypted-data' }),
-    decryptInvoiceDetails: vi.fn().mockResolvedValue({
+    encryptPayload: vi.fn().mockResolvedValue({ iv: 'test-iv', ciphertext: 'encrypted-data' }),
+    decryptPayload: vi.fn().mockResolvedValue({
       invoiceNumber: 'INV-001',
       lineItems: [{ description: 'Item 1', quantity: 2, unitPrice: 100, amount: 200 }],
       subtotal: 200,
@@ -84,8 +84,8 @@ describe('useInvoiceStore', () => {
     mockStorageService.getData.mockResolvedValue(undefined);
     mockStorageService.getAllData.mockResolvedValue([]);
     mockStorageService.updateData.mockResolvedValue(undefined);
-    mockCryptoService.encryptInvoiceDetails.mockResolvedValue(mockEncryptedDetails);
-    mockCryptoService.decryptInvoiceDetails.mockResolvedValue(mockInvoiceDetails);
+    mockCryptoService.encryptPayload.mockResolvedValue(mockEncryptedDetails);
+    mockCryptoService.decryptPayload.mockResolvedValue(mockInvoiceDetails);
   });
 
   afterEach(() => {
@@ -116,7 +116,7 @@ describe('useInvoiceStore', () => {
       expect(state.invoices[0].metadata?.lastUpdated).toBeInstanceOf(Date);
 
       // Verify crypto service call
-      expect(mockCryptoService.encryptInvoiceDetails).toHaveBeenCalledWith(
+      expect(mockCryptoService.encryptPayload).toHaveBeenCalledWith(
         mockInvoiceDetails,
         masterKey
       );
@@ -151,7 +151,7 @@ describe('useInvoiceStore', () => {
 
       // Verify storage service was not called
       expect(mockStorageService.addData).not.toHaveBeenCalled();
-      expect(mockCryptoService.encryptInvoiceDetails).not.toHaveBeenCalled();
+      expect(mockCryptoService.encryptPayload).not.toHaveBeenCalled();
     });
 
     it('should only update memory when persistFull is false', async () => {
@@ -301,7 +301,7 @@ describe('useInvoiceStore', () => {
       await store.updateInvoice(mockInvoice.id, { details: newDetails }, { masterKey, persistFull: true });
 
       // Verify re-encryption
-      expect(mockCryptoService.encryptInvoiceDetails).toHaveBeenCalledWith(newDetails, masterKey);
+      expect(mockCryptoService.encryptPayload).toHaveBeenCalledWith(newDetails, masterKey);
     });
 
     it('should only update memory when masterKey is not provided', async () => {
@@ -547,7 +547,7 @@ describe('useInvoiceStore', () => {
       expect(result?.details).toEqual(mockInvoiceDetails);
 
       // Verify decryption call
-      expect(mockCryptoService.decryptInvoiceDetails).toHaveBeenCalledWith(mockEncryptedDetails, masterKey);
+      expect(mockCryptoService.decryptPayload).toHaveBeenCalledWith(mockEncryptedDetails, masterKey);
 
       // Verify memory state update
       const state = useInvoiceStore.getState();
@@ -682,7 +682,7 @@ describe('useInvoiceStore', () => {
       };
 
       mockStorageService.getAllData.mockResolvedValue([storageData]);
-      mockCryptoService.decryptInvoiceDetails.mockRejectedValue(new Error('Decryption failed'));
+      mockCryptoService.decryptPayload.mockRejectedValue(new Error('Decryption failed'));
       const store = useInvoiceStore.getState();
 
       const result = await store.getAllInvoices({ masterKey });
@@ -717,7 +717,7 @@ describe('useInvoiceStore', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].details).toBeUndefined();
-      expect(mockCryptoService.decryptInvoiceDetails).not.toHaveBeenCalled();
+      expect(mockCryptoService.decryptPayload).not.toHaveBeenCalled();
     });
   });
 
@@ -793,7 +793,7 @@ describe('useInvoiceStore', () => {
       ];
 
       // Simulate encryption failure for the second invoice
-      mockCryptoService.encryptInvoiceDetails
+      mockCryptoService.encryptPayload
         .mockResolvedValueOnce(mockEncryptedDetails)
         .mockRejectedValueOnce(new Error('Encryption failed'));
 

@@ -129,7 +129,7 @@ app/
 | `IStorageService` | IndexedDB CRUD for data persistence | Implemented |
 | `IPollingService` | Generic polling service for status tracking | Implemented |
 | `IAleoProtocolService` | Node RPC interaction (broadcast, query Mapping) | Partial |
-| Audit helpers (lib/audit.ts) | Off-chain audit package build/validate, permission filtering | Implemented |
+| AuditService | Off-chain audit package build/validate, permission filtering | Implemented |
 
 ### 2.4 Model Layer
 

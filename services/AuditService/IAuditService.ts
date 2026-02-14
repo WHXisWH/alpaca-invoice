@@ -1,6 +1,38 @@
 import { createServiceError } from '@/lib/service-errors';
-import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
-import { AuditPackage } from '@/lib/audit';
+import type { AleoAddress, AleoField, EncryptedPayload, Invoice } from '@/lib/types';
+
+/**
+ * Audit package schema (versioned for forward compatibility)
+ */
+export interface AuditPackageV1 {
+  version: 1;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  expiresAt: number;
+  issuedAt: number;
+  signerAddress: AleoAddress;
+  cipher: EncryptedPayload;
+  cipherHash: string;
+  signature: string;
+}
+
+export interface AuditPackageV2 {
+  version: 2;
+  programId: string;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  expiresAt: number;
+  issuedAt: number;
+  signerAddress: AleoAddress;
+  cipher: EncryptedPayload;
+  cipherHash: string;
+  signature: string;
+  chainVerifiable: boolean;
+}
+
+export type AuditPackage = AuditPackageV1 | AuditPackageV2;
 
 /**
  * Audit service error codes

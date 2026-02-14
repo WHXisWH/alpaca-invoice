@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AuditService, AuditServiceDependencies } from '../AuditServiceImpl';
 import { AuditServiceError, AuditError } from '../IAuditService';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import type { Invoice, InvoiceDetails, AleoAddress, AleoField, AuditPackage } from '@/lib/types';
+import type { Invoice, InvoiceDetails, AleoAddress, AleoField } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 
@@ -486,6 +486,67 @@ describe('AuditService', () => {
         expect.stringContaining('Derive master key for Aleo address:')
       );
     });
+
+    it('should call buildAuditMessage with canonical format: AUDIT_PACKAGE_V2|programId|invoiceId|invoiceHash|expiresAt|sortedPerms|cipherHash', async () => {
+      const expiresAt = Date.now() + 60_000;
+      const params = {
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt,
+        permissions: ['READ_DETAILS', 'READ_AMOUNT']
+      };
+
+      await service.generate(params);
+
+      const signCalls = (mockDeps.signMessage as ReturnType<typeof vi.fn>).mock.calls;
+      const packageSignCall = signCalls.find((call: string[]) =>
+        call[0]?.startsWith('AUDIT_PACKAGE_V2|')
+      );
+      expect(packageSignCall).toBeDefined();
+
+      const message = packageSignCall[0];
+      const parts = message.split('|');
+      expect(parts[0]).toBe('AUDIT_PACKAGE_V2');
+      expect(parts[1]).toBe(PROGRAM_ID);
+      expect(parts[2]).toBe('50231998723415field');
+      expect(Number(parts[4])).toBe(expiresAt);
+      expect(parts[5]).toBe('READ_AMOUNT,READ_DETAILS');
+      expect(parts[6]).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('should filter by READ_DETAILS: decrypted includes full details with lineItems', async () => {
+      const params = {
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 60_000,
+        permissions: ['READ_DETAILS', 'READ_AMOUNT', 'READ_LINE_ITEMS']
+      };
+
+      const generated = await service.generate(params);
+      const result = await service.validate(generated.pkg, generated.auditKey);
+
+      expect(result.valid).toBe(true);
+      expect(result.decrypted?.details).toBeDefined();
+      expect(result.decrypted.details.invoiceNumber).toBe('INV-2026-001');
+      expect(result.decrypted.details.lineItems).toHaveLength(1);
+      expect(result.decrypted.details.lineItems[0].description).toBe('Advanced Cloud Service');
+      expect(Number(result.decrypted.amount ?? 0)).toBe(1000000);
+    });
+
+    it('should filter by READ_PARTIES + READ_DETAILS: decrypted has seller, buyer and full details', async () => {
+      const params = {
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 60_000,
+        permissions: ['READ_PARTIES', 'READ_DETAILS']
+      };
+
+      const generated = await service.generate(params);
+      const result = await service.validate(generated.pkg, generated.auditKey);
+
+      expect(result.valid).toBe(true);
+      expect(result.decrypted?.seller).toBe('aleo1seller1234567890abcdefghijk');
+      expect(result.decrypted?.buyer).toBe('aleo1buyer1234567890abcdefghijk');
+      expect(result.decrypted?.details?.invoiceNumber).toBe('INV-2026-001');
+      expect(result.decrypted?.details?.lineItems).toHaveLength(1);
+    });
   });
 
   describe('validate', () => {
@@ -580,6 +641,76 @@ describe('AuditService', () => {
       expect(result.valid).toBe(true);
       expect(result.decrypted).toBeDefined();
       expect(result.decrypted.details).toBeDefined();
+    });
+
+    it('should fail when chain hash mismatch', async () => {
+      const generated = await service.generate({
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 60_000,
+        permissions: ['READ_DETAILS']
+      });
+
+      const depsWithHashMismatch: AuditServiceDependencies = {
+        ...mockDeps,
+        protocolService: {
+          verifyInvoiceOnChain: vi.fn().mockResolvedValue({
+            exists: true,
+            hashMatch: false,
+            chainStatus: InvoiceStatus.PENDING
+          })
+        } as any
+      };
+      const serviceWithMismatch = new AuditService(depsWithHashMismatch);
+
+      const result = await serviceWithMismatch.validate(generated.pkg, generated.auditKey);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('HASH_MISMATCH_WITH_CHAIN');
+    });
+
+    it('should pass with chainVerification when chain matches', async () => {
+      mockDeps.protocolService = {
+        verifyInvoiceOnChain: vi.fn().mockResolvedValue({
+          exists: true,
+          hashMatch: true,
+          chainStatus: InvoiceStatus.PAID
+        })
+      } as any;
+      service = new AuditService(mockDeps);
+
+      const generated = await service.generate({
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 60_000,
+        permissions: ['READ_DETAILS']
+      });
+
+      const result = await service.validate(generated.pkg, generated.auditKey);
+
+      expect(result.valid).toBe(true);
+      expect(result.chainVerification?.chainStatus).toBe(InvoiceStatus.PAID);
+    });
+
+    it('should fail with cipher hash mismatch when payload is tampered', async () => {
+      const generated = await service.generate({
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 60_000,
+        permissions: ['READ_DETAILS']
+      });
+
+      const tamperedPkg = {
+        ...generated.pkg,
+        cipher: {
+          ...generated.pkg.cipher,
+          ciphertext: Buffer.from(generated.pkg.cipher.ciphertext, 'base64')
+            .reverse()
+            .toString('base64')
+        }
+      };
+
+      const result = await service.validate(tamperedPkg, generated.auditKey);
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('Cipher hash mismatch (tampered payload)');
     });
   });
 

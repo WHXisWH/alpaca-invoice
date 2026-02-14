@@ -262,7 +262,7 @@ export function useTransactionController(): ITxController {
 
         try {
           // Encrypt invoice details
-          const encryptedPayload = await cryptoService.encryptInvoiceDetails(
+          const encryptedPayload = await cryptoService.encryptPayload(
             params.details,
             currentMasterKey
           );
