@@ -6,6 +6,7 @@ import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoP
 import {
   IAuditService,
   type AuditPackage,
+  type AuditPackageV2_2,
   AuditServiceError,
   AuditError,
   GenerateAuditPackageParams,
@@ -28,6 +29,38 @@ const FIELD_TAGS = {
   memo_hash: 8n,
   order_id: 9n
 } as const;
+
+// Map snake_case (from buildFieldCommitments) to camelCase (for commitments JSON)
+const SNAKE_TO_CAMEL: Record<string, keyof AuditPackageV2_2['commitments']> = {
+  amount: 'amount',
+  tax_amount: 'taxAmount',
+  due_date: 'dueDate',
+  buyer: 'buyer',
+  seller: 'seller',
+  currency: 'currency',
+  items_hash: 'itemsHash',
+  memo_hash: 'memoHash',
+  order_id: 'orderId'
+};
+
+// Permissions -> which commitment fields to include
+function getDisclosedCommitmentKeys(permissions: string[]): (keyof AuditPackageV2_2['commitments'])[] {
+  const keys = new Set<keyof AuditPackageV2_2['commitments']>();
+  if (permissions.includes('READ_AMOUNT')) keys.add('amount');
+  if (permissions.includes('READ_TAX')) keys.add('taxAmount');
+  if (permissions.includes('READ_PARTIES')) {
+    keys.add('buyer');
+    keys.add('seller');
+  }
+  if (permissions.includes('READ_DETAILS')) {
+    keys.add('dueDate');
+    keys.add('currency');
+    keys.add('itemsHash');
+    keys.add('memoHash');
+    keys.add('orderId');
+  }
+  return [...keys];
+}
 
 /**
  * Dependencies for AuditService
@@ -128,17 +161,33 @@ export class AuditService implements IAuditService {
 
   /**
    * Build canonical audit message for signing
+   * V2.2: AUDIT_PACKAGE_V2_2|programId|invoiceId|invoiceHash|nonce|root|expiresAt|sortedPerms|cipherHash
    */
   private buildAuditMessage(input: {
     invoiceId: AleoField;
     invoiceHash: AleoField;
+    nonce?: AleoField;
+    root?: AleoField;
     expiresAt: number;
     permissions: string[];
     cipherHash: string;
     programId?: string;
-    version?: number;
+    version?: number | '2.2';
   }): string {
     const sortedPerms = [...input.permissions].sort().join(',');
+    if (input.version === '2.2' && input.nonce && input.root) {
+      return [
+        'AUDIT_PACKAGE_V2_2',
+        input.programId || PROGRAM_ID,
+        input.invoiceId,
+        input.invoiceHash,
+        input.nonce,
+        input.root,
+        input.expiresAt,
+        sortedPerms,
+        input.cipherHash
+      ].join('|');
+    }
     return [
       input.version === 2 ? 'AUDIT_PACKAGE_V2' : 'AUDIT_PACKAGE_V1',
       input.programId || PROGRAM_ID,
@@ -151,15 +200,15 @@ export class AuditService implements IAuditService {
   }
 
   /**
-   * Create audit package with encrypted invoice data
-   * 
+   * Create audit package with encrypted invoice data (V2.2)
+   *
    * Internal orchestration method that:
    * 1. Filters invoice data by permissions
-   * 2. Encrypts filtered data with audit key
-   * 3. Generates cipher hash
-   * 4. Creates canonical message and signs it
-   * 5. Assembles complete audit package
-   * 
+   * 2. Builds field commitments (nonce + disclosed fields)
+   * 3. Encrypts filtered data with audit key
+   * 4. Generates cipher hash and signs canonical message
+   * 5. Assembles complete audit package with nonce, commitments
+   *
    * @private
    */
   private async createPackage(params: {
@@ -171,6 +220,15 @@ export class AuditService implements IAuditService {
     const { invoice, permissions, expiresAt, auditKey } = params;
 
     try {
+      const nonce = (invoice as Invoice & { nonce?: AleoField }).nonce;
+      if (!nonce) {
+        throw new AuditServiceError(
+          AuditError.INVALID_INPUT,
+          'Invoice nonce is required for audit package (auditor needs it to recompute commitments)',
+          { hint: 'Invoice must have nonce from create_invoice' }
+        );
+      }
+
       // 1. Filter invoice data by permissions
       const filtered = this.filterDetailsByPermissions(invoice, permissions);
       if (!filtered.details && !filtered.amount && !filtered.seller && !filtered.buyer) {
@@ -181,39 +239,65 @@ export class AuditService implements IAuditService {
         );
       }
 
-      // 2. Encrypt filtered data using CryptoService
+      // 2. Build field commitments (root + per-field)
+      const toSeconds = (d: Date) => Math.floor(d.getTime() / 1000);
+      const { root, fields } = await this.buildFieldCommitments({
+        amount: invoice.amount,
+        taxAmount: invoice.taxAmount,
+        dueDate: toSeconds(invoice.dueDate),
+        buyer: invoice.buyer,
+        seller: invoice.seller,
+        currency: invoice.currency ?? ('0field' as AleoField),
+        itemsHash: invoice.itemsHash ?? ('0field' as AleoField),
+        memoHash: invoice.memoHash ?? ('0field' as AleoField),
+        orderId: invoice.orderId ?? ('0field' as AleoField),
+        nonce
+      });
+
+      const disclosedKeys = getDisclosedCommitmentKeys(permissions);
+      const commitments: AuditPackageV2_2['commitments'] = { root };
+      for (const key of disclosedKeys) {
+        if (key === 'root') continue;
+        const snakeKey = Object.entries(SNAKE_TO_CAMEL).find(([, v]) => v === key)?.[0] ?? key;
+        const val = fields[snakeKey as keyof typeof fields];
+        if (val) commitments[key] = val;
+      }
+
+      // 3. Encrypt filtered data using CryptoService
       const keyBytes = this.cryptoService.auditKeyToBytes(auditKey);
       const cipher = await this.cryptoService.encryptWithAuditKey(filtered as any, keyBytes);
-      
-      // 3. Generate cipher hash using CryptoService
+
+      // 4. Generate cipher hash and sign canonical message
       const cipherHash = await this.cryptoService.hashCipher(cipher);
-      
-      // 4. Build and sign canonical message
       const message = this.buildAuditMessage({
         invoiceId: invoice.id,
         invoiceHash: invoice.invoiceHash,
+        nonce,
+        root,
         expiresAt,
         permissions,
         cipherHash,
         programId: PROGRAM_ID,
-        version: 2
+        version: '2.2'
       });
       const signature = await this.deps.signMessage(message);
 
-      // 5. Assemble audit package
+      // 5. Assemble V2.2 audit package
       const issuedAt = Date.now();
-      const pkg: AuditPackage = {
-        version: 2,
+      const pkg: AuditPackageV2_2 = {
+        version: '2.2',
         programId: PROGRAM_ID,
+        owner: this.deps.signerAddress!,
         invoiceId: invoice.id,
         invoiceHash: invoice.invoiceHash,
         permissions,
-        expiresAt,
-        issuedAt,
-        signerAddress: this.deps.signerAddress!,
+        nonce,
         cipher,
+        commitments,
         cipherHash,
         signature,
+        expiresAt,
+        issuedAt,
         chainVerifiable: true
       };
 
@@ -230,12 +314,7 @@ export class AuditService implements IAuditService {
 
       return { pkg, key };
     } catch (error: any) {
-      // Already an AuditServiceError, rethrow directly
-      if (error instanceof AuditServiceError) {
-        throw error;
-      }
-
-      // Wrap other errors
+      if (error instanceof AuditServiceError) throw error;
       throw new AuditServiceError(
         AuditError.GENERATION_FAILED,
         'Failed to create audit package',
@@ -355,7 +434,8 @@ export class AuditService implements IAuditService {
         }
       }
 
-      if (pkg.version === 2 && pkg.chainVerifiable && this.protocolService) {
+      const isChainVerifiable = (pkg.version === 2 || pkg.version === '2.2') && pkg.chainVerifiable && this.protocolService;
+      if (isChainVerifiable) {
         const chain = await this.protocolService.verifyInvoiceOnChain(pkg.invoiceId, pkg.invoiceHash);
         if (!chain.exists) {
           return { valid: false, reason: 'INVOICE_NOT_FOUND_ON_CHAIN', decrypted };

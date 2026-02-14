@@ -32,7 +32,38 @@ export interface AuditPackageV2 {
   chainVerifiable: boolean;
 }
 
-export type AuditPackage = AuditPackageV1 | AuditPackageV2;
+/**
+ * V2.2: nonce + commitments (for auditor to recompute and verify against chain)
+ */
+export interface AuditPackageV2_2 {
+  version: '2.2';
+  programId: string;
+  owner: AleoAddress;
+  invoiceId: AleoField;
+  invoiceHash: AleoField;
+  permissions: string[];
+  nonce: AleoField;
+  cipher: EncryptedPayload;
+  commitments: {
+    root: AleoField;
+    amount?: AleoField;
+    taxAmount?: AleoField;
+    dueDate?: AleoField;
+    buyer?: AleoField;
+    seller?: AleoField;
+    currency?: AleoField;
+    itemsHash?: AleoField;
+    memoHash?: AleoField;
+    orderId?: AleoField;
+  };
+  cipherHash: string;
+  signature: string;
+  expiresAt: number;
+  issuedAt: number;
+  chainVerifiable: boolean;
+}
+
+export type AuditPackage = AuditPackageV1 | AuditPackageV2 | AuditPackageV2_2;
 
 /**
  * Audit service error codes
