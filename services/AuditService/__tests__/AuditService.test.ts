@@ -36,12 +36,13 @@ describe('AuditService', () => {
     const invoiceHash = (await cryptoService.computeInvoiceHash(details)) as AleoField;
 
     // Mock invoice aligned with main.leo InvoiceRecord structure
+    // Use valid Aleo testnet addresses (commitmentUtils uses Address.from_string)
     mockInvoice = {
       // 1. Basic Record fields (strictly corresponding to InvoiceRecord struct in main.leo)
       id: '50231998723415field' as AleoField,
-      owner: 'aleo1seller1234567890abcdefghijk' as AleoAddress,
-      seller: 'aleo1seller1234567890abcdefghijk' as AleoAddress,
-      buyer: 'aleo1buyer1234567890abcdefghijk' as AleoAddress,
+      owner: 'aleo1n0gx6ehedlevfx2xtasc9l22vy4mkfwu0r2he6rdmm9n7hfuq5fq4d8r8u' as AleoAddress,
+      seller: 'aleo1n0gx6ehedlevfx2xtasc9l22vy4mkfwu0r2he6rdmm9n7hfuq5fq4d8r8u' as AleoAddress,
+      buyer: 'aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc' as AleoAddress,
 
       // 2. Financial details (for R1-R5 rule validation)
       amount: 1000000n,
@@ -103,23 +104,28 @@ describe('AuditService', () => {
       expect(result.pkg).toBeDefined();
       expect(result.auditKey).toBeDefined();
 
-      // Verify audit package structure
-      expect(result.pkg.version).toBe(2);
+      // Verify V2.2 audit package structure
+      expect(result.pkg.version).toBe('2.2');
       expect(result.pkg.invoiceId).toBe('50231998723415field');
       expect(result.pkg.permissions).toEqual(['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']);
-      expect(result.pkg.signerAddress).toBe('aleo1signer');
-      
-      // Type guard to check V2 specific fields
-      if (result.pkg.version === 2) {
+      if (result.pkg.version === '2.2') {
+        expect(result.pkg.owner).toBe('aleo1signer');
+        expect(result.pkg.nonce).toBe('123456789field');
+        expect(result.pkg.commitments).toBeDefined();
+        expect(result.pkg.commitments.root).toBeTruthy();
+        expect(result.pkg.commitments.amount).toBeTruthy();
+        expect(result.pkg.commitments.buyer).toBeTruthy();
+        expect(result.pkg.commitments.seller).toBeTruthy();
         expect(result.pkg.chainVerifiable).toBe(true);
         expect(result.pkg.programId).toBeDefined();
         expect(result.pkg.programId).toBe(PROGRAM_ID);
       }
 
-      // Verify cipher
+      // Verify cipher (iv, ciphertext, authTag)
       expect(result.pkg.cipher).toBeDefined();
       expect(result.pkg.cipher.iv).toBeTruthy();
       expect(result.pkg.cipher.ciphertext).toBeTruthy();
+      expect(result.pkg.cipher.authTag).toBeTruthy();
 
       // Verify cipher hash
       expect(result.pkg.cipherHash).toBeDefined();
@@ -265,12 +271,27 @@ describe('AuditService', () => {
       // Act & Assert
       await expect(service.generate(params)).rejects.toThrow('Invoice details are missing');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-      
+
       try {
         await service.generate(params);
       } catch (error: any) {
         expect(error.code).toBe(AuditError.MISSING_DETAILS);
       }
+    });
+
+    it('should throw INVALID_INPUT when invoice has no nonce', async () => {
+      const invoiceWithoutNonce = { ...mockInvoice, nonce: undefined } as Invoice;
+      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([invoiceWithoutNonce]);
+      service = new AuditService(mockDeps);
+
+      const params = {
+        invoiceId: '50231998723415field' as AleoField,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT']
+      };
+
+      await expect(service.generate(params)).rejects.toThrow('Invoice nonce is required');
+      await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
     });
 
     it('should throw INVALID_INPUT error when no permissions result in data', async () => {
@@ -423,9 +444,9 @@ describe('AuditService', () => {
       // Act
       const result = await service.generate(params);
 
-      // Assert (V2 package has programId)
-      expect(result.pkg.version).toBe(2);
-      if (result.pkg.version === 2) {
+      // Assert (V2.2 package has programId)
+      expect(result.pkg.version).toBe('2.2');
+      if (result.pkg.version === '2.2') {
         expect(result.pkg.programId).toBeDefined();
         expect(result.pkg.programId).toBe(PROGRAM_ID);
         expect(result.pkg.programId).toMatch(/\.aleo$/);
@@ -487,7 +508,7 @@ describe('AuditService', () => {
       );
     });
 
-    it('should call buildAuditMessage with canonical format: AUDIT_PACKAGE_V2|programId|invoiceId|invoiceHash|expiresAt|sortedPerms|cipherHash', async () => {
+    it('should call buildAuditMessage with canonical format: AUDIT_PACKAGE_V2_2|programId|invoiceId|invoiceHash|nonce|root|expiresAt|sortedPerms|cipherHash', async () => {
       const expiresAt = Date.now() + 60_000;
       const params = {
         invoiceId: '50231998723415field' as AleoField,
@@ -499,18 +520,20 @@ describe('AuditService', () => {
 
       const signCalls = (mockDeps.signMessage as ReturnType<typeof vi.fn>).mock.calls;
       const packageSignCall = signCalls.find((call: string[]) =>
-        call[0]?.startsWith('AUDIT_PACKAGE_V2|')
+        call[0]?.startsWith('AUDIT_PACKAGE_V2_2|')
       );
       expect(packageSignCall).toBeDefined();
 
-      const message = packageSignCall[0];
+      const message = packageSignCall![0];
       const parts = message.split('|');
-      expect(parts[0]).toBe('AUDIT_PACKAGE_V2');
+      expect(parts[0]).toBe('AUDIT_PACKAGE_V2_2');
       expect(parts[1]).toBe(PROGRAM_ID);
       expect(parts[2]).toBe('50231998723415field');
-      expect(Number(parts[4])).toBe(expiresAt);
-      expect(parts[5]).toBe('READ_AMOUNT,READ_DETAILS');
-      expect(parts[6]).toMatch(/^[0-9a-f]{64}$/);
+      expect(parts[4]).toBe('123456789field'); // nonce
+      expect(parts[5]).toBeTruthy(); // root
+      expect(Number(parts[6])).toBe(expiresAt);
+      expect(parts[7]).toBe('READ_AMOUNT,READ_DETAILS');
+      expect(parts[8]).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('should filter by READ_DETAILS: decrypted includes full details with lineItems', async () => {
@@ -542,8 +565,8 @@ describe('AuditService', () => {
       const result = await service.validate(generated.pkg, generated.auditKey);
 
       expect(result.valid).toBe(true);
-      expect(result.decrypted?.seller).toBe('aleo1seller1234567890abcdefghijk');
-      expect(result.decrypted?.buyer).toBe('aleo1buyer1234567890abcdefghijk');
+      expect(result.decrypted?.seller).toBe('aleo1n0gx6ehedlevfx2xtasc9l22vy4mkfwu0r2he6rdmm9n7hfuq5fq4d8r8u');
+      expect(result.decrypted?.buyer).toBe('aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc');
       expect(result.decrypted?.details?.invoiceNumber).toBe('INV-2026-001');
       expect(result.decrypted?.details?.lineItems).toHaveLength(1);
     });
