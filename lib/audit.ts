@@ -22,7 +22,6 @@ export interface AuditPackageV1 {
   invoiceHash: AleoField;
   permissions: string[];
   expiresAt: number;
-  auditorAddress: AleoAddress;
   issuedAt: number;
   signerAddress: AleoAddress;
   cipher: EncryptedPayload;
@@ -37,7 +36,6 @@ export interface AuditPackageV2 {
   invoiceHash: AleoField;
   permissions: string[];
   expiresAt: number;
-  auditorAddress: AleoAddress;
   issuedAt: number;
   signerAddress: AleoAddress;
   cipher: EncryptedPayload;
@@ -120,7 +118,6 @@ export function filterDetailsByPermissions(
 export function buildAuditMessage(input: {
   invoiceId: AleoField;
   invoiceHash: AleoField;
-  auditorAddress: AleoAddress;
   expiresAt: number;
   permissions: string[];
   cipherHash: string;
@@ -133,7 +130,6 @@ export function buildAuditMessage(input: {
     input.programId || DEFAULT_PROGRAM_ID,
     input.invoiceId,
     input.invoiceHash,
-    input.auditorAddress,
     input.expiresAt,
     sortedPerms,
     input.cipherHash

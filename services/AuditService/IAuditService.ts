@@ -28,7 +28,6 @@ export type AuditServiceError = InstanceType<typeof AuditServiceError>;
  */
 export interface GenerateAuditPackageParams {
   invoiceId: AleoField;
-  auditorAddress: AleoAddress;
   expiresAt: number;
   permissions: string[];
 }
@@ -114,7 +113,7 @@ export interface IAuditService {
    * Generate audit package
    * 
    * Process:
-   * 1. Validates input parameters (invoiceId, auditorAddress)
+   * 1. Validates input parameters (invoiceId)
    * 2. Derives master key from wallet signature (using CryptoService)
    * 3. Retrieves and decrypts invoice from local storage
    * 4. Creates audit package with specified permissions

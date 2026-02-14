@@ -63,7 +63,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
@@ -79,7 +78,6 @@ describe('AuditService', () => {
       // Verify audit package structure
       expect(result.pkg.version).toBe(2);
       expect(result.pkg.invoiceId).toBe('12345field');
-      expect(result.pkg.auditorAddress).toBe('aleo1auditor');
       expect(result.pkg.permissions).toEqual(['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']);
       expect(result.pkg.signerAddress).toBe('aleo1signer');
       
@@ -116,7 +114,6 @@ describe('AuditService', () => {
       // Arrange - pass invoiceHash instead of id; service should find by hash and use actual id in package
       const params = {
         invoiceId: mockInvoice.invoiceHash,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -133,7 +130,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -150,7 +146,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -170,7 +165,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '   ' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -178,26 +172,6 @@ describe('AuditService', () => {
       // Act & Assert
       await expect(service.generate(params)).rejects.toThrow('Invoice ID is required');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-    });
-
-    it('should throw INVALID_INPUT error for empty auditorAddress', async () => {
-      // Arrange
-      const params = {
-        invoiceId: '12345field' as AleoField,
-        auditorAddress: '' as AleoAddress,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: ['READ_AMOUNT']
-      };
-
-      // Act & Assert
-      await expect(service.generate(params)).rejects.toThrow('Auditor address is required');
-      await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-      
-      try {
-        await service.generate(params);
-      } catch (error: any) {
-        expect(error.code).toBe(AuditError.INVALID_INPUT);
-      }
     });
 
     it('should throw NOT_CONNECTED error when wallet is not connected', async () => {
@@ -210,7 +184,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -233,7 +206,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: 'nonexistent-id' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -257,7 +229,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -277,7 +248,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: [] // Empty permissions - no data will be selected
       };
@@ -297,7 +267,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -313,7 +282,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_PARTIES']
       };
@@ -329,7 +297,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -345,7 +312,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS', 'READ_LINE_ITEMS']
       };
@@ -364,7 +330,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -386,7 +351,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -406,7 +370,6 @@ describe('AuditService', () => {
       const beforeTime = Date.now();
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -424,7 +387,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -432,9 +394,12 @@ describe('AuditService', () => {
       // Act
       const result = await service.generate(params);
 
-      // Assert
-      expect(result.pkg.programId).toBeDefined();
-      expect(result.pkg.programId).toMatch(/\.aleo$/);
+      // Assert (V2 package has programId)
+      expect(result.pkg.version).toBe(2);
+      if (result.pkg.version === 2) {
+        expect(result.pkg.programId).toBeDefined();
+        expect(result.pkg.programId).toMatch(/\.aleo$/);
+      }
     });
 
     it('should handle complex invoice with multiple line items', async () => {
@@ -462,7 +427,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -480,7 +444,6 @@ describe('AuditService', () => {
       // Arrange
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -500,7 +463,6 @@ describe('AuditService', () => {
       // Arrange - Generate a real package first
       const generateParams = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
@@ -520,7 +482,6 @@ describe('AuditService', () => {
       // Arrange - Generate a real package
       const generateParams = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -540,7 +501,6 @@ describe('AuditService', () => {
       // Arrange - Generate package that's already expired
       const generateParams = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() - 1000, // Already expired
         permissions: ['READ_AMOUNT']
       };
@@ -576,7 +536,6 @@ describe('AuditService', () => {
       // Arrange
       const generateParams = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -601,16 +560,6 @@ describe('AuditService', () => {
           name: 'empty invoiceId',
           params: {
             invoiceId: '' as AleoField,
-            auditorAddress: 'aleo1auditor' as AleoAddress,
-            expiresAt: Date.now() + 1000,
-            permissions: ['READ_AMOUNT']
-          }
-        },
-        {
-          name: 'empty auditorAddress',
-          params: {
-            invoiceId: '12345field' as AleoField,
-            auditorAddress: '' as AleoAddress,
             expiresAt: Date.now() + 1000,
             permissions: ['READ_AMOUNT']
           }
@@ -620,7 +569,7 @@ describe('AuditService', () => {
       for (const scenario of scenarios) {
         try {
           await service.generate(scenario.params);
-          fail(`Should have thrown for: ${scenario.name}`);
+          expect.fail(`Should have thrown for: ${scenario.name}`);
         } catch (error) {
           expect(error).toBeInstanceOf(AuditServiceError);
         }
@@ -635,7 +584,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -643,7 +591,7 @@ describe('AuditService', () => {
       // Act & Assert
       try {
         await service.generate(params);
-        fail('Should have thrown');
+        expect.fail('Should have thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(AuditServiceError);
         expect(error.details).toBeDefined();
@@ -657,7 +605,6 @@ describe('AuditService', () => {
       // Arrange
       const generateParams = {
         invoiceId: '12345field' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
@@ -690,7 +637,6 @@ describe('AuditService', () => {
 
       const params = {
         invoiceId: 'invoice2' as AleoField,
-        auditorAddress: 'aleo1auditor' as AleoAddress,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
