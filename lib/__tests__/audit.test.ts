@@ -25,15 +25,14 @@ const makePkg = async (overrides: Partial<AuditPackageV2> = {}): Promise<AuditPa
     invoiceId: '123field',
     invoiceHash: '999field',
     permissions: ['READ_AMOUNT'],
-  expiresAt: Date.now() + 60_000,
-  auditorAddress: 'aleo1auditorauditorauditorauditorauditorauditoraud' as any,
-  issuedAt: Date.now(),
-  signerAddress: 'aleo1signersignersignersignersignersignersigner' as any,
+    expiresAt: Date.now() + 60_000,
+    issuedAt: Date.now(),
+    signerAddress: 'aleo1signersignersignersignersignersignersigner' as any,
     cipher,
     cipherHash,
-  signature: 'sig',
-  chainVerifiable: true,
-  ...overrides
+    signature: 'sig',
+    chainVerifiable: true,
+    ...overrides
   };
 };
 

@@ -89,7 +89,6 @@ export interface AuditKeyConfig {
   invoiceIds: AleoField[];
   permissions: string[];
   expiresAt: number;
-  auditorAddress: AleoAddress;
 }
 
 export interface AuditKey {
@@ -105,7 +104,6 @@ export interface AuditPackageV1 {
   invoiceHash: AleoField;
   permissions: string[];
   expiresAt: number;
-  auditorAddress: AleoAddress;
   issuedAt: number;
   signerAddress: AleoAddress;
   cipher: EncryptedPayload;
@@ -120,7 +118,6 @@ export interface AuditPackageV2 {
   invoiceHash: AleoField;
   permissions: string[];
   expiresAt: number;
-  auditorAddress: AleoAddress;
   issuedAt: number;
   signerAddress: AleoAddress;
   cipher: EncryptedPayload;

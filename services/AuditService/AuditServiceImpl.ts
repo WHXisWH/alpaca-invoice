@@ -115,11 +115,10 @@ export class AuditService implements IAuditService {
   private async createPackage(params: {
     invoice: Invoice;
     permissions: string[];
-    auditorAddress: AleoAddress;
     expiresAt: number;
     auditKey: string;
   }): Promise<{ pkg: AuditPackage; key: AuditKey }> {
-    const { invoice, permissions, auditorAddress, expiresAt, auditKey } = params;
+    const { invoice, permissions, expiresAt, auditKey } = params;
 
     try {
       // 1. Filter invoice data by permissions
@@ -143,7 +142,6 @@ export class AuditService implements IAuditService {
       const message = buildAuditMessage({
         invoiceId: invoice.id,
         invoiceHash: invoice.invoiceHash,
-        auditorAddress,
         expiresAt,
         permissions,
         cipherHash,
@@ -161,7 +159,6 @@ export class AuditService implements IAuditService {
         invoiceHash: invoice.invoiceHash,
         permissions,
         expiresAt,
-        auditorAddress,
         issuedAt,
         signerAddress: this.deps.signerAddress!,
         cipher,
@@ -175,8 +172,7 @@ export class AuditService implements IAuditService {
         config: {
           invoiceIds: [invoice.id],
           permissions,
-          expiresAt,
-          auditorAddress
+          expiresAt
         },
         signature,
         issuedAt
@@ -202,7 +198,7 @@ export class AuditService implements IAuditService {
    * Generate audit package
    */
   async generate(params: GenerateAuditPackageParams): Promise<GenerateAuditPackageResult> {
-    const { invoiceId, auditorAddress, expiresAt, permissions } = params;
+    const { invoiceId, expiresAt, permissions } = params;
 
     // Validate input parameters
     if (!invoiceId || !invoiceId.trim()) {
@@ -210,14 +206,6 @@ export class AuditService implements IAuditService {
         AuditError.INVALID_INPUT,
         'Invoice ID is required',
         { hint: 'Please enter a valid invoice ID' }
-      );
-    }
-
-    if (!auditorAddress || !auditorAddress.trim()) {
-      throw new AuditServiceError(
-        AuditError.INVALID_INPUT,
-        'Auditor address is required',
-        { hint: 'Please enter a valid Aleo address' }
       );
     }
 
@@ -266,7 +254,6 @@ export class AuditService implements IAuditService {
       const { pkg } = await this.createPackage({
         invoice,
         permissions,
-        auditorAddress,
         expiresAt,
         auditKey
       });
