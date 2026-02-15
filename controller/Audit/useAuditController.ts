@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
@@ -44,6 +45,7 @@ export function useAuditController() {
 
   const cryptoService = useMemo(() => new CryptoService(), []);
   const protocolService = useMemo(() => new AleoProtocolService(), []);
+  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
 
   const signMessage = useCallback(
     async (message: string): Promise<string> => {
@@ -157,10 +159,10 @@ export function useAuditController() {
 
       // Fetch on-chain anchors
       const [commitmentRoot, fieldCommitments, rulesResult, auth] = await Promise.all([
-        protocolService.getInvoiceCommitment(invoice.id),
-        protocolService.getInvoiceFieldCommitments(invoice.id),
-        protocolService.getRulesResult(invoice.id),
-        protocolService.getAuditAuthorization(invoice.id)
+        registry.getCommitmentRoot(invoice.id),
+        registry.getFieldCommitments(invoice.id),
+        registry.getRulesResult(invoice.id),
+        registry.getAuditAuthorization(invoice.id)
       ]);
 
       if (!commitmentRoot || !fieldCommitments) {
@@ -295,10 +297,10 @@ export function useAuditController() {
 
       // Fetch anchors for display (best-effort)
       try {
-        anchors.commitment = await protocolService.getInvoiceCommitment(pkg.invoice_id);
-        anchors.fieldCommitments = await protocolService.getInvoiceFieldCommitments(pkg.invoice_id);
-        anchors.rulesResult = await protocolService.getRulesResult(pkg.invoice_id);
-        anchors.auditAuthorization = await protocolService.getAuditAuthorization(pkg.invoice_id);
+        anchors.commitment = await registry.getCommitmentRoot(pkg.invoice_id);
+        anchors.fieldCommitments = await registry.getFieldCommitments(pkg.invoice_id);
+        anchors.rulesResult = await registry.getRulesResult(pkg.invoice_id);
+        anchors.auditAuthorization = await registry.getAuditAuthorization(pkg.invoice_id);
       } catch (e) {
         // display only
       }

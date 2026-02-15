@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoField } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
@@ -23,6 +24,7 @@ export default function SettingsPage() {
   const { executeSetAuditAuthorization, isProcessing, currentProgress, currentLog } =
     useTransactionController();
   const protocolService = useMemo(() => new AleoProtocolService(), []);
+  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
   const cryptoService = useMemo(() => new CryptoService(), []);
   const { handleError } = useErrorHandler();
 
@@ -43,7 +45,7 @@ export default function SettingsPage() {
     setLoadingAuth(true);
     setMessage('');
     try {
-      const auth = await protocolService.getAuditAuthorization(invoiceId as AleoField);
+      const auth = await registry.getAuditAuthorization(invoiceId as AleoField);
       setCurrentAuth(auth);
       if (!auth) setMessage('No authorization found for this invoice.');
     } catch (e: any) {

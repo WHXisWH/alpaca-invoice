@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import { InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 
@@ -41,8 +42,9 @@ export default function VerifyPage() {
       if (!normalized.endsWith('field')) {
         throw new Error('Invoice ID must be a field (suffix "field").');
       }
-      const hash = await protocolService.getInvoiceHash(normalized as any);
-      const status = await protocolService.getInvoiceStatus(normalized as any);
+      const registry = createInvoiceRegistryService(protocolService);
+      const hash = await registry.getInvoiceHash(normalized as any);
+      const status = await registry.getInvoiceStatus(normalized as any);
       setResult({
         exists: hash !== null,
         hash,
