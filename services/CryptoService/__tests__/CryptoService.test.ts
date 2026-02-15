@@ -1,14 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CryptoService, CryptoServiceError } from '../CryptoServiceImpl';
 import { CryptoError, AleoInvoiceRecord } from '../ICryptoService';
-import type { InvoiceDetails, EncryptedPayload, AleoField, AleoAddress, InvoiceHashContext } from '@/lib/types';
+import type {
+  InvoiceDetails,
+  EncryptedPayload,
+  AleoField,
+  AleoAddress,
+  InvoiceChainComputed
+} from '@/lib/types';
 
 describe('CryptoService', () => {
   let service: CryptoService;
 
-  // Wave 2 mock fixtures matching contract InvoiceHashInput
+  // ========== Form inputs (native UI/System values for create_invoice) ==========
   const mockDetails: InvoiceDetails = {
     invoiceNumber: 'INV-2026-001',
+    orderId: 'ORD-2026-001',
     lineItems: [{ description: 'Item 1', quantity: 1, unitPrice: 1000, amount: 1000 }],
     subtotal: 1000,
     taxRate: 0.13,
@@ -18,19 +25,47 @@ describe('CryptoService', () => {
     notes: 'Wave 2 Test'
   };
 
-  const mockContext: InvoiceHashContext = {
-    seller: 'aleo1sellerseller1234567890abcdefghijk' as AleoAddress,
-    buyer: 'aleo1buyerbuyer1234567890abcdefghijk' as AleoAddress,
-    orderId: '888888field' as AleoField,
-    nonce: '123456789field' as AleoField,
-    itemsHash: '111222333field' as AleoField,
-    memoHash: '444555666field' as AleoField,
-    currency: '999999field' as AleoField,
-    dueDate: Math.floor(Date.now() / 1000) + 86400
-  };
+  const mockSeller = 'aleo1sellerseller1234567890abcdefghijk' as AleoAddress;
+  const mockBuyer = 'aleo1buyerbuyer1234567890abcdefghijk' as AleoAddress;
+  const mockDueDate = Math.floor(Date.now() / 1000) + 86400;
 
-  beforeEach(() => {
+  // ========== Computed values for chain (InvoiceChainComputed) ==========
+  // hashObjectToField usage for create_invoice:
+  //   order_id   <- hashObjectToField(details.orderId ?? details.invoiceNumber)
+  //   currency   <- hashObjectToField(details.currency)
+  //   items_hash <- hashObjectToField(details.lineItems)
+  //   memo_hash  <- hashObjectToField(details.notes ?? '')
+  //   nonce      <- hashObjectToField(`NONCE-${Date.now()}-${randomBytes}`)
+  let mockChainComputed: InvoiceChainComputed;
+
+  beforeEach(async () => {
     service = new CryptoService();
+    const nonce = await service.hashObjectToField('TEST-NONCE-FIXED');
+    const itemsHash = await service.hashObjectToField(mockDetails.lineItems);
+    const memoHash = await service.hashObjectToField(mockDetails.notes ?? '');
+    const orderIdField = await service.hashObjectToField(mockDetails.orderId ?? mockDetails.invoiceNumber);
+    const currencyField = await service.hashObjectToField(mockDetails.currency);
+    const hashInput = {
+      seller: mockSeller,
+      buyer: mockBuyer,
+      dueDate: mockDueDate,
+      nonce,
+      orderIdField,
+      currencyField,
+      itemsHash,
+      memoHash
+    };
+    const invoiceHash = await service.computeInvoiceHash(mockDetails, hashInput);
+    mockChainComputed = {
+      ...hashInput,
+      invoiceHash,
+      lineItemsSum: service.sumLineItems(mockDetails.lineItems),
+      expectedTotal: service.calculateTotal(
+        BigInt(mockDetails.subtotal),
+        BigInt(mockDetails.taxAmount)
+      ),
+      taxRateBps: service.calculateTaxBps(mockDetails.taxRate)
+    };
   });
 
   describe('computeInvoiceHash', () => {
@@ -239,24 +274,24 @@ describe('CryptoService', () => {
 
   describe('computeInvoiceHash (Wave 2 Protocol)', () => {
     it('should generate hash based on specific fields matching Leo struct', async () => {
-      const hash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const hash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       expect(hash).toMatch(/^\d+field$/);
-      const hash2 = await service.computeInvoiceHash(mockDetails, mockContext);
+      const hash2 = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       expect(hash).toBe(hash2);
     });
 
     it('should detect changes in critical financial fields', async () => {
-      const hashOriginal = await service.computeInvoiceHash(mockDetails, mockContext);
+      const hashOriginal = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       const tamperedDetails = { ...mockDetails, taxAmount: 131 };
-      const hashTampered = await service.computeInvoiceHash(tamperedDetails, mockContext);
+      const hashTampered = await service.computeInvoiceHash(tamperedDetails, mockChainComputed);
       expect(hashOriginal).not.toBe(hashTampered);
     });
 
     it('should include orderId and currency in hash computation', async () => {
-      const hash1 = await service.computeInvoiceHash(mockDetails, mockContext);
+      const hash1 = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       const hash2 = await service.computeInvoiceHash(mockDetails, {
-        ...mockContext,
-        orderId: '999999field' as AleoField
+        ...mockChainComputed,
+        orderIdField: '999999field' as AleoField
       });
       expect(hash1).not.toBe(hash2);
     });
@@ -310,10 +345,12 @@ describe('CryptoService', () => {
       expect(service.validateFieldValue(memoHash)).toBe(true);
     });
 
-    it('should compute orderId from invoiceNumber (as in create_invoice flow)', async () => {
-      const orderId = await service.hashObjectToField(mockDetails.invoiceNumber);
-      expect(orderId).toMatch(/^\d+field$/);
-      expect(service.validateFieldValue(orderId)).toBe(true);
+    it('should compute orderId from orderId/invoiceNumber (as in create_invoice flow)', async () => {
+      const orderIdField = await service.hashObjectToField(
+        mockDetails.orderId ?? mockDetails.invoiceNumber
+      );
+      expect(orderIdField).toMatch(/^\d+field$/);
+      expect(service.validateFieldValue(orderIdField)).toBe(true);
     });
 
     it('should handle empty string input', async () => {
@@ -334,6 +371,55 @@ describe('CryptoService', () => {
       const h1 = await service.hashObjectToField(items1);
       const h2 = await service.hashObjectToField(items2);
       expect(h1).not.toBe(h2);
+    });
+  });
+
+  describe('sumLineItems', () => {
+    it('should sum line item amounts', () => {
+      const items = [
+        { description: 'A', quantity: 1, unitPrice: 100, amount: 100 },
+        { description: 'B', quantity: 2, unitPrice: 50, amount: 100 }
+      ];
+      expect(service.sumLineItems(items)).toBe(200n);
+    });
+    it('should use amount when present', () => {
+      const items = [
+        { description: 'A', quantity: 1, unitPrice: 99, amount: 100 }
+      ];
+      expect(service.sumLineItems(items)).toBe(100n);
+    });
+    it('should fall back to quantity * unitPrice when amount missing', () => {
+      const items = [
+        { description: 'A', quantity: 3, unitPrice: 33, amount: undefined as any }
+      ];
+      expect(service.sumLineItems(items)).toBe(99n);
+    });
+  });
+
+  describe('calculateTotal', () => {
+    it('should return amount + taxAmount', () => {
+      expect(service.calculateTotal(1000n, 130n)).toBe(1130n);
+    });
+  });
+
+  describe('calculateTaxBps', () => {
+    it('should convert 13% to 1300', () => {
+      expect(service.calculateTaxBps(0.13)).toBe(1300n);
+    });
+    it('should convert 0% to 0', () => {
+      expect(service.calculateTaxBps(0)).toBe(0n);
+    });
+  });
+
+  describe('dateToU32 and nowToU32', () => {
+    it('should convert Date to Unix seconds', () => {
+      const d = new Date('2000-01-01T00:00:00Z');
+      expect(service.dateToU32(d)).toBe(946684800);
+    });
+    it('should return current time as integer seconds', () => {
+      const t = service.nowToU32();
+      expect(Number.isInteger(t)).toBe(true);
+      expect(t).toBeGreaterThan(1700000000);
     });
   });
 
@@ -820,8 +906,8 @@ describe('CryptoService', () => {
     });
 
     it('should verify untampered invoice data as valid (Wave 2 with context)', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
-      const isValid = await service.verifyInvoiceIntegrity(mockDetails, chainHash, mockContext);
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const isValid = await service.verifyInvoiceIntegrity(mockDetails, chainHash, mockChainComputed);
       expect(isValid).toBe(true);
     });
 
@@ -847,9 +933,13 @@ describe('CryptoService', () => {
     });
 
     it('should detect tampered invoice data (Wave 2 with context)', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       const tamperedDetails = { ...mockDetails, taxAmount: 131 };
-      const isValid = await service.verifyInvoiceIntegrity(tamperedDetails, chainHash, mockContext);
+      const isValid = await service.verifyInvoiceIntegrity(
+        tamperedDetails,
+        chainHash,
+        mockChainComputed
+      );
       expect(isValid).toBe(false);
     });
 
@@ -942,11 +1032,23 @@ describe('CryptoService', () => {
         currency: 'CAD',
         notes: 'Complete flow test'
       };
-      const flowContext: InvoiceHashContext = {
-        ...mockContext,
-        dueDate: Math.floor(Date.now() / 1000) + 86400
+      const flowDueDate = Math.floor(Date.now() / 1000) + 86400;
+      const flowNonce = await service.hashObjectToField('FLOW-NONCE');
+      const flowItemsHash = await service.hashObjectToField(invoiceDetails.lineItems);
+      const flowMemoHash = await service.hashObjectToField(invoiceDetails.notes ?? '');
+      const flowOrderIdField = await service.hashObjectToField(invoiceDetails.invoiceNumber);
+      const flowCurrencyField = await service.hashObjectToField(invoiceDetails.currency);
+      const flowHashInput = {
+        seller: mockSeller,
+        buyer: mockBuyer,
+        dueDate: flowDueDate,
+        nonce: flowNonce,
+        orderIdField: flowOrderIdField,
+        currencyField: flowCurrencyField,
+        itemsHash: flowItemsHash,
+        memoHash: flowMemoHash
       };
-      const invoiceHash = await service.computeInvoiceHash(invoiceDetails, flowContext);
+      const invoiceHash = await service.computeInvoiceHash(invoiceDetails, flowHashInput);
       expect(invoiceHash).toMatch(/^\d+field$/);
 
       // ===== Phase 2: Local Encrypted Storage =====
@@ -962,15 +1064,15 @@ describe('CryptoService', () => {
         invoice_hash: invoiceHash,
         amount: '1469000000',
         tax_amount: '169000000',
-        seller: flowContext.seller,
-        buyer: flowContext.buyer,
-        due_date: flowContext.dueDate,
+        seller: flowHashInput.seller,
+        buyer: flowHashInput.buyer,
+        due_date: flowHashInput.dueDate,
         status: 0,
         created_at: Math.floor(Date.now() / 1000),
-        order_id: flowContext.orderId,
-        currency: flowContext.currency,
-        items_hash: flowContext.itemsHash,
-        memo_hash: flowContext.memoHash
+        order_id: flowHashInput.orderIdField,
+        currency: flowHashInput.currencyField,
+        items_hash: flowHashInput.itemsHash,
+        memo_hash: flowHashInput.memoHash
       };
       const parsedRecord = await service.parseAleoRecord<AleoInvoiceRecord>(
         JSON.stringify(mockChainRecord)
@@ -982,7 +1084,7 @@ describe('CryptoService', () => {
       const isValid = await service.verifyInvoiceIntegrity(
         decryptedDetails,
         parsedRecord.invoice_hash as AleoField,
-        flowContext
+        flowHashInput
       );
       expect(isValid).toBe(true);
       expect(decryptedDetails).toEqual(invoiceDetails);
@@ -1013,7 +1115,7 @@ describe('CryptoService', () => {
     });
 
     it('should detect tampering with Wave 2 context', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockContext);
+      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
       const masterKey = 'test-master-key';
       const encryptedPayload = await service.encryptPayload(mockDetails, masterKey);
       const decryptedDetails = await service.decryptPayload(encryptedPayload, masterKey);
@@ -1021,7 +1123,7 @@ describe('CryptoService', () => {
       const isValid = await service.verifyInvoiceIntegrity(
         tamperedDetails,
         chainHash,
-        mockContext
+        mockChainComputed
       );
       expect(isValid).toBe(false);
     });

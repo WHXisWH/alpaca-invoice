@@ -11,7 +11,7 @@ import type { AleoAddress, AleoField } from '@/lib/types';
 import type { AuditPackage } from '@/types/audit-package';
 import { AuditService } from '@/services/AuditService/AuditServiceImpl';
 import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
-import { toSeconds, sumLineItems, buildScopesBitmask } from './auditHelpers';
+import { toSeconds, buildScopesBitmask } from './auditHelpers';
 
 /**
  * Audit Controller Hook
@@ -176,10 +176,10 @@ export function useAuditController() {
           amount: invoice.amount,
           taxAmount: BigInt(Math.round(details.taxAmount)),
           dueDate: toSeconds(invoice.dueDate),
-          currentTime: Math.floor(Date.now() / 1000),
-          lineItemsSum: BigInt(Math.round(sumLineItems(details.lineItems))),
+          currentTime: cryptoService.nowToU32(),
+          lineItemsSum: cryptoService.sumLineItems(details.lineItems),
           expectedTotal: BigInt(Math.round(details.total)),
-          taxRateBps: BigInt(Math.round(details.taxRate * 10000)),
+          taxRateBps: cryptoService.calculateTaxBps(details.taxRate ?? 0),
           invoiceHash: invoice.invoiceHash
         });
         rulesHash = rules.rulesHash;
@@ -189,7 +189,7 @@ export function useAuditController() {
       const payload: Record<string, unknown> = {};
       const itemsHash =
         fields.includes('items_hash') && details.lineItems
-          ? await cryptoService.computeInvoiceHash({ ...details, notes: undefined })
+          ? await cryptoService.hashObjectToField(details.lineItems)
           : undefined;
       const setIfSelected = (key: string, value: unknown) => {
         if (fields.includes(key) && value !== undefined) {

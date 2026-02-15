@@ -1,4 +1,4 @@
-import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashContext } from '@/lib/types';
+import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashInput, LineItem } from '@/lib/types';
 import { ICryptoService, CryptoError, AleoInvoiceRecord } from './ICryptoService';
 import { createServiceError } from '@/lib/service-errors';
 import { Buffer } from 'buffer';
@@ -75,6 +75,30 @@ export class CryptoService implements ICryptoService {
     return { rulesHash, r1, r2, r3, r4, r5 };
   }
 
+  sumLineItems(lineItems: LineItem[]): bigint {
+    return lineItems.reduce(
+      (acc, i) =>
+        acc + BigInt(i.amount ?? Math.round(i.quantity * i.unitPrice)),
+      0n
+    );
+  }
+
+  calculateTotal(amount: bigint, taxAmount: bigint): bigint {
+    return amount + taxAmount;
+  }
+
+  calculateTaxBps(taxRate: number): bigint {
+    return BigInt(Math.round(taxRate * 10000));
+  }
+
+  dateToU32(date: Date): number {
+    return Math.floor(date.getTime() / 1000);
+  }
+
+  nowToU32(): number {
+    return Math.floor(Date.now() / 1000);
+  }
+
   /**
    * Hash arbitrary input (string, object, or array) to AleoField.
    * SHA-256 of the serialized input, then mod ALEO_FIELD_MODULUS.
@@ -101,29 +125,29 @@ export class CryptoService implements ICryptoService {
    * @param context Optional Wave 2 context
    * @returns AleoField corresponding to the contract field
    */
-  async computeInvoiceHash(details: InvoiceDetails, context?: InvoiceHashContext): Promise<AleoField> {
+  async computeInvoiceHash(details: InvoiceDetails, hashInput?: InvoiceHashInput): Promise<AleoField> {
     try {
       const crypto = this.getWebCrypto();
       const encoder = new TextEncoder();
 
-      if (context) {
+      if (hashInput) {
         // Wave 2: fixed field order matching InvoiceHashInput in main.leo
         const amount = BigInt(Math.round(details.subtotal));
         const taxAmount = BigInt(Math.round(details.taxAmount));
-        const hashInput = {
-          seller: context.seller,
-          buyer: context.buyer,
+        const canonical = {
+          seller: hashInput.seller,
+          buyer: hashInput.buyer,
           amount: amount.toString(),
           tax_amount: taxAmount.toString(),
-          due_date: context.dueDate.toString(),
-          nonce: context.nonce,
-          order_id: context.orderId,
-          currency: context.currency,
-          items_hash: context.itemsHash,
-          memo_hash: context.memoHash
+          due_date: hashInput.dueDate.toString(),
+          nonce: hashInput.nonce,
+          order_id: hashInput.orderIdField,
+          currency: hashInput.currencyField,
+          items_hash: hashInput.itemsHash,
+          memo_hash: hashInput.memoHash
         };
-        const canonical = JSON.stringify(hashInput);
-        const data = encoder.encode(canonical);
+        const str = JSON.stringify(canonical);
+        const data = encoder.encode(str);
         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -373,7 +397,7 @@ export class CryptoService implements ICryptoService {
   async verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    context?: InvoiceHashContext
+    hashInput?: InvoiceHashInput
   ): Promise<boolean> {
     if (!localDetails || typeof localDetails !== 'object') {
       throw new CryptoServiceError(
@@ -384,7 +408,7 @@ export class CryptoService implements ICryptoService {
     }
 
     try {
-      const computedHash = await this.computeInvoiceHash(localDetails, context);
+      const computedHash = await this.computeInvoiceHash(localDetails, hashInput);
       const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
       return computedHash === cleanChainHash;
     } catch (error: any) {
