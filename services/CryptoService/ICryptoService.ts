@@ -1,5 +1,5 @@
 // services/CryptoService.ts
-import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashContext } from '@/lib/types';
+import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashInput, LineItem } from '@/lib/types';
 
 /** * Crypto error enum */
 export enum CryptoError {
@@ -52,8 +52,14 @@ export type AleoRecord = AleoInvoiceRecord | AleoPaymentRecord;
 export interface ICryptoService {
   /**
    * Hash arbitrary input (string, object, or array) to AleoField.
-   * Used for nonce, itemsHash, memoHash, orderId in Wave 2 create_invoice flow.
    * Uses SHA-256 then mod ALEO_FIELD_MODULUS.
+   *
+   * create_invoice usage (see CryptoService.test.ts for examples):
+   *   order_id   <- hashObjectToField(details.orderId ?? details.invoiceNumber)
+   *   currency   <- hashObjectToField(details.currency)
+   *   items_hash <- hashObjectToField(details.lineItems)
+   *   memo_hash  <- hashObjectToField(details.notes ?? '')
+   *   nonce      <- hashObjectToField(`NONCE-${Date.now()}-${randomBytes}`)
    *
    * @param input String, object, or array to hash
    * @returns AleoField (format: "123...field")
@@ -61,17 +67,42 @@ export interface ICryptoService {
   hashObjectToField(input: string | object): Promise<AleoField>;
 
   /**
+   * Sum of line item amounts. Must equal amount for contract R4.
+   */
+  sumLineItems(lineItems: LineItem[]): bigint;
+
+  /**
+   * amount + taxAmount. Must match for contract R3.
+   */
+  calculateTotal(amount: bigint, taxAmount: bigint): bigint;
+
+  /**
+   * Tax rate in basis points (e.g. 13% -> 1300).
+   */
+  calculateTaxBps(taxRate: number): bigint;
+
+  /**
+   * Date to Unix timestamp (u32).
+   */
+  dateToU32(date: Date): number;
+
+  /**
+   * Current time as Unix timestamp (u32).
+   */
+  nowToU32(): number;
+
+  /**
    * Core business hash: compute a unique hash from InvoiceDetails following the contract logic
    *
-   * Wave 2: When context is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
+   * Wave 2: When hashInput is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
    * order_id, currency, items_hash, memo_hash] to match InvoiceHashInput in main.leo.
-   * Fallback: When context is omitted, uses sorted JSON (legacy).
+   * Fallback: When hashInput is omitted, uses sorted JSON (legacy).
    *
    * @param details Invoice details object
-   * @param context Optional Wave 2 context (seller, buyer, orderId, nonce, itemsHash, memoHash, dueDate)
+   * @param hashInput Optional hash context (must match creation context for verification)
    * @returns AleoField corresponding to the contract field (format: "123...field")
    */
-  computeInvoiceHash(details: InvoiceDetails, context?: InvoiceHashContext): Promise<AleoField>;
+  computeInvoiceHash(details: InvoiceDetails, hashInput?: InvoiceHashInput): Promise<AleoField>;
 
   /**
    * Parse a decrypted InvoiceRecord from wallet.requestRecords()
@@ -111,7 +142,7 @@ export interface ICryptoService {
   verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    context?: InvoiceHashContext
+    hashInput?: InvoiceHashInput
   ): Promise<boolean>;
 
   /**

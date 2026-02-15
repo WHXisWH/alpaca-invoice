@@ -19,6 +19,7 @@ export interface LineItem {
 
 export interface InvoiceDetails {
   invoiceNumber: string;
+  orderId?: string;           // Optional; when omitted, use invoiceNumber for order_id derivation
   lineItems: LineItem[];
   subtotal: number;
   taxRate: number;
@@ -53,20 +54,29 @@ export interface EncryptedPayload {
 }
 
 /**
- * Wave 2 contract context for invoice hash computation.
- * Matches InvoiceHashInput in main.leo: seller, buyer, amount, tax_amount, due_date,
- * nonce, order_id, currency, items_hash, memo_hash
+ * All computed values for create_invoice, including hash inputs and validation guards.
+ * Replaces InvoiceHashContext. Use for both computeInvoiceHash context and chain submission.
  */
-export interface InvoiceHashContext {
+export interface InvoiceChainComputed {
   seller: AleoAddress;
   buyer: AleoAddress;
-  orderId: AleoField;
+  dueDate: number;
   nonce: AleoField;
+  orderIdField: AleoField;
+  currencyField: AleoField;
   itemsHash: AleoField;
   memoHash: AleoField;
-  currency: AleoField;
-  dueDate: number;
+  invoiceHash: AleoField;
+  lineItemsSum: bigint;
+  expectedTotal: bigint;
+  taxRateBps: bigint;
 }
+
+/** Hash input subset for computeInvoiceHash / verifyInvoiceIntegrity */
+export type InvoiceHashInput = Omit<
+  InvoiceChainComputed,
+  'invoiceHash' | 'lineItemsSum' | 'expectedTotal' | 'taxRateBps'
+>;
 
 export interface CreateInvoiceParams {
   buyer: AleoAddress;

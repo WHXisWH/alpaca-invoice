@@ -124,24 +124,22 @@ export function useTransactionController(): ITxController {
         updateProgress(20, 'PREPARING - Preparing transaction parameters...');
         const dueTimestamp = Math.floor(params.dueDate.getTime() / 1000);
 
-        // Generate random nonce
+        // Generate random nonce (hashObjectToField usage for create_invoice)
         const nonceField = await cryptoService.hashObjectToField(
-          `NONCE-${Date.now()}-${Math.random()}`
+          `NONCE-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(16))).join('')}`
         );
 
         // Derive supporting fields from details
-        const lineItemsSum = params.details.lineItems.reduce(
-          (acc, item) => acc + BigInt(item.amount ?? Math.round(item.quantity * item.unitPrice)),
-          0n
+        const lineItemsSum = cryptoService.sumLineItems(params.details.lineItems);
+        const expectedTotal = cryptoService.calculateTotal(
+          params.amount,
+          BigInt(Math.round(params.details.taxAmount ?? 0))
         );
-        const expectedTotal = BigInt(Math.round(params.details.total));
-        const taxRateBps = BigInt(Math.round((params.details.taxRate ?? 0) * 10000));
-        const orderIdField = await cryptoService.hashObjectToField(params.details.invoiceNumber);
-        const currencyField = (() => {
-          const n = Number(params.details.currency);
-          if (!Number.isNaN(n) && n > 0) return `${BigInt(n)}field` as AleoField;
-          return `0field` as AleoField;
-        })();
+        const taxRateBps = cryptoService.calculateTaxBps(params.details.taxRate ?? 0);
+        const orderIdField = await cryptoService.hashObjectToField(
+          params.details.orderId ?? params.details.invoiceNumber
+        );
+        const currencyField = await cryptoService.hashObjectToField(params.details.currency);
         const itemsHashField = await cryptoService.hashObjectToField(params.details.lineItems);
         const memoHashField = await cryptoService.hashObjectToField(params.details.notes ?? '');
 
@@ -168,7 +166,7 @@ export function useTransactionController(): ITxController {
         const amountStr = `${params.amount.toString()}u64`;
         const orderId = orderIdField;
         const taxAmount = `${BigInt(Math.max(0, Math.floor(params.details.taxAmount || 0)))}u64`;
-        const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
+        const currentTime = `${cryptoService.nowToU32()}u32`;
 
         updateProgress(25, '✓ Transaction parameters prepared');
 
