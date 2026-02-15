@@ -36,39 +36,17 @@ describe('AleoProtocolService', () => {
     expect(res).toBe('999field');
   });
 
-  test('getInvoiceStatus parses u8 and caches', async () => {
-    const first = await svc.getInvoiceStatus('abcfield');
-    expect(first).toBe(0);
-    const second = await svc.getInvoiceStatus('abcfield');
-    expect(second).toBe(first);
-  });
-
-  test('getInvoiceHash null when missing', async () => {
-    // Override mock to return null
-    const sdk = await import('@provablehq/sdk');
-    (sdk.AleoNetworkClient as any).mock.results[0].value.getProgramMappingValue.mockResolvedValueOnce(null);
-    const res = await svc.getInvoiceHash('missing');
-    expect(res).toBeNull();
-  });
-
   test('verifyInvoiceOnChain returns exists/hashMatch/status', async () => {
     const res = await svc.verifyInvoiceOnChain('abcfield', '123u8field' as any);
     expect(res.exists).toBe(true);
     expect(res.chainStatus).toBe(0);
   });
 
-  test('getAuditCounter parses u64', async () => {
-    const sdk = await import('@provablehq/sdk');
-    (sdk.AleoNetworkClient as any).mock.results[0].value.getProgramMappingValue.mockResolvedValueOnce('5u64');
-    const res = await svc.getAuditCounter('aleo1seller');
-    expect(res).toBe(5);
-  });
-
   test('assertRules calls run', async () => {
     const sdk = await import('@provablehq/sdk');
     const pm = (sdk.ProgramManager as any).mock.results[0].value;
-    await svc.assertRules('inv', 'hash');
-    expect(pm.run).toHaveBeenCalledWith(expect.any(String), 'assert_rules_anchor', ['inv', 'hash'], false);
+    await svc.assertRules('invfield', 'hashfield');
+    expect(pm.run).toHaveBeenCalledWith(expect.any(String), 'assert_rules_anchor', ['invfield', 'hashfield'], false);
   });
 
   test('getLatestBlockHeight throws on invalid', async () => {

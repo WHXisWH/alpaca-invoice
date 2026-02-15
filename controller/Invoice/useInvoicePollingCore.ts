@@ -8,6 +8,7 @@ import { PollingService } from '@/services/PollingService/PollingServiceImpl';
 import { createInvoiceValidationAdapter, InvoiceScanResult } from '@/services/PollingService/adapters/InvoiceStatusValidatorAdapter';
 import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import { PROGRAM_ID } from '@/lib/contract';
 
 const POLL_INTERVAL = 15000; // 15 seconds
@@ -183,18 +184,19 @@ export function useInvoicePollingCore() {
   /**
    * Mapping-first quick probe: returns on-chain status/hash, avoiding decrypt when possible
    */
+  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
   const fetchChainAnchors = useCallback(async (invoiceId: AleoField) => {
     try {
       const [hash, status] = await Promise.all([
-        protocolService.getInvoiceHash(invoiceId),
-        protocolService.getInvoiceStatus(invoiceId)
+        registry.getInvoiceHash(invoiceId),
+        registry.getInvoiceStatus(invoiceId)
       ]);
       return { hash, status };
     } catch (e) {
       console.warn('Mapping fetch failed', e);
       return { hash: null, status: null };
     }
-  }, [protocolService]);
+  }, [registry]);
 
   return {
     createPollingService,

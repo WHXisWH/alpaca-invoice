@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useAuditController } from '@/controller/Audit/useAuditController';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -48,17 +49,19 @@ export default function InvoiceDetailPage() {
   const [isFetchingAnchors, setIsFetchingAnchors] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState('');
 
+  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
+
   useEffect(() => {
     const fetchAnchors = async () => {
       if (!invoice) return;
       setIsFetchingAnchors(true);
       try {
         const [commitment, fieldCommitments, rules, auth, counter] = await Promise.all([
-          protocolService.getInvoiceCommitment(invoice.id),
-          protocolService.getInvoiceFieldCommitments(invoice.id),
-          protocolService.getRulesResult(invoice.id),
-          protocolService.getAuditAuthorization(invoice.id),
-          protocolService.getAuditCounter(invoice.seller)
+          registry.getCommitmentRoot(invoice.id),
+          registry.getFieldCommitments(invoice.id),
+          registry.getRulesResult(invoice.id),
+          registry.getAuditAuthorization(invoice.id),
+          registry.getAuditCounter(invoice.seller)
         ]);
         setAnchors({ commitment, fieldCommitments, rules, auth, counter });
       } catch (e) {
@@ -68,7 +71,7 @@ export default function InvoiceDetailPage() {
       }
     };
     fetchAnchors();
-  }, [invoice, protocolService]);
+  }, [invoice, registry]);
 
   const handleDownloadPackage = async (mode: 'minimal' | 'full') => {
     if (!invoice) return;

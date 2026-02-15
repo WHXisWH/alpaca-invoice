@@ -9,6 +9,7 @@ import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
 import type { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
 import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 let sdkPromise: Promise<typeof import('@provablehq/sdk')> | null = null;
 const loadSdk = async () => {
@@ -31,12 +32,7 @@ export class AleoProtocolService implements IAleoProtocolService {
   private network: WalletAdapterNetwork;
   private baseUrl: string;
   private programSourceCache: string | null = null;
-  private statusCache: Map<string, { ts: number; status: InvoiceStatus | null }> = new Map();
-  private hashCache: Map<string, { ts: number; hash: AleoField | null }> = new Map();
-  private commitmentCache: Map<string, { ts: number; value: AleoField | null }> = new Map();
-  private rulesCache: Map<string, { ts: number; value: AleoField | null }> = new Map();
-  private authCache: Map<string, { ts: number; value: any | null }> = new Map();
-  private counterCache: Map<string, { ts: number; value: bigint | null }> = new Map();
+  private readonly registry = createInvoiceRegistryService(this as any);
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
     this.network = network;
@@ -315,43 +311,6 @@ export class AleoProtocolService implements IAleoProtocolService {
     }
   }
 
-  async getInvoiceHash(invoiceId: AleoField): Promise<AleoField | null> {
-    const cache = this.hashCache.get(invoiceId);
-    const now = Date.now();
-    if (cache && now - cache.ts < 30_000) return cache.hash;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_registry', invoiceId);
-    if (!raw) return null;
-    const val = raw.replace(/["']?/g, '') as AleoField;
-    this.hashCache.set(invoiceId, { ts: now, hash: val });
-    return val;
-  }
-
-  async getInvoiceStatus(invoiceId: AleoField): Promise<InvoiceStatus | null> {
-    const cache = this.statusCache.get(invoiceId);
-    const now = Date.now();
-    if (cache && now - cache.ts < 30_000) return cache.status;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_status', invoiceId);
-    if (!raw) return null;
-    const clean = raw.replace(/u8$/i, '').replace(/["']/g, '');
-    const num = Number(clean);
-    if (Number.isNaN(num)) return null;
-    const status =
-      num === 0 ? InvoiceStatus.PENDING :
-      num === 1 ? InvoiceStatus.PAID :
-      num === 2 ? InvoiceStatus.CANCELLED :
-      num === 3 ? InvoiceStatus.EXPIRED : null;
-    this.statusCache.set(invoiceId, { ts: now, status });
-    return status;
-  }
-
-  async getInvoiceCount(seller: AleoAddress): Promise<number> {
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'invoice_count', seller);
-    if (!raw) return 0;
-    const clean = raw.replace(/u64$/i, '').replace(/["']/g, '');
-    const num = Number(clean);
-    return Number.isNaN(num) ? 0 : num;
-  }
-
   async verifyInvoiceOnChain(
     invoiceId: AleoField,
     localHash: AleoField
@@ -360,74 +319,11 @@ export class AleoProtocolService implements IAleoProtocolService {
     hashMatch: boolean;
     chainStatus: InvoiceStatus | null;
   }> {
-    const chainHash = await this.getInvoiceHash(invoiceId);
+    const chainHash = await this.registry.getInvoiceHash(invoiceId);
     const exists = chainHash !== null;
     const hashMatch = exists ? chainHash === localHash : false;
-    const chainStatus = await this.getInvoiceStatus(invoiceId);
+    const chainStatus = await this.registry.getInvoiceStatus(invoiceId);
     return { exists, hashMatch, chainStatus };
-  }
-
-  async getInvoiceCommitment(invoiceId: AleoField): Promise<AleoField | null> {
-    const key = `commit-${invoiceId}`;
-    const now = Date.now();
-    const cached = this.commitmentCache.get(key);
-    if (cached && now - cached.ts < 30_000) return cached.value;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_commitment_cache', invoiceId);
-    const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
-    this.commitmentCache.set(key, { ts: now, value: val });
-    return val;
-  }
-
-  async getInvoiceFieldCommitments(invoiceId: AleoField): Promise<any | null> {
-    const key = `fields-${invoiceId}`;
-    const now = Date.now();
-    const cached = this.rulesCache.get(key);
-    if (cached && now - cached.ts < 30_000) return cached.value;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_field_commitments_cache', invoiceId);
-    if (!raw) {
-      this.rulesCache.set(key, { ts: now, value: null });
-      return null;
-    }
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    this.rulesCache.set(key, { ts: now, value: parsed });
-    return parsed;
-  }
-
-  async getRulesResult(invoiceId: AleoField): Promise<AleoField | null> {
-    const key = `rules-${invoiceId}`;
-    const now = Date.now();
-    const cached = this.rulesCache.get(key);
-    if (cached && now - cached.ts < 30_000) return cached.value as AleoField | null;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_rules_cache', invoiceId);
-    const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
-    this.rulesCache.set(key, { ts: now, value: val });
-    return val;
-  }
-
-  async getAuditAuthorization(invoiceId: AleoField): Promise<any | null> {
-    const key = `auth-${invoiceId}`;
-    const now = Date.now();
-    const cached = this.authCache.get(key);
-    if (cached && now - cached.ts < 30_000) return cached.value;
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_auth_cache', invoiceId);
-    if (!raw) {
-      this.authCache.set(key, { ts: now, value: null });
-      return null;
-    }
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    this.authCache.set(key, { ts: now, value: parsed });
-    return parsed;
-  }
-
-  async getAuditCounter(seller: AleoAddress): Promise<number> {
-    const key = `counter-${seller}`;
-    const now = Date.now();
-    const cached = this.counterCache.get(key);
-    if (cached && now - cached.ts < 30_000 && cached.value !== null) return Number(cached.value);
-    const raw = await this.getProgramMappingValue(PROGRAM_ID, 'getter_counter_cache', seller);
-    const val = raw ? BigInt(String(raw).replace(/u64$/i, '').replace(/["']/g, '')) : 0n;
-    this.counterCache.set(key, { ts: now, value: val });
-    return Number(val);
   }
 
   async assertRules(invoiceId: AleoField, rulesHash: AleoField): Promise<void> {
