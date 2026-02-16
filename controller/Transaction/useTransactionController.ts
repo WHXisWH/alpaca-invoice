@@ -13,6 +13,7 @@ import { WalletServiceError, WalletError } from '@/services/WalletService/IWalle
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
 import { PROGRAM_ID } from '@/lib/contract';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
 
 // Initialize service instance (used inside the hook)
 const cryptoService = new CryptoService();
@@ -26,6 +27,7 @@ export function useTransactionController(): ITxController {
   const { isProcessing, progress, logs, startTx, updateProgress, completeTx } = useTransactionStore();
   const { publicKey, masterKey, setMasterKey } = useUserStore();
   const invoiceStore = useInvoiceStore();
+  const receiptStore = useReceiptStore();
   const { scanInvoiceRecord } = useInvoiceChainScan(); // Use scan hook to fetch record
 
   // Create WalletService instance via adapter (aligned with useWalletController)
@@ -419,6 +421,21 @@ export function useTransactionController(): ITxController {
             WalletError.UNAUTHORIZED,
             'Payment transaction failed - no response from wallet'
           );
+        }
+
+        // Record receipt locally for UI
+        try {
+          receiptStore.addReceipt({
+            paymentId: requestId,
+            invoiceId: invoice.id,
+            payer: invoice.buyer,
+            payee: invoice.seller,
+            amount: invoice.amount,
+            paidAt: new Date(Number(paidAt.replace(/u32$/, '')) * 1000),
+            txId: requestId
+          });
+        } catch (err) {
+          console.warn('⚠️ [executePay] Failed to add receipt locally:', err);
         }
 
         // Update invoice metadata, change confirmationStatus to SENDING, and set action to 'pay'
