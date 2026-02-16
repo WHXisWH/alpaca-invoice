@@ -6,8 +6,29 @@ import type {
   EncryptedPayload,
   AleoField,
   AleoAddress,
-  InvoiceChainComputed
+  InvoiceChainComputed,
+  InvoiceHashChainContext,
+  ContractInvoiceHashParams
 } from '@/lib/types';
+
+/** Build contract 10-params from details + chain context (for tests). */
+function toContractParams(
+  details: InvoiceDetails,
+  ctx: InvoiceHashChainContext
+): ContractInvoiceHashParams {
+  return {
+    seller: ctx.seller,
+    buyer: ctx.buyer,
+    amount: BigInt(details.subtotal),
+    taxAmount: BigInt(details.taxAmount),
+    dueDate: ctx.dueDate,
+    nonce: ctx.nonce,
+    orderId: ctx.orderIdField,
+    currency: ctx.currencyField,
+    itemsHash: ctx.itemsHash,
+    memoHash: ctx.memoHash
+  };
+}
 
 describe('CryptoService', () => {
   let service: CryptoService;
@@ -30,12 +51,6 @@ describe('CryptoService', () => {
   const mockDueDate = Math.floor(Date.now() / 1000) + 86400;
 
   // ========== Computed values for chain (InvoiceChainComputed) ==========
-  // hashObjectToField usage for create_invoice:
-  //   order_id   <- hashObjectToField(details.orderId ?? details.invoiceNumber)
-  //   currency   <- hashObjectToField(details.currency)
-  //   items_hash <- hashObjectToField(details.lineItems)
-  //   memo_hash  <- hashObjectToField(details.notes ?? '')
-  //   nonce      <- hashObjectToField(`NONCE-${Date.now()}-${randomBytes}`)
   let mockChainComputed: InvoiceChainComputed;
 
   beforeEach(async () => {
@@ -45,7 +60,7 @@ describe('CryptoService', () => {
     const memoHash = await service.hashObjectToField(mockDetails.notes ?? '');
     const orderIdField = await service.hashObjectToField(mockDetails.orderId ?? mockDetails.invoiceNumber);
     const currencyField = await service.hashObjectToField(mockDetails.currency);
-    const hashInput = {
+    const chainContext: InvoiceHashChainContext = {
       seller: mockSeller,
       buyer: mockBuyer,
       dueDate: mockDueDate,
@@ -55,9 +70,10 @@ describe('CryptoService', () => {
       itemsHash,
       memoHash
     };
-    const invoiceHash = await service.computeInvoiceHash(mockDetails, hashInput);
+    const paramsForCreation = toContractParams(mockDetails, chainContext);
+    const invoiceHash = await service.computeInvoiceHash(paramsForCreation);
     mockChainComputed = {
-      ...hashInput,
+      ...chainContext,
       invoiceHash,
       lineItemsSum: service.sumLineItems(mockDetails.lineItems),
       expectedTotal: service.calculateTotal(
@@ -274,25 +290,25 @@ describe('CryptoService', () => {
 
   describe('computeInvoiceHash (Wave 2 Protocol)', () => {
     it('should generate hash based on specific fields matching Leo struct', async () => {
-      const hash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const hash = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       expect(hash).toMatch(/^\d+field$/);
-      const hash2 = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const hash2 = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       expect(hash).toBe(hash2);
     });
 
     it('should detect changes in critical financial fields', async () => {
-      const hashOriginal = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const hashOriginal = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       const tamperedDetails = { ...mockDetails, taxAmount: 131 };
-      const hashTampered = await service.computeInvoiceHash(tamperedDetails, mockChainComputed);
+      const hashTampered = await service.computeInvoiceHash(toContractParams(tamperedDetails, mockChainComputed));
       expect(hashOriginal).not.toBe(hashTampered);
     });
 
     it('should include orderId and currency in hash computation', async () => {
-      const hash1 = await service.computeInvoiceHash(mockDetails, mockChainComputed);
-      const hash2 = await service.computeInvoiceHash(mockDetails, {
+      const hash1 = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
+      const hash2 = await service.computeInvoiceHash(toContractParams(mockDetails, {
         ...mockChainComputed,
         orderIdField: '999999field' as AleoField
-      });
+      }));
       expect(hash1).not.toBe(hash2);
     });
   });
@@ -906,7 +922,7 @@ describe('CryptoService', () => {
     });
 
     it('should verify untampered invoice data as valid (Wave 2 with context)', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const chainHash = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       const isValid = await service.verifyInvoiceIntegrity(mockDetails, chainHash, mockChainComputed);
       expect(isValid).toBe(true);
     });
@@ -933,7 +949,7 @@ describe('CryptoService', () => {
     });
 
     it('should detect tampered invoice data (Wave 2 with context)', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const chainHash = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       const tamperedDetails = { ...mockDetails, taxAmount: 131 };
       const isValid = await service.verifyInvoiceIntegrity(
         tamperedDetails,
@@ -1048,7 +1064,7 @@ describe('CryptoService', () => {
         itemsHash: flowItemsHash,
         memoHash: flowMemoHash
       };
-      const invoiceHash = await service.computeInvoiceHash(invoiceDetails, flowHashInput);
+      const invoiceHash = await service.computeInvoiceHash(toContractParams(invoiceDetails, flowHashInput));
       expect(invoiceHash).toMatch(/^\d+field$/);
 
       // ===== Phase 2: Local Encrypted Storage =====
@@ -1115,7 +1131,7 @@ describe('CryptoService', () => {
     });
 
     it('should detect tampering with Wave 2 context', async () => {
-      const chainHash = await service.computeInvoiceHash(mockDetails, mockChainComputed);
+      const chainHash = await service.computeInvoiceHash(toContractParams(mockDetails, mockChainComputed));
       const masterKey = 'test-master-key';
       const encryptedPayload = await service.encryptPayload(mockDetails, masterKey);
       const decryptedDetails = await service.decryptPayload(encryptedPayload, masterKey);
