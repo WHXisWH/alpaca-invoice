@@ -1,4 +1,11 @@
-import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashInput, LineItem } from '@/lib/types';
+import {
+  InvoiceDetails,
+  AleoField,
+  EncryptedPayload,
+  LineItem,
+  ContractInvoiceHashParams,
+  InvoiceHashChainContext
+} from '@/lib/types';
 import { ICryptoService, CryptoError, AleoInvoiceRecord } from './ICryptoService';
 import { createServiceError } from '@/lib/service-errors';
 import { Buffer } from 'buffer';
@@ -28,9 +35,9 @@ export type CryptoServiceError = InstanceType<typeof CryptoServiceError>;
  * - Parse Aleo Records (process wallet-decrypted data)
  *
  * Core verification flow:
- * 1. On invoice creation: computeInvoiceHash(details) -> invoice_hash stored in on-chain Record
+ * 1. On invoice creation: computeInvoiceHash(params) with ContractInvoiceHashParams -> invoice_hash stored on-chain
  * 2. On viewing: parseAleoRecord(jsonString) -> retrieve on-chain invoice_hash
- * 3. On verification: verifyInvoiceIntegrity(localDetails, chainHash) -> confirm data integrity
+ * 3. On verification: verifyInvoiceIntegrity(localDetails, chainHash, chainContext?) -> confirm data integrity
  *
  * Technical features:
  * - Uses Web Crypto API's SHA-256 for secure hashing
@@ -114,49 +121,77 @@ export class CryptoService implements ICryptoService {
     return `${bi.toString()}field` as AleoField;
   }
 
-  /**
-   * Core business hash: Computes a unique hash for InvoiceDetails following the contract logic
-   *
-   * Wave 2: When context is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
-   * order_id, currency, items_hash, memo_hash] to match InvoiceHashInput in main.leo.
-   * Fallback: When context is omitted, uses sorted JSON (legacy).
-   *
-   * @param details Invoice details object
-   * @param context Optional Wave 2 context
-   * @returns AleoField corresponding to the contract field
-   */
-  async computeInvoiceHash(details: InvoiceDetails, hashInput?: InvoiceHashInput): Promise<AleoField> {
+  /** Type guard: contract path uses 10 params (orderId, itemsHash, no lineItems). */
+  private static isContractParams(
+    x: ContractInvoiceHashParams | InvoiceDetails
+  ): x is ContractInvoiceHashParams {
+    return (
+      'orderId' in x &&
+      'itemsHash' in x &&
+      !('lineItems' in x)
+    );
+  }
+
+  /** Pure hash from 10 params. Serialization order matches main.leo InvoiceHashInput. */
+  private async hashFromContractParams(params: ContractInvoiceHashParams): Promise<AleoField> {
+    const canonical = {
+      seller: params.seller,
+      buyer: params.buyer,
+      amount: params.amount.toString(),
+      tax_amount: params.taxAmount.toString(),
+      due_date: params.dueDate.toString(),
+      nonce: params.nonce,
+      order_id: params.orderId,
+      currency: params.currency,
+      items_hash: params.itemsHash,
+      memo_hash: params.memoHash
+    };
+    return this.hashCanonicalToField(canonical);
+  }
+
+  /** Build 10 params from details + chain context (amount/tax from details). Used by verifyInvoiceIntegrity. */
+  private buildContractHashParams(
+    details: InvoiceDetails,
+    chainContext: InvoiceHashChainContext
+  ): ContractInvoiceHashParams {
+    return {
+      seller: chainContext.seller,
+      buyer: chainContext.buyer,
+      amount: BigInt(Math.round(details.subtotal)),
+      taxAmount: BigInt(Math.round(details.taxAmount)),
+      dueDate: chainContext.dueDate,
+      nonce: chainContext.nonce,
+      orderId: chainContext.orderIdField,
+      currency: chainContext.currencyField,
+      itemsHash: chainContext.itemsHash,
+      memoHash: chainContext.memoHash
+    };
+  }
+
+  /** Hash canonical object (snake_case keys matching Leo) to AleoField. Single place for algorithm (swap for BHP256 later). */
+  private async hashCanonicalToField(canonical: Record<string, string>): Promise<AleoField> {
+    const encoder = new TextEncoder();
+    const str = JSON.stringify(canonical);
+    const data = encoder.encode(str);
+    const hashBuffer = await this.getWebCrypto().subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashBigInt = BigInt('0x' + hashHex);
+    const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
+    return `${fieldValue.toString()}field` as AleoField;
+  }
+
+  async computeInvoiceHash(
+    paramsOrDetails: ContractInvoiceHashParams | InvoiceDetails
+  ): Promise<AleoField> {
     try {
+      if (CryptoService.isContractParams(paramsOrDetails)) {
+        return this.hashFromContractParams(paramsOrDetails);
+      }
+      // Legacy: sorted JSON hash of InvoiceDetails
+      const details = paramsOrDetails;
       const crypto = this.getWebCrypto();
       const encoder = new TextEncoder();
-
-      if (hashInput) {
-        // Wave 2: fixed field order matching InvoiceHashInput in main.leo
-        const amount = BigInt(Math.round(details.subtotal));
-        const taxAmount = BigInt(Math.round(details.taxAmount));
-        const canonical = {
-          seller: hashInput.seller,
-          buyer: hashInput.buyer,
-          amount: amount.toString(),
-          tax_amount: taxAmount.toString(),
-          due_date: hashInput.dueDate.toString(),
-          nonce: hashInput.nonce,
-          order_id: hashInput.orderIdField,
-          currency: hashInput.currencyField,
-          items_hash: hashInput.itemsHash,
-          memo_hash: hashInput.memoHash
-        };
-        const str = JSON.stringify(canonical);
-        const data = encoder.encode(str);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        const hashBigInt = BigInt('0x' + hashHex);
-        const fieldValue = hashBigInt % ALEO_FIELD_MODULUS;
-        return `${fieldValue.toString()}field` as AleoField;
-      }
-
-      // Legacy: sorted JSON hash
       const normalized = JSON.parse(JSON.stringify(details));
       const sortObjectKeys = (obj: any): any => {
         if (Array.isArray(obj)) return obj.map(item => sortObjectKeys(item));
@@ -397,7 +432,7 @@ export class CryptoService implements ICryptoService {
   async verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    hashInput?: InvoiceHashInput
+    chainContext?: InvoiceHashChainContext
   ): Promise<boolean> {
     if (!localDetails || typeof localDetails !== 'object') {
       throw new CryptoServiceError(
@@ -408,7 +443,10 @@ export class CryptoService implements ICryptoService {
     }
 
     try {
-      const computedHash = await this.computeInvoiceHash(localDetails, hashInput);
+      const computedHash =
+        chainContext != null
+          ? await this.computeInvoiceHash(this.buildContractHashParams(localDetails, chainContext))
+          : await this.computeInvoiceHash(localDetails);
       const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
       return computedHash === cleanChainHash;
     } catch (error: any) {

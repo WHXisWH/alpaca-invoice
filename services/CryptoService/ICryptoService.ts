@@ -1,5 +1,12 @@
 // services/CryptoService.ts
-import { InvoiceDetails, AleoField, EncryptedPayload, InvoiceHashInput, LineItem } from '@/lib/types';
+import {
+  InvoiceDetails,
+  AleoField,
+  EncryptedPayload,
+  LineItem,
+  ContractInvoiceHashParams,
+  InvoiceHashChainContext
+} from '@/lib/types';
 
 /** * Crypto error enum */
 export enum CryptoError {
@@ -92,17 +99,13 @@ export interface ICryptoService {
   nowToU32(): number;
 
   /**
-   * Core business hash: compute a unique hash from InvoiceDetails following the contract logic
+   * Invoice hash: contract-aligned (10 params) or legacy (sorted JSON of details).
    *
-   * Wave 2: When hashInput is provided, hashes [seller, buyer, amount, tax_amount, due_date, nonce,
-   * order_id, currency, items_hash, memo_hash] to match InvoiceHashInput in main.leo.
-   * Fallback: When hashInput is omitted, uses sorted JSON (legacy).
-   *
-   * @param details Invoice details object
-   * @param hashInput Optional hash context (must match creation context for verification)
-   * @returns AleoField corresponding to the contract field (format: "123...field")
+   * Contract path: pass ContractInvoiceHashParams (same 10 fields as main.leo compute_invoice_hash_internal). No details.
+   * Legacy path: pass InvoiceDetails only; uses sorted JSON hash (e.g. for payment nonce).
    */
-  computeInvoiceHash(details: InvoiceDetails, hashInput?: InvoiceHashInput): Promise<AleoField>;
+  computeInvoiceHash(params: ContractInvoiceHashParams): Promise<AleoField>;
+  computeInvoiceHash(details: InvoiceDetails): Promise<AleoField>;
 
   /**
    * Parse a decrypted InvoiceRecord from wallet.requestRecords()
@@ -142,7 +145,7 @@ export interface ICryptoService {
   verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    hashInput?: InvoiceHashInput
+    chainContext?: InvoiceHashChainContext
   ): Promise<boolean>;
 
   /**

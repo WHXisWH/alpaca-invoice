@@ -72,11 +72,34 @@ export interface InvoiceChainComputed {
   taxRateBps: bigint;
 }
 
-/** Hash input subset for computeInvoiceHash / verifyInvoiceIntegrity */
+/**
+ * Hash input for computeInvoiceHash / verifyInvoiceIntegrity.
+ * When amount and taxAmount are provided, matches contract compute_invoice_hash_internal(seller, buyer, amount, tax_amount, due_date, nonce, order_id, currency, items_hash, memo_hash).
+ */
 export type InvoiceHashInput = Omit<
   InvoiceChainComputed,
   'invoiceHash' | 'lineItemsSum' | 'expectedTotal' | 'taxRateBps'
->;
+> & { amount?: bigint; taxAmount?: bigint };
+
+/**
+ * Contract-aligned 10 parameters for invoice hash. Mirrors main.leo InvoiceHashInput / compute_invoice_hash_internal.
+ * Use for pure hash computation (no dependency on InvoiceDetails). Extensible when the program adds fields.
+ */
+export interface ContractInvoiceHashParams {
+  seller: AleoAddress;
+  buyer: AleoAddress;
+  amount: bigint;
+  taxAmount: bigint;
+  dueDate: number;
+  nonce: AleoField;
+  orderId: AleoField;
+  currency: AleoField;
+  itemsHash: AleoField;
+  memoHash: AleoField;
+}
+
+/** Chain context: the 8 fields that come from chain/creation; amount/tax come from details when building params. */
+export type InvoiceHashChainContext = Omit<InvoiceHashInput, 'amount' | 'taxAmount'>;
 
 export interface CreateInvoiceParams {
   buyer: AleoAddress;
