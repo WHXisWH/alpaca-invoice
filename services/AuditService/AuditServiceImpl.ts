@@ -243,7 +243,7 @@ export class AuditService implements IAuditService {
       const toSeconds = (d: Date) => Math.floor(d.getTime() / 1000);
       const { root, fields } = await this.buildFieldCommitments({
         amount: invoice.amount,
-        taxAmount: invoice.taxAmount,
+        taxAmount: invoice.taxAmount ?? 0n,
         dueDate: toSeconds(invoice.dueDate),
         buyer: invoice.buyer,
         seller: invoice.seller,
