@@ -1,19 +1,23 @@
 'use client';
 
 import { useAuditController } from '@/controller/Audit/useAuditController';
+import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 
 export default function AuditKeyGenerator() {
+  const { isAuthRequired, handleUnlock, isRequestingAuth } = useAuthCheck();
   const {
     invoices,
     invoiceId,
     expiresAt,
     fields,
     result,
+    keyCopied,
     setInvoiceId,
     setExpiresAt,
     toggleField,
     loadInvoiceOptions,
     downloadResult,
+    copyAuditKey,
     handleSubmit,
     loading,
     loadingInvoices,
@@ -22,6 +26,22 @@ export default function AuditKeyGenerator() {
 
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      {isAuthRequired && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">Please authorize to decrypt local invoice data</p>
+          <p className="mt-1 text-amber-700">
+            Generating audit packages requires decrypting local invoice details. Please complete signature authorization first.
+          </p>
+          <button
+            type="button"
+            onClick={handleUnlock}
+            disabled={isRequestingAuth}
+            className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+          >
+            {isRequestingAuth ? 'Authorizing…' : 'Authorize'}
+          </button>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="text-sm font-semibold text-slate-900">Generate Audit Package</div>
         <div className="flex items-center justify-between text-xs text-slate-600">
@@ -84,7 +104,7 @@ export default function AuditKeyGenerator() {
         </div>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || isAuthRequired}
           className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
         >
           {loading ? 'Generating...' : 'Generate'}
@@ -92,17 +112,32 @@ export default function AuditKeyGenerator() {
       </form>
 
       {result && (
-        <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-800">
-          <div className="font-semibold text-slate-900">Audit Package JSON</div>
+        <div className="space-y-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-800">
+          <div className="font-semibold text-slate-900">Audit Package (Envelope)</div>
           <pre className="max-h-56 overflow-auto rounded border border-slate-200 bg-white p-2 text-xs">
-            {JSON.stringify(result, null, 2)}
+            {JSON.stringify(result.envelope, null, 2)}
           </pre>
+          <div className="space-y-1">
+            <div className="font-medium text-slate-800">Audit Key (give to auditor; keep private)</div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                {result.auditKey}
+              </code>
+              <button
+                type="button"
+                onClick={copyAuditKey}
+                className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                {keyCopied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={downloadResult}
               className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
             >
-              Download JSON
+              Download envelope JSON
             </button>
           </div>
         </div>

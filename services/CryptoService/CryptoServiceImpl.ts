@@ -691,6 +691,18 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
+   * SHA-256 hash of UTF-8 string; returns 64-char hex.
+   * Used for canonical payload integrity (e.g. DecryptedAuditPayload without integrity).
+   */
+  async hashUtf8ToHex(input: string): Promise<string> {
+    const crypto = this.getWebCrypto();
+    const enc = new TextEncoder().encode(input);
+    const digest = await crypto.subtle.digest('SHA-256', enc);
+    const hashArray = Array.from(new Uint8Array(digest));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
    * AES-GCM encrypt with raw key. Produces { iv, ciphertext, authTag }.
    */
   private async encryptWithRawKey(
