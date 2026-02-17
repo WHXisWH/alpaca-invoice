@@ -23,7 +23,6 @@ describe('CryptoService audit package helpers', () => {
   const cryptoService = new CryptoService();
   const auditService = new AuditService({
     signerAddress: 'aleo1test' as any,
-    getAllInvoices: async () => [],
     signMessage: async () => 'sig'
   });
 

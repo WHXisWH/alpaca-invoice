@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from '../WalletServiceImpl';
 import { AleoAddress } from '@/lib/types';
+import { PROGRAM_ID } from '@/lib/contract';
 import type { WalletContextState } from '@demox-labs/aleo-wallet-adapter-react';
 
 /**
@@ -696,7 +697,7 @@ describe('WalletService', () => {
       expect(callArgs.address).toBe(mockAddress);
       expect(callArgs.transitions[0].functionName).toBe(functionName);
       expect(callArgs.transitions[0].inputs).toEqual(inputs);
-      expect(callArgs.transitions[0].program).toBe('zk_invoice_v2.aleo');
+      expect(callArgs.transitions[0].program).toBe(PROGRAM_ID);
       expect(callArgs.fee).toBe(250_000);
       expect(callArgs.feePrivate).toBe(false);
     });
@@ -735,7 +736,7 @@ describe('WalletService', () => {
         functionName: 'create_invoice',
         inputs: ['input1'],
         publicKey: mockAddress,
-        programId: 'zk_invoice_v2.aleo',
+        programId: PROGRAM_ID,
         fee: customFee
       });
 
@@ -757,7 +758,7 @@ describe('WalletService', () => {
         functionName: 'create_invoice',
         inputs: ['input1'],
         publicKey: mockAddress,
-        programId: 'zk_invoice_v2.aleo',
+        programId: PROGRAM_ID,
         fee: 250_000,
         chainId: customChainId
       });

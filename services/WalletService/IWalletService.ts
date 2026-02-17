@@ -30,7 +30,7 @@ export interface RequestTransactionParams {
   inputs: string[];
   /** Wallet public key address */
   publicKey: string;
-  /** Program ID (defaults to "zk_invoice_v2.aleo") */
+  /** Program ID (defaults to "zk_invoice_v2_2.aleo") */
   programId?: string;
   /** Optional fee Record (if not provided, wallet will auto-select) */
   feeRecord?: string;

@@ -200,12 +200,12 @@ export function useTransactionController(): ITxController {
           inputs: [
             buyerAddress,
             amountStr,
+            taxAmount,
             `${dueTimestamp}u32`,
             invoiceHash,
             nonceField,
             currentTime,
             orderId,
-            taxAmount,
             currencyField,
             itemsHashField,
             memoHashField,
