@@ -3,12 +3,10 @@ import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
 import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // Service instances (singleton pattern, lazy initialization)
 let storageServiceInstance: StorageService | null = null;
 let cryptoServiceInstance: CryptoService | null = null;
-let protocolServiceInstance: AleoProtocolService | null = null;
 
 const getStorageService = (): StorageService => {
   if (!storageServiceInstance) {
@@ -22,13 +20,6 @@ const getCryptoService = (): CryptoService => {
     cryptoServiceInstance = new CryptoService();
   }
   return cryptoServiceInstance;
-};
-
-const getProtocolService = (): AleoProtocolService => {
-  if (!protocolServiceInstance) {
-    protocolServiceInstance = new AleoProtocolService();
-  }
-  return protocolServiceInstance;
 };
 
 // Table name constant
