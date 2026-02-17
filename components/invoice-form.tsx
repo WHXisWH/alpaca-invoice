@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { AleoAddress, AleoField, InvoiceDetails } from '@/lib/types';
+import type { AleoAddress, AleoField, Invoice, InvoiceDetails } from '@/lib/types';
+import { RefreshCw } from 'lucide-react';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
-import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
+import { useInvoiceFormAudit } from '@/controller/Invoice/useInvoiceFormAudit';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export default function InvoiceForm() {
     useTransactionController();
   const { publicKey } = useUserStore();
   const { handleError } = useErrorHandler();
-  const cryptoService = useMemo(() => new CryptoService(), []);
+  const audit = useInvoiceFormAudit();
 
   // Pre-warm the Aleo SDK (WASM) and program source on mount.
   useEffect(() => {
@@ -91,18 +92,6 @@ export default function InvoiceForm() {
   const parsedTaxRate = parsedTaxRatePercent / 100;               // 0.05
   const taxAmount = Math.round(parsedAmount * parsedTaxRate * 100) / 100;
   const total = Math.round((parsedAmount + taxAmount) * 100) / 100;
-
-  // ── Audit authorization (optional) ──
-  const [enableAuditAuth, setEnableAuditAuth] = useState(false);
-  const [auditKey, setAuditKey] = useState('');
-  const [scopes, setScopes] = useState<string[]>(['amount', 'tax_amount', 'buyer', 'seller']);
-  const [expiresAt, setExpiresAt] = useState(
-    new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split('T')[0]
-  );
-
-  const toggleScope = (key: string) => {
-    setScopes((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
-  };
 
   // ── Validation errors ──
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -145,6 +134,11 @@ export default function InvoiceForm() {
       errs.currency = 'Currency is required.';
     }
 
+    // Audit: when enabled, audit key must be generated (64 hex chars)
+    if (audit.enableAuditAuth && !audit.isAuditKeyValid()) {
+      errs.auditKey = 'Click the icon to generate an audit key before creating.';
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -175,49 +169,50 @@ export default function InvoiceForm() {
     dueDateObj.setHours(23, 59, 59, 0);
 
     try {
-      const invoiceHash = await executeCreateInvoice({
+      const scopesBitmask = audit.enableAuditAuth ? audit.scopesBitmask : undefined;
+      const expiresSec = audit.enableAuditAuth && audit.auditKey ? audit.expiresAtSeconds : undefined;
+
+      const { invoiceHash, invoiceId } = await executeCreateInvoice({
         buyer: buyerAddress as AleoAddress,
         amount: microcredits,
         dueDate: dueDateObj,
-        details
+        details,
+        ...(audit.enableAuditAuth && audit.auditKey && scopesBitmask !== undefined && expiresSec !== undefined && {
+          audit: {
+            auditKey: audit.normalizedAuditKey,
+            scopesBitmask,
+            expiresAt: expiresSec
+          }
+        })
       });
 
-      // Optional: set audit authorization after invoice is on-chain
-      if (enableAuditAuth) {
+      if (audit.enableAuditAuth && audit.auditKey && scopesBitmask !== undefined && expiresSec !== undefined) {
         try {
-          const scopesBitmask = scopes.reduce((mask, key) => {
-            const ids: Record<string, number> = {
-              amount: 1, tax_amount: 2, due_date: 3, buyer: 4, seller: 5,
-              currency: 6, items_hash: 7, memo_hash: 8, order_id: 9
-            };
-            const id = ids[key];
-            return id ? mask | (1n << BigInt(id - 1)) : mask;
-          }, 0n);
-          const auditKeyHash = await cryptoService.hashObjectToField(auditKey || 'audit-key');
-          const expiresSec = Math.floor(new Date(expiresAt).getTime() / 1000);
+          const auditKeyHash = await audit.cryptoService.hashObjectToField(audit.normalizedAuditKey);
+          const invoiceForAuth: Invoice = {
+            id: invoiceId as AleoField,
+            invoiceHash: invoiceHash as AleoField,
+            seller: publicKey as AleoAddress,
+            buyer: buyerAddress as AleoAddress,
+            amount: microcredits,
+            dueDate: dueDateObj,
+            createdAt: new Date(),
+            status: 0,
+            metadata: {
+              confirmationStatus: 'SENDING',
+              lastUpdated: new Date(),
+              dataSource: 'local',
+              action: 'create'
+            }
+          };
           await executeSetAuditAuthorization(
-            {
-              id: invoiceHash as AleoField,
-              invoiceHash: invoiceHash as AleoField,
-              seller: publicKey as AleoAddress,
-              buyer: buyerAddress as AleoAddress,
-              amount: microcredits,
-              dueDate: dueDateObj,
-              createdAt: new Date(),
-              status: 0,
-              metadata: {
-                confirmationStatus: 'SENDING',
-                lastUpdated: new Date(),
-                dataSource: 'local',
-                action: 'create'
-              }
-            } as any,
+            invoiceForAuth,
             auditKeyHash,
             scopesBitmask,
             expiresSec
           );
-        } catch (authErr) {
-          console.warn('Audit authorization not set:', authErr);
+        } catch (authErr: any) {
+          console.warn('Audit authorization not set:', authErr?.message ?? authErr);
         }
       }
 
@@ -368,32 +363,40 @@ export default function InvoiceForm() {
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input
               type="checkbox"
-              checked={enableAuditAuth}
-              onChange={(e) => setEnableAuditAuth(e.target.checked)}
+              checked={audit.enableAuditAuth}
+              onChange={(e) => audit.setEnableAuditAuth(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
             />
             Enable
           </label>
         </div>
-        {enableAuditAuth && (
+        {audit.enableAuditAuth && (
           <div className="space-y-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700">Audit key</label>
-              <input
-                type="text"
-                value={auditKey}
-                onChange={(e) => setAuditKey(e.target.value)}
-                className="input-field"
-                placeholder="Random string or hex"
-              />
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">
+                  {audit.auditKey || '—'}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => audit.generateAuditKey()}
+                  title="Generate audit key"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">Click the icon to generate. Store it securely; share only with the auditor.</p>
+              {errors.auditKey && <p className="text-xs text-red-500">{errors.auditKey}</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700">Expiry</label>
               <input
                 type="date"
-                value={expiresAt}
+                value={audit.expiresAt}
                 min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setExpiresAt(e.target.value)}
+                onChange={(e) => audit.setExpiresAt(e.target.value)}
                 className="input-field"
               />
             </div>
@@ -408,8 +411,8 @@ export default function InvoiceForm() {
                   <label key={s} className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={scopes.includes(s)}
-                      onChange={() => toggleScope(s)}
+                      checked={audit.scopes.includes(s)}
+                      onChange={() => audit.toggleScope(s)}
                       className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
                     />
                     {s}

@@ -10,9 +10,8 @@ import type { AuditPackage, AuditPackageEnvelope } from '@/types/audit-package';
 import { AuditService } from '@/services/AuditService/AuditServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
-import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
-import { buildScopesBitmask, fieldsToPermissions } from './auditHelpers';
+import { fieldsToPermissions } from './auditHelpers';
 
 /**
  * Audit Controller Hook
@@ -71,8 +70,6 @@ export function useAuditController() {
       }),
     [publicKey, signMessage]
   );
-
-  const { executeSetAuditAuthorization } = useTransactionController();
 
   const copyAuditKey = useCallback(() => {
     if (!result?.auditKey) return;
@@ -167,6 +164,13 @@ export function useAuditController() {
           throw new Error('Invoice nonce is missing. Use an invoice created on-chain (with nonce).');
         }
 
+        const invoiceWithAuditKey = invoice as Invoice & { auditKey?: string };
+        if (!invoiceWithAuditKey.auditKey || !/^[0-9a-fA-F]{64}$/.test(invoiceWithAuditKey.auditKey)) {
+          throw new Error(
+            'Invoice has no audit key. Enable audit authorization when creating the invoice and generate an audit key.'
+          );
+        }
+
         const fields =
           opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS;
         const permissions = fieldsToPermissions(fields);
@@ -181,21 +185,9 @@ export function useAuditController() {
           expiresAt: opts.expiresAt,
           permissions,
           chainCommitmentRoot: commitmentRoot ?? undefined,
-          chainFieldCommitments: fieldCommitments ?? undefined
+          chainFieldCommitments: fieldCommitments ?? undefined,
+          auditKey: invoiceWithAuditKey.auditKey
         });
-
-        const scopesBitmask = buildScopesBitmask(
-          opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS
-        );
-        const expiresAtSeconds =
-          opts.expiresAt >= 1e12 ? Math.floor(opts.expiresAt / 1000) : opts.expiresAt;
-
-        await executeSetAuditAuthorization(
-          invoice,
-          String(genResult.auditKeyHash),
-          scopesBitmask,
-          expiresAtSeconds
-        );
 
         setResult({ envelope: genResult.envelope, auditKey: genResult.auditKey });
         return { envelope: genResult.envelope, auditKey: genResult.auditKey };
@@ -206,7 +198,7 @@ export function useAuditController() {
         setLoading(false);
       }
     },
-    [auditService, executeSetAuditAuthorization, getAllInvoices, handleError, masterKey, registry]
+    [auditService, getAllInvoices, handleError, masterKey, registry]
   );
 
   /**

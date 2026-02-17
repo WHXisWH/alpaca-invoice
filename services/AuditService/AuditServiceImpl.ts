@@ -381,7 +381,7 @@ export class AuditService implements IAuditService {
    * Caller must pass the invoice from local DB/chain, including nonce from create_invoice.
    */
   async generate(params: GenerateAuditPackageParams): Promise<GenerateAuditPackageResult> {
-    const { invoice, expiresAt, permissions, chainCommitmentRoot, chainFieldCommitments } = params;
+    const { invoice, expiresAt, permissions, chainCommitmentRoot, chainFieldCommitments, auditKey: providedAuditKey } = params;
 
     if (!invoice || !invoice.id) {
       throw new AuditServiceError(
@@ -416,7 +416,7 @@ export class AuditService implements IAuditService {
     }
 
     try {
-      const auditKey = this.cryptoService.generateAuditKey();
+      const auditKey = providedAuditKey ?? this.cryptoService.generateAuditKey();
       const result = await this.createEnvelope({
         invoice,
         permissions,
