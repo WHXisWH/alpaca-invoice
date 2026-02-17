@@ -1,5 +1,7 @@
 import { createServiceError } from '@/lib/service-errors';
 import type { AleoAddress, AleoField, EncryptedPayload, Invoice } from '@/lib/types';
+import type { AuditPackageEnvelope } from '@/types/audit-package';
+import type { IInvoiceRegistryService } from '@/services/InvoiceRegistryService/IInvoiceRegistryService';
 
 /**
  * Audit package schema (versioned for forward compatibility)
@@ -87,20 +89,30 @@ export const AuditServiceError = createServiceError<AuditError>('AuditService');
 export type AuditServiceError = InstanceType<typeof AuditServiceError>;
 
 /**
- * Generate audit package parameters
+ * Generate audit package parameters.
+ * Caller must pass the invoice (from local DB/chain) including nonce from invoice creation.
  */
 export interface GenerateAuditPackageParams {
-  invoiceId: AleoField;
+  /** Invoice from local DB/chain; must include `details` and `nonce` (from create_invoice). */
+  invoice: Invoice;
   expiresAt: number;
   permissions: string[];
+  /** When provided, use chain commitment root instead of local build (for auditor verification). */
+  chainCommitmentRoot?: AleoField;
+  /** When provided, use chain field commitments (snake_case keys). */
+  chainFieldCommitments?: Record<string, AleoField>;
 }
 
 /**
- * Generate audit package result
+ * Generate audit package result (envelope format + key material)
  */
 export interface GenerateAuditPackageResult {
-  pkg: AuditPackage;
+  /** New envelope JSON to share with auditor */
+  envelope: AuditPackageEnvelope;
+  /** Decryption key (hex); give to auditor separately */
   auditKey: string;
+  /** Field hash of audit key for set_audit_authorization */
+  auditKeyHash: AleoField;
 }
 
 /**
@@ -166,24 +178,17 @@ export interface GenerateAuditPackageInput {
 /**
  * IAuditService interface
  * Responsibility: Encapsulate audit operations, handle generation and validation of audit packages
- * 
- * Note:
- * - Master key is derived internally using CryptoService.deriveMasterKey(signature)
- * - Signature is obtained from wallet by signing a deterministic message
+ *
+ * Generate: caller passes invoice from local DB/chain (including nonce from create_invoice).
+ * No getAllInvoices dependency; signing is done via injected signMessage.
  */
 export interface IAuditService {
   /**
-   * Generate audit package
-   * 
-   * Process:
-   * 1. Validates input parameters (invoiceId)
-   * 2. Derives master key from wallet signature (using CryptoService)
-   * 3. Retrieves and decrypts invoice from local storage
-   * 4. Creates audit package with specified permissions
-   * 
-   * @param params Generation parameters
-   * @returns Generated audit package and audit key
-   * @throws {AuditServiceError} May throw various audit errors
+   * Generate audit package (envelope + audit key + auditKeyHash).
+   * Caller must pass the invoice from local DB/chain, with details and nonce.
+   *
+   * @param params invoice, expiresAt, permissions, optional chain commitments
+   * @returns envelope, auditKey, auditKeyHash
    */
   generate(params: GenerateAuditPackageParams): Promise<GenerateAuditPackageResult>;
 
@@ -210,4 +215,35 @@ export interface IAuditService {
    * Verify audit package by recomputing and calling on-chain anchors via provided protocol adapter.
    */
   verifyAuditPackage(pkg: any, adapter: AuditVerifyAdapter): Promise<{ valid: boolean; reason?: string }>;
+
+  /**
+   * Validate envelope-format audit package: decrypt and verify integrity + optional chain checks.
+   */
+  validateEnvelope(envelope: AuditPackageEnvelope, auditKey: string): Promise<ValidateAuditPackageResult>;
+
+  /**
+   * Four-phase verification for auditors: pre-check, on-chain access control,
+   * chain anchoring, and trustless verification.
+   */
+  verifyEnvelopePhases(
+    envelope: AuditPackageEnvelope,
+    auditKey: string,
+    registry: IInvoiceRegistryService
+  ): Promise<VerifyEnvelopePhasesResult>;
+}
+
+/** Result of each verification phase for UI display. */
+export interface VerifyPhaseResult {
+  ok: boolean;
+  message: string;
+  checks?: { key: string; ok: boolean; detail?: string }[];
+}
+
+export interface VerifyEnvelopePhasesResult {
+  overallValid: boolean;
+  phase1: VerifyPhaseResult;
+  phase2: VerifyPhaseResult;
+  phase3: VerifyPhaseResult;
+  phase4: VerifyPhaseResult;
+  decrypted?: any;
 }

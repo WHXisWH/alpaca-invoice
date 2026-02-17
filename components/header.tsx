@@ -18,9 +18,19 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
   '/docs/handbook': { title: 'Handbook', subtitle: 'Quick start guide and FAQ' },
 };
 
+/** Resolve page info for both static and dynamic routes */
+function resolvePageInfo(pathname: string): { title: string; subtitle?: string } {
+  if (pageTitles[pathname]) return pageTitles[pathname];
+  // Dynamic invoice detail route: /invoices/[hash]
+  if (pathname.startsWith('/invoices/') && pathname !== '/invoices/create') {
+    return { title: 'Invoice Detail', subtitle: 'View invoice details and status' };
+  }
+  return { title: 'Alpaca Invoice' };
+}
+
 export default function Header() {
   const pathname = usePathname();
-  const pageInfo = pageTitles[pathname] || { title: 'Alpaca Invoice' };
+  const pageInfo = resolvePageInfo(pathname);
   const { toggle } = useSidebar();
 
   return (

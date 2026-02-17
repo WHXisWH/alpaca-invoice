@@ -89,7 +89,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '2u8' as any, // CANCELLED
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -113,7 +118,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -137,7 +147,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '1u8' as any, // PAID
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -162,7 +177,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '1u8' as any, // PAID
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -186,7 +206,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -212,7 +237,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -235,7 +265,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '2u8' as any, // CANCELLED
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -259,7 +294,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -282,7 +322,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '1u8' as any, // PAID
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -305,7 +350,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -329,7 +379,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '3u8' as any, // EXPIRED
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -351,7 +406,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: 2 as any, // 数字格式的 CANCELLED
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act
@@ -375,7 +435,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act - 验证创建
@@ -409,7 +474,12 @@ describe('InvoiceStatusValidator', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       // Act - 验证创建

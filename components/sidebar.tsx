@@ -108,11 +108,15 @@ export default function Sidebar() {
             Menu
           </div>
           {navItems.map((item) => {
-            // Exact match for most items; prefix match for /docs so sub-pages stay highlighted
-            const isActive =
-              item.href === '/docs'
-                ? pathname.startsWith('/docs')
-                : pathname === item.href;
+            // Prefix match for sections with dynamic sub-pages; exact match for the rest
+            const isActive = (() => {
+              if (item.href === '/invoices') {
+                return pathname === '/invoices' ||
+                  (pathname.startsWith('/invoices/') && pathname !== '/invoices/create');
+              }
+              if (item.href === '/docs') return pathname.startsWith('/docs');
+              return pathname === item.href;
+            })();
             const Icon = item.icon;
 
             return (

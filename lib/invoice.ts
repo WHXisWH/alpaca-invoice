@@ -128,11 +128,16 @@ export function buildInvoiceFromRecord(
     seller: record.seller as any,
     buyer: record.buyer as any,
     amount: BigInt(cleanAmount) as any,
+    taxAmount: record.tax_amount ? BigInt(cleanAleoNumber(record.tax_amount)) as any : undefined,
     dueDate: new Date(Number(cleanDueDate) * 1000),
     createdAt: Number(cleanCreatedAt) > 0
       ? new Date(Number(cleanCreatedAt) * 1000)
       : new Date(),
     status: Number(cleanStatus) as any,
+    orderId: record.order_id ? cleanAleoField(record.order_id) as AleoField : undefined,
+    currency: record.currency ? cleanAleoField(record.currency) as AleoField : undefined,
+    itemsHash: record.items_hash ? cleanAleoField(record.items_hash) as AleoField : undefined,
+    memoHash: record.memo_hash ? cleanAleoField(record.memo_hash) as AleoField : undefined,
     details: undefined // On-chain data does not include details
   };
 }
@@ -187,11 +192,16 @@ export function updateInvoiceFromInvoiceRecord(
     seller: invoiceRecord.seller as any,
     buyer: invoiceRecord.buyer as any,
     amount: BigInt(cleanAmount) as any,
+    taxAmount: invoiceRecord.tax_amount ? BigInt(cleanAleoNumber(invoiceRecord.tax_amount)) as any : invoice.taxAmount,
     dueDate: new Date(Number(cleanDueDate) * 1000),
     createdAt: Number(cleanCreatedAt) > 0
       ? new Date(Number(cleanCreatedAt) * 1000)
       : invoice.createdAt,
-    status: Number(cleanStatus) as any
+    status: Number(cleanStatus) as any,
+    orderId: invoiceRecord.order_id ? cleanAleoField(invoiceRecord.order_id) as AleoField : invoice.orderId,
+    currency: invoiceRecord.currency ? cleanAleoField(invoiceRecord.currency) as AleoField : invoice.currency,
+    itemsHash: invoiceRecord.items_hash ? cleanAleoField(invoiceRecord.items_hash) as AleoField : invoice.itemsHash,
+    memoHash: invoiceRecord.memo_hash ? cleanAleoField(invoiceRecord.memo_hash) as AleoField : invoice.memoHash,
   };
 }
 

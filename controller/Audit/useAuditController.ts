@@ -2,16 +2,17 @@ import { useCallback, useMemo, useState } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
-import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
-import { PROGRAM_ID } from '@/lib/contract';
-import type { AleoAddress, AleoField } from '@/lib/types';
-import type { AuditPackage } from '@/types/audit-package';
+import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
+import type { AuditPackage, AuditPackageEnvelope } from '@/types/audit-package';
 import { AuditService } from '@/services/AuditService/AuditServiceImpl';
+import { WalletService } from '@/services/WalletService/WalletServiceImpl';
+import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
-import { toSeconds, buildScopesBitmask } from './auditHelpers';
+import { buildScopesBitmask, fieldsToPermissions } from './auditHelpers';
 
 /**
  * Audit Controller Hook
@@ -41,40 +42,52 @@ export function useAuditController() {
   const [invoiceId, setInvoiceId] = useState('');
   const [expiresAt, setExpiresAt] = useState(() => getDefaultAuditExpiresAt());
   const [fields, setFields] = useState<string[]>(() => [...DEFAULT_FIELDS]);
-  const [result, setResult] = useState<AuditPackage | null>(null);
+  const [result, setResult] = useState<{ envelope: AuditPackageEnvelope; auditKey: string } | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
-  const cryptoService = useMemo(() => new CryptoService(), []);
-  const protocolService = useMemo(() => new AleoProtocolService(), []);
-  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
+  const walletService = useMemo(
+    () => (wallet ? new WalletService(createWalletAdapter(wallet)) : null),
+    [wallet]
+  );
 
   const signMessage = useCallback(
     async (message: string): Promise<string> => {
-      if (!wallet.signMessage) return '';
-      const encoder = new TextEncoder();
-      const decoder = new TextDecoder();
-      const sigBytes = await wallet.signMessage(encoder.encode(message));
-      return decoder.decode(sigBytes);
+      if (!walletService || !publicKey) {
+        throw new Error('Wallet not connected. Please connect first.');
+      }
+      return walletService.signMessage(message, String(publicKey));
     },
-    [wallet]
+    [walletService, publicKey]
   );
+
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
+  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
 
   const auditService = useMemo(
     () =>
       new AuditService({
         signerAddress: (publicKey ? String(publicKey) : null) as AleoAddress | null,
-        getAllInvoices,
         signMessage
       }),
-    [getAllInvoices, publicKey, signMessage]
+    [publicKey, signMessage]
   );
 
+  const { executeSetAuditAuthorization } = useTransactionController();
+
+  const copyAuditKey = useCallback(() => {
+    if (!result?.auditKey) return;
+    navigator.clipboard.writeText(result.auditKey);
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), 2000);
+  }, [result?.auditKey]);
+
   /**
-   * Download audit package as JSON file.
+   * Download envelope as JSON file.
    */
   const downloadPackage = useCallback(
-    (pkg: AuditPackage, invoiceId: string) => {
+    (envelope: AuditPackageEnvelope, invoiceId: string) => {
       try {
-        const blob = new Blob([JSON.stringify(pkg, null, 2)], {
+        const blob = new Blob([JSON.stringify(envelope, null, 2)], {
           type: 'application/json'
         });
         const url = URL.createObjectURL(blob);
@@ -114,24 +127,22 @@ export function useAuditController() {
   }, []);
 
   /**
-   * Download the current audit package result (if any).
+   * Download the current envelope (if any). Audit key is shown separately; do not bundle in JSON.
    */
   const downloadResult = useCallback(() => {
     if (!result) return;
-    downloadPackage(result, result.invoice_id);
+    downloadPackage(result.envelope, result.envelope.context.invoice_id);
   }, [result, downloadPackage]);
 
   /**
-   * Generate an audit package referencing on-chain anchors plus minimal disclosed fields.
+   * Generate an audit package: resolve invoice from local DB (with nonce), then call service.
    */
   const generate = useCallback(
     async (opts: {
       invoiceId: AleoField;
       selectedFields?: string[];
-      scopesBitmask?: bigint;
       expiresAt: number;
-      auditor?: AleoAddress;
-    }): Promise<AuditPackage> => {
+    }): Promise<{ envelope: AuditPackageEnvelope; auditKey: string }> => {
       setLoading(true);
       try {
         if (!masterKey) {
@@ -139,101 +150,55 @@ export function useAuditController() {
         }
 
         const invoices = await getAllInvoices({ masterKey, refreshMemory: false });
-      const invoice =
-        invoices.find((i) => i.id === opts.invoiceId) ||
-        invoices.find((i) => i.invoiceHash === opts.invoiceId);
+        const invoice =
+          invoices.find((i) => i.id === opts.invoiceId) ||
+          invoices.find((i) => i.invoiceHash === opts.invoiceId);
 
-      if (!invoice) {
-        throw new Error('Invoice not found locally. Please sync invoices first.');
-      }
-
-      const details = invoice.details;
-      if (!details) {
-        throw new Error('Invoice details are not decrypted. Cannot build audit package.');
-      }
-
-      const fields = opts.selectedFields && opts.selectedFields.length > 0
-        ? opts.selectedFields
-        : DEFAULT_FIELDS;
-      const scopes = opts.scopesBitmask ?? buildScopesBitmask(fields);
-
-      // Fetch on-chain anchors
-      const [commitmentRoot, fieldCommitments, rulesResult, auth] = await Promise.all([
-        registry.getCommitmentRoot(invoice.id),
-        registry.getFieldCommitments(invoice.id),
-        registry.getRulesResult(invoice.id),
-        registry.getAuditAuthorization(invoice.id)
-      ]);
-
-      if (!commitmentRoot || !fieldCommitments) {
-        throw new Error('Commitment caches are missing on chain for this invoice.');
-      }
-
-      // Compute rules hash locally if cache is absent
-      let rulesHash = rulesResult || null;
-      if (!rulesHash) {
-        const rules = await cryptoService.evaluateAuditRules({
-          amount: invoice.amount,
-          taxAmount: BigInt(Math.round(details.taxAmount)),
-          dueDate: toSeconds(invoice.dueDate),
-          currentTime: cryptoService.nowToU32(),
-          lineItemsSum: cryptoService.sumLineItems(details.lineItems),
-          expectedTotal: BigInt(Math.round(details.total)),
-          taxRateBps: cryptoService.calculateTaxBps(details.taxRate ?? 0),
-          invoiceHash: invoice.invoiceHash
-        });
-        rulesHash = rules.rulesHash;
-      }
-
-      // Minimal payload with selected fields
-      const payload: Record<string, unknown> = {};
-      const itemsHash =
-        fields.includes('items_hash') && details.lineItems
-          ? await cryptoService.hashObjectToField(details.lineItems)
-          : undefined;
-      const setIfSelected = (key: string, value: unknown) => {
-        if (fields.includes(key) && value !== undefined) {
-          payload[key] = value;
+        if (!invoice) {
+          throw new Error('Invoice not found locally. Please sync invoices first.');
         }
-      };
 
-      setIfSelected('amount', invoice.amount.toString());
-      setIfSelected('tax_amount', details.taxAmount);
-      setIfSelected('due_date', toSeconds(invoice.dueDate));
-      setIfSelected('buyer', invoice.buyer);
-      setIfSelected('seller', invoice.seller);
-      setIfSelected('currency', details.currency);
-      setIfSelected('items_hash', itemsHash);
-      setIfSelected('memo_hash', details.notes);
-      setIfSelected('order_id', details.invoiceNumber);
+        if (!invoice.details) {
+          throw new Error('Invoice details are not decrypted. Cannot build audit package.');
+        }
 
-      const signatureMessage = [
-        'AUDIT_PACKAGE_V2_2',
-        PROGRAM_ID,
-        invoice.id,
-        invoice.invoiceHash,
-        rulesHash,
-        commitmentRoot,
-        scopes.toString()
-      ].join('|');
+        const invoiceWithNonce = invoice as Invoice & { nonce?: AleoField };
+        if (!invoiceWithNonce.nonce) {
+          throw new Error('Invoice nonce is missing. Use an invoice created on-chain (with nonce).');
+        }
 
-      const pkg = await auditService.generateAuditPackage({
-        invoiceId: invoice.id,
-        invoiceHash: invoice.invoiceHash,
-        rulesHash,
-        fieldCommitments: fieldCommitments as any,
-        commitmentsRoot: commitmentRoot,
-        auditKeyHash: (auth?.audit_key_hash ?? '0field') as AleoField,
-        scopesBitmask: scopes,
-        expiresAt: opts.expiresAt,
-        selectedFields: fields,
-        payload,
-        signature: await signMessage(signatureMessage),
-        programId: PROGRAM_ID,
-        version: '2.2'
-      });
+        const fields =
+          opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS;
+        const permissions = fieldsToPermissions(fields);
 
-        return pkg as AuditPackage;
+        const [commitmentRoot, fieldCommitments] = await Promise.all([
+          registry.getCommitmentRoot(invoice.id),
+          registry.getFieldCommitments(invoice.id)
+        ]);
+
+        const genResult = await auditService.generate({
+          invoice,
+          expiresAt: opts.expiresAt,
+          permissions,
+          chainCommitmentRoot: commitmentRoot ?? undefined,
+          chainFieldCommitments: fieldCommitments ?? undefined
+        });
+
+        const scopesBitmask = buildScopesBitmask(
+          opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS
+        );
+        const expiresAtSeconds =
+          opts.expiresAt >= 1e12 ? Math.floor(opts.expiresAt / 1000) : opts.expiresAt;
+
+        await executeSetAuditAuthorization(
+          invoice,
+          String(genResult.auditKeyHash),
+          scopesBitmask,
+          expiresAtSeconds
+        );
+
+        setResult({ envelope: genResult.envelope, auditKey: genResult.auditKey });
+        return { envelope: genResult.envelope, auditKey: genResult.auditKey };
       } catch (err: any) {
         handleError(err);
         throw err;
@@ -241,7 +206,7 @@ export function useAuditController() {
         setLoading(false);
       }
     },
-    [auditService, cryptoService, getAllInvoices, handleError, masterKey, protocolService, signMessage]
+    [auditService, executeSetAuditAuthorization, getAllInvoices, handleError, masterKey, registry]
   );
 
   /**
@@ -386,11 +351,13 @@ export function useAuditController() {
     expiresAt,
     fields,
     result,
+    keyCopied,
     // Form actions
     setInvoiceId,
     setExpiresAt,
     toggleField,
     downloadResult,
+    copyAuditKey,
     handleSubmit
   };
 }

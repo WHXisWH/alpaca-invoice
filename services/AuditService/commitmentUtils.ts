@@ -2,7 +2,7 @@
  * Commitment utilities using Aleo BHP hash (via @provablehq/sdk).
  * Matches zk_invoice_v2_2.aleo contract:
  * - commit_field(val, salt, tag) = BHP256::hash_to_field(FieldCommitInput { val, salt, tag })
- * - commitment_root = BHP256::hash_to_field(FieldCommitments)
+ * - commitment_root = BHP256::hash_to_field(commitments)
  */
 
 import { BHP768, Field, Address, Poseidon8 } from '@provablehq/sdk';
@@ -10,6 +10,23 @@ import type { AleoField } from '@/lib/types';
 
 /** Field bit size in Aleo (toBitsLe returns 256 bits for canonical representation) */
 const FIELD_BITS = 256;
+
+/**
+ * Contract-aligned field order for commitment root. Matches main.leo FieldCommitments struct.
+ */
+export const COMMITMENT_FIELD_ORDER = [
+  'amount',
+  'tax_amount',
+  'due_date',
+  'buyer',
+  'seller',
+  'currency',
+  'items_hash',
+  'memo_hash',
+  'order_id'
+] as const;
+
+export type CommitmentFieldKey = (typeof COMMITMENT_FIELD_ORDER)[number];
 
 /**
  * Convert string (field or address) to Field for hashing.
@@ -67,23 +84,12 @@ export function commitField(val: AleoField | string, salt: AleoField, tag: AleoF
 /**
  * Compute commitment root from FieldCommitments struct.
  * Contract uses BHP256::hash_to_field(commitments); SDK BHP accepts fixed input sizes.
- * We use Poseidon2 to hash the 9 commitment fields for a deterministic root.
+ * We use Poseidon8 to hash the 9 commitment fields for a deterministic root.
  * For exact chain match, fetch root via get_invoice_commitment.
  */
 export function computeCommitmentRoot(fields: Record<string, AleoField>): AleoField {
-  const order = [
-    'amount',
-    'tax_amount',
-    'due_date',
-    'buyer',
-    'seller',
-    'currency',
-    'items_hash',
-    'memo_hash',
-    'order_id'
-  ] as const;
   const fieldArr: Field[] = [];
-  for (const key of order) {
+  for (const key of COMMITMENT_FIELD_ORDER) {
     const v = fields[key];
     if (v !== undefined) {
       fieldArr.push(toField(v));
