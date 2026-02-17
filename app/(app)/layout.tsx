@@ -3,6 +3,7 @@ import Sidebar from '@/components/sidebar';
 import Header from '@/components/header';
 import { InvoiceAutoPoller } from '@/components/InvoiceAutoPoller';
 import { SidebarProvider } from '@/components/sidebar-context';
+import ChatBot from '@/components/chat-bot';
 
 export default function AppLayout({
   children,
@@ -29,6 +30,9 @@ export default function AppLayout({
           </main>
         </div>
       </div>
+
+      {/* AI Chat Assistant */}
+      <ChatBot />
     </SidebarProvider>
   );
 }
