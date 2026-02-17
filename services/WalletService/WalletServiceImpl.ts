@@ -421,7 +421,7 @@ export class WalletService {
 
   /**
    * Request Records (wraps the wallet adapter's requestRecords method)
-   * @param program Program ID (e.g., 'zk_invoice_v2.aleo' or 'credits.aleo')
+   * @param program Program ID (e.g., 'zk_invoice_v2_2.aleo' or 'credits.aleo')
    * @returns An object containing a records array
    * @throws {WalletServiceError} May throw UNAUTHORIZED, DECRYPTION_FAILED
    *

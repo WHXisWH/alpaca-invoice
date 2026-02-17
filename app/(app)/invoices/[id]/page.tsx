@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { RefreshCw, ArrowLeft } from 'lucide-react';
 import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
@@ -156,7 +157,16 @@ export default function InvoiceDetailPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/invoices"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+            title="Back to Invoices"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+        </div>
         {/* Chain confirmation status and sync button */}
         <div className="flex items-center gap-3">
           {isSyncing && (
@@ -251,60 +261,95 @@ export default function InvoiceDetailPage() {
               {userRole === 'seller' ? '🏪 Seller' : userRole === 'buyer' ? '🛒 Buyer' : '❓ Unknown'}
             </span>
           </div>
+          {invoice.taxAmount != null && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">Tax Amount</span>
+              <span className="font-medium text-slate-900">
+                {(Number(invoice.taxAmount) / 1_000_000).toFixed(2)} credits
+              </span>
+            </div>
+          )}
+          {invoice.currency && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">Currency</span>
+              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
+                {invoice.details?.currency ?? invoice.currency}
+              </code>
+            </div>
+          )}
+          {invoice.orderId && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">Order ID</span>
+              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
+                {invoice.details?.orderId ?? invoice.orderId}
+              </code>
+            </div>
+          )}
         </div>
 
-        {/* Audit anchors */}
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-          <div className="flex items-center justify-between">
+        {/* Audit anchors — only render when at least one anchor has data */}
+        {!isFetchingAnchors && (anchors.commitment || anchors.rules || anchors.fieldCommitments || anchors.auth || anchors.counter != null) && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
             <div className="font-semibold text-slate-900">Audit anchors</div>
-            {isFetchingAnchors && (
-              <span className="text-xs text-slate-600 flex items-center gap-1">
-                <RefreshCw className="h-3 w-3 animate-spin" /> Loading
-              </span>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-xs text-slate-800">
+              {anchors.commitment && (
+                <div>
+                  <div className="text-slate-500">Commitment root</div>
+                  <div className="font-mono break-all">{anchors.commitment}</div>
+                </div>
+              )}
+              {anchors.rules && (
+                <div>
+                  <div className="text-slate-500">Rules result</div>
+                  <div className="font-mono break-all">{anchors.rules}</div>
+                </div>
+              )}
+              {anchors.fieldCommitments && (
+                <div className="md:col-span-2">
+                  <div className="text-slate-500">Field commitments</div>
+                  <pre className="mt-1 max-h-28 overflow-auto rounded border border-slate-200 bg-white p-2">
+                    {JSON.stringify(anchors.fieldCommitments, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {anchors.auth && (
+                <div className="md:col-span-2">
+                  <div className="text-slate-500">Audit authorization</div>
+                  <pre className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-white p-2">
+                    {JSON.stringify(anchors.auth, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {anchors.counter != null && (
+                <div>
+                  <div className="text-slate-500">Seller audit counter</div>
+                  <div className="font-mono break-all">{anchors.counter}</div>
+                </div>
+              )}
+            </div>
+            {invoice.details ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleDownloadPackage('minimal')}
+                  className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                >
+                  Download minimal package
+                </button>
+                <button
+                  onClick={() => handleDownloadPackage('full')}
+                  className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                >
+                  Download full package
+                </button>
+                {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-slate-400">
+                Audit package download requires locally stored invoice details.
+              </p>
             )}
           </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-xs text-slate-800">
-            <div>
-              <div className="text-slate-500">Commitment root</div>
-              <div className="font-mono break-all">{anchors.commitment ?? 'N/A'}</div>
-            </div>
-            <div>
-              <div className="text-slate-500">Rules result</div>
-              <div className="font-mono break-all">{anchors.rules ?? 'N/A'}</div>
-            </div>
-            <div className="md:col-span-2">
-              <div className="text-slate-500">Field commitments</div>
-              <pre className="mt-1 max-h-28 overflow-auto rounded border border-slate-200 bg-white p-2">
-                {anchors.fieldCommitments ? JSON.stringify(anchors.fieldCommitments, null, 2) : 'N/A'}
-              </pre>
-            </div>
-            <div className="md:col-span-2">
-              <div className="text-slate-500">Audit authorization</div>
-              <pre className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-white p-2">
-                {anchors.auth ? JSON.stringify(anchors.auth, null, 2) : 'N/A'}
-              </pre>
-            </div>
-            <div>
-              <div className="text-slate-500">Seller audit counter</div>
-              <div className="font-mono break-all">{anchors.counter ?? 'N/A'}</div>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => handleDownloadPackage('minimal')}
-              className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-            >
-              Download minimal package
-            </button>
-            <button
-              onClick={() => handleDownloadPackage('full')}
-              className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
-            >
-              Download full package
-            </button>
-            {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
-          </div>
-        </div>
+        )}
 
         {/* Action Buttons - Role-based */}
         {invoice.status === InvoiceStatus.PENDING && (

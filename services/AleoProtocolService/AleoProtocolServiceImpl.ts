@@ -53,8 +53,11 @@ export class AleoProtocolService implements IAleoProtocolService {
   private async getProgramManager(): Promise<ProgramManager> {
     if (!this.programManager) {
       const sdk = await loadSdk();
-      // ProgramManager constructor: (host?, keyProvider?, recordProvider?, networkClientOptions?)
       this.programManager = new sdk.ProgramManager(this.baseUrl);
+      // A throwaway account is required for local-only execution (pm.run).
+      // These computations are pure functions — no funds are spent.
+      const tempPrivateKey = new sdk.PrivateKey();
+      this.programManager.setAccount(new sdk.Account({ privateKey: tempPrivateKey.to_string() }));
     }
     return this.programManager;
   }
@@ -94,7 +97,8 @@ export class AleoProtocolService implements IAleoProtocolService {
       `${params.dueDate}u32`,
       params.nonce
     ];
-    const { outputs } = await pm.run(program, 'compute_invoice_id', inputs, false);
+    const response = await pm.run(program, 'compute_invoice_id', inputs, false);
+    const outputs = response.getOutputs();
     if (!outputs || !outputs[0]) {
       throw new ProtocolServiceError(
         ProtocolError.INVALID_RECORD,
@@ -134,7 +138,8 @@ export class AleoProtocolService implements IAleoProtocolService {
       params.itemsHash,
       params.memoHash
     ];
-    const { outputs } = await pm.run(program, 'compute_invoice_hash', inputs, false);
+    const response = await pm.run(program, 'compute_invoice_hash', inputs, false);
+    const outputs = response.getOutputs();
     if (!outputs || !outputs[0]) {
       throw new ProtocolServiceError(
         ProtocolError.INVALID_RECORD,
@@ -268,10 +273,10 @@ export class AleoProtocolService implements IAleoProtocolService {
    *
    * Can query any Mapping of any program, for example:
    * - credits.aleo account mapping (balance query)
-   * - zk_invoice_v2.aleo invoice_status mapping (invoice status query)
+   * - zk_invoice_v2_2.aleo invoice_status mapping (invoice status query)
    * - Any custom program's Mapping
    *
-   * @param programId Program identifier (e.g., "zk_invoice_v2.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v2_2.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
    * @param key Mapping key (Field type or Aleo address, depending on mapping definition)
    * @returns Mapping value (string format), or null if it does not exist
@@ -364,7 +369,8 @@ export class AleoProtocolService implements IAleoProtocolService {
   private async callAssert(functionName: string, inputs: any[]): Promise<void> {
     const pm = await this.getProgramManager();
     const program = await this.getProgramSource();
-    const { outputs } = await pm.run(program, functionName, inputs, false);
+    const response = await pm.run(program, functionName, inputs, false);
+    const outputs = response.getOutputs();
     if (outputs === undefined) {
       throw new ProtocolServiceError(
         ProtocolError.TRANSACTION_REJECTED,
