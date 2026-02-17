@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { AleoAddress, AleoField, Invoice, InvoiceDetails } from '@/lib/types';
-import { RefreshCw } from 'lucide-react';
+import type { AleoAddress, AleoField, Invoice, InvoiceDetails, LineItem } from '@/lib/types';
+import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
@@ -21,31 +21,36 @@ function tomorrowDateStr(): string {
   return d.toISOString().split('T')[0];
 }
 
-/** Build InvoiceDetails from form inputs */
+/** Row state for line item input (amount derived from quantity × unitPrice) */
+interface LineItemRow {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+}
+
+/** Build InvoiceDetails from form inputs. Amount (subtotal) = sum(lineItems), per contract R4. */
 function buildDetails(opts: {
   invoiceNumber: string;
-  description: string;
-  amountCredits: number;
+  lineItems: LineItem[];
   taxRate: number;
   currency: string;
   orderId: string;
   notes: string;
 }): InvoiceDetails {
-  const subtotal = Math.round(opts.amountCredits * 1_000_000) / 1_000_000;
+  const subtotal = opts.lineItems.reduce((s, i) => s + i.amount, 0);
   const taxAmount = Math.round(subtotal * opts.taxRate * 1_000_000) / 1_000_000;
   const total = Math.round((subtotal + taxAmount) * 1_000_000) / 1_000_000;
 
   return {
     invoiceNumber: opts.invoiceNumber,
     orderId: opts.orderId || undefined,
-    lineItems: [
-      {
-        description: opts.description || 'Service',
-        quantity: 1,
-        unitPrice: subtotal,
-        amount: subtotal
-      }
-    ],
+    lineItems: opts.lineItems.map(({ description, quantity, unitPrice, amount }) => ({
+      description: description || 'Item',
+      quantity,
+      unitPrice,
+      amount
+    })),
     subtotal,
     taxRate: opts.taxRate,
     taxAmount,
@@ -78,20 +83,61 @@ export default function InvoiceForm() {
 
   // ── Core invoice fields (aligned with contract create_invoice & Scopes) ──
   const [buyer, setBuyer] = useState('');                              // → buyer (scope)
-  const [amount, setAmount] = useState('1');                           // → amount (scope)
+  const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [
+    { id: crypto.randomUUID(), description: 'Service fee', quantity: '1', unitPrice: '1' }
+  ]);
   const [taxRatePercent, setTaxRatePercent] = useState('0');            // → tax_amount (scope, user enters %, e.g. 5 = 5%)
   const [dueDate, setDueDate] = useState(tomorrowDateStr);             // → due_date (scope)
-  const [description, setDescription] = useState('Service fee');       // → items_hash (scope, via lineItems)
   const [currency, setCurrency] = useState('CREDITS');                 // → currency (scope)
   const [orderId, setOrderId] = useState('');                          // → order_id (scope)
   const [notes, setNotes] = useState('');                              // → memo_hash (scope)
 
-  // ── Derived display values ──
-  const parsedAmount = parseFloat(amount) || 0;
+  // ── Parsed line items (amount = quantity × unitPrice) ──
+  const parsedLineItems = useMemo(
+    () =>
+      lineItems.map((row) => {
+        const qty = parseFloat(row.quantity) || 0;
+        const price = parseFloat(row.unitPrice) || 0;
+        const amount = Math.round(qty * price * 100) / 100;
+        return {
+          description: row.description || 'Item',
+          quantity: qty,
+          unitPrice: price,
+          amount
+        };
+      }),
+    [lineItems]
+  );
+
+  // ── Amount = subtotal = sum(lineItems), per contract R4 ──
+  const parsedAmount = useMemo(
+    () => parsedLineItems.reduce((sum, item) => sum + item.amount, 0),
+    [parsedLineItems]
+  );
+
+  // ── Tax & total ──
   const parsedTaxRatePercent = parseFloat(taxRatePercent) || 0;  // e.g. 5 means 5%
   const parsedTaxRate = parsedTaxRatePercent / 100;               // 0.05
   const taxAmount = Math.round(parsedAmount * parsedTaxRate * 100) / 100;
   const total = Math.round((parsedAmount + taxAmount) * 100) / 100;
+
+  // ── Line items handlers ──
+  const addLineItem = useCallback(() => {
+    setLineItems((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), description: 'Service fee', quantity: '1', unitPrice: '1' }
+    ]);
+  }, []);
+
+  const removeLineItem = useCallback((id: string) => {
+    setLineItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
+  }, []);
+
+  const updateLineItem = useCallback((id: string, field: keyof LineItemRow, value: string) => {
+    setLineItems((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    );
+  }, []);
 
   // ── Validation errors ──
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -110,9 +156,17 @@ export default function InvoiceForm() {
       errs.buyer = 'Buyer cannot be the same as seller.';
     }
 
-    // Contract: assert(amount > 0u64)
+    // Contract: assert(amount > 0u64), R4: line_items_sum == amount
     if (parsedAmount <= 0) {
-      errs.amount = 'Amount must be greater than 0.';
+      errs.amount = 'Add at least one line item with a positive amount.';
+    }
+
+    // Per-row: description required, amount > 0
+    const hasInvalidLineItem = parsedLineItems.some(
+      (item) => !item.description.trim() || item.amount <= 0
+    );
+    if (hasInvalidLineItem) {
+      errs.lineItems = 'Each line item needs a description and a positive amount (quantity × unit price).';
     }
 
     // Tax rate: 0–100 (percent)
@@ -155,8 +209,7 @@ export default function InvoiceForm() {
     const invoiceNumber = `INV-${Date.now()}`;
     const details = buildDetails({
       invoiceNumber,
-      description,
-      amountCredits: parsedAmount,
+      lineItems: parsedLineItems,
       taxRate: parsedTaxRate,
       currency: currency.trim(),
       orderId: orderId.trim(),
@@ -249,21 +302,100 @@ export default function InvoiceForm() {
         {errors.buyer && <p className="text-xs text-red-500">{errors.buyer}</p>}
       </div>
 
-      {/* ── amount + tax_rate (side by side) ── */}
+      {/* ── Line Items (R4: amount = sum(lineItems)) ── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-slate-800">Line items <span className="text-red-500">*</span></label>
+          <button
+            type="button"
+            onClick={addLineItem}
+            className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add line item
+          </button>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full min-w-[520px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium text-slate-600">
+                <th className="px-3 py-2">Description</th>
+                <th className="w-20 px-3 py-2">Qty</th>
+                <th className="w-24 px-3 py-2">Unit price</th>
+                <th className="w-20 px-3 py-2">Amount</th>
+                <th className="w-10 px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {lineItems.map((row) => {
+                const qty = parseFloat(row.quantity) || 0;
+                const price = parseFloat(row.unitPrice) || 0;
+                const amount = Math.round(qty * price * 100) / 100;
+                return (
+                  <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={row.description}
+                        onChange={(e) => updateLineItem(row.id, 'description', e.target.value)}
+                        className="input-field min-w-0 py-1.5"
+                        placeholder="Service, product, etc."
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={row.quantity}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '' || /^\d*\.?\d*$/.test(v)) updateLineItem(row.id, 'quantity', v);
+                        }}
+                        className="input-field py-1.5"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={row.unitPrice}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '' || /^\d*\.?\d*$/.test(v)) updateLineItem(row.id, 'unitPrice', v);
+                        }}
+                        className="input-field py-1.5"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{amount.toFixed(2)}</td>
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(row.id)}
+                        disabled={lineItems.length <= 1}
+                        title="Remove line"
+                        className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {errors.lineItems && <p className="text-xs text-red-500">{errors.lineItems}</p>}
+        {errors.amount && <p className="text-xs text-red-500">{errors.amount}</p>}
+      </div>
+
+      {/* ── Subtotal (Amount) + Tax rate ── */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label className="text-sm font-medium text-slate-800">Amount (credits) <span className="text-red-500">*</span></label>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            required
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="input-field"
-            placeholder="1.00"
-          />
-          {errors.amount && <p className="text-xs text-red-500">{errors.amount}</p>}
+          <label className="text-sm font-medium text-slate-800">
+            Subtotal (Amount) <span className="text-xs text-slate-400">(from line items)</span>
+          </label>
+          <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800">
+            {parsedAmount.toFixed(2)} credits
+          </div>
         </div>
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">Tax rate (%)</label>
@@ -317,18 +449,6 @@ export default function InvoiceForm() {
           </select>
           {errors.currency && <p className="text-xs text-red-500">{errors.currency}</p>}
         </div>
-      </div>
-
-      {/* ── description (→ items_hash) ── */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium text-slate-800">Description <span className="text-xs text-slate-400">(line items)</span></label>
-        <input
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="input-field"
-          placeholder="Service fee, consulting, etc."
-        />
       </div>
 
       {/* ── order_id + memo (side by side) ── */}
