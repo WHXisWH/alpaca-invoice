@@ -229,62 +229,107 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        {/* Details */}
+        {/* Details — all 9 scope fields + metadata */}
         <div className="space-y-2 mb-4 text-sm">
+          {/* buyer */}
           <div className="flex justify-between">
             <span className="text-slate-600">Buyer</span>
             <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
               {invoice.buyer}
             </code>
           </div>
+          {/* seller */}
           <div className="flex justify-between">
             <span className="text-slate-600">Seller</span>
             <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
               {invoice.seller}
             </code>
           </div>
+          {/* due_date */}
           <div className="flex justify-between">
             <span className="text-slate-600">Due Date</span>
             <span className="font-medium text-slate-900">
               {format(invoice.dueDate, 'yyyy-MM-dd')}
             </span>
           </div>
+          {/* created_at */}
           <div className="flex justify-between">
             <span className="text-slate-600">Created At</span>
             <span className="font-medium text-slate-900">
               {format(invoice.createdAt, 'yyyy-MM-dd HH:mm')}
             </span>
           </div>
+          {/* role */}
           <div className="flex justify-between">
             <span className="text-slate-600">Your Role</span>
             <span className="font-medium text-slate-900 capitalize">
               {userRole === 'seller' ? '🏪 Seller' : userRole === 'buyer' ? '🛒 Buyer' : '❓ Unknown'}
             </span>
           </div>
-          {invoice.taxAmount != null && (
+          {/* tax_amount */}
+          <div className="flex justify-between">
+            <span className="text-slate-600">Tax Amount</span>
+            <span className="font-medium text-slate-900">
+              {(Number(invoice.taxAmount ?? 0) / 1_000_000).toFixed(2)} credits
+            </span>
+          </div>
+          {/* tax_rate (from details, if available) */}
+          {invoice.details?.taxRate != null && (
             <div className="flex justify-between">
-              <span className="text-slate-600">Tax Amount</span>
+              <span className="text-slate-600">Tax Rate</span>
               <span className="font-medium text-slate-900">
-                {(Number(invoice.taxAmount) / 1_000_000).toFixed(2)} credits
+                {(invoice.details.taxRate * 100).toFixed(2)}%
               </span>
             </div>
           )}
-          {invoice.currency && (
-            <div className="flex justify-between">
-              <span className="text-slate-600">Currency</span>
+          {/* currency */}
+          <div className="flex justify-between">
+            <span className="text-slate-600">Currency</span>
+            {invoice.details?.currency ? (
+              <span className="font-medium text-slate-900">{invoice.details.currency}</span>
+            ) : invoice.currency ? (
               <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
-                {invoice.details?.currency ?? invoice.currency}
+                {invoice.currency}
               </code>
-            </div>
-          )}
-          {invoice.orderId && (
-            <div className="flex justify-between">
-              <span className="text-slate-600">Order ID</span>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </div>
+          {/* order_id */}
+          <div className="flex justify-between">
+            <span className="text-slate-600">Order ID</span>
+            {invoice.details?.orderId || invoice.details?.invoiceNumber ? (
+              <span className="font-medium text-slate-900">
+                {invoice.details.orderId ?? invoice.details.invoiceNumber}
+              </span>
+            ) : invoice.orderId ? (
               <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
-                {invoice.details?.orderId ?? invoice.orderId}
+                {invoice.orderId}
               </code>
-            </div>
-          )}
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </div>
+          {/* memo_hash / notes */}
+          <div className="flex justify-between">
+            <span className="text-slate-600">Memo</span>
+            {invoice.details?.notes ? (
+              <span className="font-medium text-slate-900">{invoice.details.notes}</span>
+            ) : invoice.memoHash ? (
+              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
+                {invoice.memoHash}
+              </code>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </div>
+          {/* invoice_hash */}
+          <div className="flex justify-between">
+            <span className="text-slate-600">Invoice Hash</span>
+            <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all max-w-[60%] text-right">
+              {invoice.invoiceHash}
+            </code>
+          </div>
         </div>
 
         {/* Audit anchors — only render when at least one anchor has data */}
@@ -391,22 +436,35 @@ export default function InvoiceDetailPage() {
         )}
       </div>
       
-      {/* Line Items */}
+      {/* Line Items & Summary */}
       {invoice.details && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Line items</div>
+          <div className="text-sm font-semibold text-slate-900">Line Items</div>
           <ul className="mt-2 space-y-2 text-sm text-slate-700">
             {invoice.details.lineItems.map((item, idx) => (
               <li key={idx} className="flex items-center justify-between">
                 <span>{item.description}</span>
                 <span>
-                  {item.quantity} x {item.unitPrice} = {item.amount}
+                  {item.quantity} × {item.unitPrice} = {item.amount}
                 </span>
               </li>
             ))}
           </ul>
-          <div className="mt-3 text-sm text-slate-700">
-            Total: {invoice.details.total} {invoice.details.currency}
+          <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-700">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{invoice.details.subtotal} {invoice.details.currency}</span>
+            </div>
+            {invoice.details.taxRate > 0 && (
+              <div className="flex justify-between">
+                <span>Tax ({(invoice.details.taxRate * 100).toFixed(2)}%)</span>
+                <span>{invoice.details.taxAmount} {invoice.details.currency}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold text-slate-900">
+              <span>Total</span>
+              <span>{invoice.details.total} {invoice.details.currency}</span>
+            </div>
           </div>
         </div>
       )}
