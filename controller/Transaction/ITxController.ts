@@ -11,9 +11,9 @@ export interface ITxController {
    * 1. Call CryptoService.computeInvoiceHash to compute the invoice hash
    * 2. Call WalletService.requestTransaction to request a transaction (wallet internally generates ZKP proof)
    * 3. Locally encrypt and archive to IndexedDB
-   * @returns invoiceHash used to navigate to the invoice detail page
+   * @returns { invoiceHash, invoiceId } used to navigate and for executeSetAuditAuthorization
    */
-  executeCreateInvoice(params: CreateInvoiceParams): Promise<AleoField>;
+  executeCreateInvoice(params: CreateInvoiceParams): Promise<{ invoiceHash: AleoField; invoiceId: AleoField }>;
 
   /** * Logic:
    * 1. Get required data from the Invoice object

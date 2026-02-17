@@ -43,7 +43,7 @@ export function useTransactionController(): ITxController {
    * 3) local archival & status sync
    */
   const executeCreateInvoice = useCallback(
-    async (params: CreateInvoiceParams): Promise<AleoField> => {
+    async (params: CreateInvoiceParams): Promise<{ invoiceHash: AleoField; invoiceId: AleoField }> => {
       try {
         // Phase 1: permission & data prep
         // Ensure wallet is connected
@@ -314,6 +314,8 @@ export function useTransactionController(): ITxController {
             dueDate: params.dueDate,
             createdAt: new Date(),
             status: 0, // PENDING
+            nonce: nonceField,
+            auditKey: params.audit?.auditKey,
             details: params.details,
             metadata: { // Add metadata, set action to 'create'
               confirmationStatus: 'SENDING',
@@ -335,9 +337,9 @@ export function useTransactionController(): ITxController {
         // Complete transaction
         completeTx();
 
-        // Return invoiceHash (used by View layer to navigate to invoice detail page)
+        // Return invoiceHash and invoiceId (invoiceId needed by caller for executeSetAuditAuthorization)
         // Note: Per the sequence diagram, redirect to /invoices/:hash after archival succeeds
-        return invoiceHash;
+        return { invoiceHash, invoiceId };
       } catch (error: any) {
         // Reset state
         completeTx();
@@ -345,7 +347,7 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, masterKey, setMasterKey, startTx, updateProgress, completeTx, invoiceStore, logs, walletService]
+    [publicKey, masterKey, setMasterKey, startTx, updateProgress, completeTx, invoiceStore, walletService]
   );
 
   /**
