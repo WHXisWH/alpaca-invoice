@@ -15,10 +15,12 @@ function buildDetails(
 ): InvoiceDetails {
   // Normalize numbers to 6 decimals to avoid floating-point drift
   const subtotal = Math.round(amountCredits * 1000000) / 1000000;
+  // TODO: taxRate/taxAmount are hardcoded to 0 (no tax). Add form inputs if tax support is needed.
   const taxRate = 0;
   const taxAmount = 0;
   const total = Math.round((subtotal + taxAmount) * 1000000) / 1000000;
   
+  // orderId is derived from invoiceNumber automatically; add an input field if manual order_id is needed.
   return {
     invoiceNumber,
     lineItems: [

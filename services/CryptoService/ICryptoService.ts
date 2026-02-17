@@ -24,16 +24,16 @@ export interface AleoInvoiceRecord {
   invoice_id: string;      // Unique invoice ID (Field format)
   invoice_hash: string;    // Invoice details hash (Field format, used for integrity verification)
   amount: string;          // Invoice amount (microcredits)
-  tax_amount?: string;     // Tax amount (microcredits) - Wave 2
+  tax_amount: string;      // Tax amount (microcredits)
   seller: string;          // Seller address
   buyer: string;           // Buyer address
   due_date: number;        // Due date (Unix timestamp)
   created_at: number;      // Creation time (Unix timestamp)
   status: number;          // Status (0=pending, 1=paid, 2=cancelled, 3=expired)
-  order_id?: string;       // Order linkage (0field if unused) - Wave 2
-  currency?: string;       // Currency code hashed to field - Wave 2
-  items_hash?: string;     // Hash/commitment of line items - Wave 2
-  memo_hash?: string;      // Optional memo hash (0field if unused) - Wave 2
+  order_id: string;        // Order linkage (0field if unused)
+  currency: string;        // Currency code hashed to field
+  items_hash: string;      // Hash/commitment of line items
+  memo_hash: string;       // Optional memo hash (0field if unused)
   _nonce?: string;         // Record nonce (optional)
 }
 
@@ -113,7 +113,7 @@ export interface ICryptoService {
    * Complete invoice verification flow:
    * ```typescript
    * // 1. Get decrypted on-chain Records from the wallet
-   * const records = await wallet.requestRecords('zk_invoice_v2.aleo');
+   * const records = await wallet.requestRecords('zk_invoice_v2_2.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );
