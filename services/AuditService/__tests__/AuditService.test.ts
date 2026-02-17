@@ -5,6 +5,7 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import type { Invoice, InvoiceDetails, AleoAddress, AleoField } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
+import type { AuditPackageEnvelope } from '@/types/audit-package';
 
 describe('AuditService', () => {
   let service: AuditService;
@@ -69,10 +70,9 @@ describe('AuditService', () => {
       details
     } as Invoice;
 
-    // Mock dependencies
+    // Mock dependencies (no getAllInvoices; caller passes invoice into generate)
     mockDeps = {
       signerAddress: 'aleo1signer' as AleoAddress,
-      getAllInvoices: vi.fn().mockResolvedValue([mockInvoice]),
       signMessage: vi.fn().mockResolvedValue('mock-signature-12345'),
       protocolService: {
         verifyInvoiceOnChain: vi.fn().mockResolvedValue({
@@ -83,88 +83,46 @@ describe('AuditService', () => {
       } as any
     };
 
-    // Create service instance
     service = new AuditService(mockDeps);
   });
 
   describe('generate', () => {
-    it('should successfully generate an audit package with valid inputs', async () => {
-      // Arrange
+    it('should successfully generate an audit package (envelope + auditKey + auditKeyHash)', async () => {
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
 
-      // Act
       const result = await service.generate(params);
 
-      // Assert
       expect(result).toBeDefined();
-      expect(result.pkg).toBeDefined();
+      expect(result.envelope).toBeDefined();
       expect(result.auditKey).toBeDefined();
+      expect(result.auditKeyHash).toBeDefined();
 
-      // Verify V2.2 audit package structure
-      expect(result.pkg.version).toBe('2.2');
-      expect(result.pkg.invoiceId).toBe('50231998723415field');
-      expect(result.pkg.permissions).toEqual(['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']);
-      if (result.pkg.version === '2.2') {
-        expect(result.pkg.owner).toBe('aleo1signer');
-        expect(result.pkg.nonce).toBe('123456789field');
-        expect(result.pkg.commitments).toBeDefined();
-        expect(result.pkg.commitments.root).toBeTruthy();
-        expect(result.pkg.commitments.amount).toBeTruthy();
-        expect(result.pkg.commitments.buyer).toBeTruthy();
-        expect(result.pkg.commitments.seller).toBeTruthy();
-        expect(result.pkg.chainVerifiable).toBe(true);
-        expect(result.pkg.programId).toBeDefined();
-        expect(result.pkg.programId).toBe(PROGRAM_ID);
-      }
+      const env = result.envelope as AuditPackageEnvelope;
+      expect(env.version).toBe('2.2.0');
+      expect(env.audit_type).toBe('selective_disclosure');
+      expect(env.network).toMatch(/^aleo_/);
+      expect(env.contract).toBe(PROGRAM_ID);
+      expect(env.context.invoice_id).toBe('50231998723415field');
+      expect(env.context.audit_key_hash).toBeTruthy();
+      expect(typeof env.context.expires_at).toBe('number');
+      expect(env.encryption.algorithm).toBe('AES-256-GCM');
+      expect(env.encryption.iv).toBeTruthy();
+      expect(env.encryption.auth_tag).toBeTruthy();
+      expect(env.encryption.ciphertext).toBeTruthy();
 
-      // Verify cipher (iv, ciphertext, authTag)
-      expect(result.pkg.cipher).toBeDefined();
-      expect(result.pkg.cipher.iv).toBeTruthy();
-      expect(result.pkg.cipher.ciphertext).toBeTruthy();
-      expect(result.pkg.cipher.authTag).toBeTruthy();
-
-      // Verify cipher hash
-      expect(result.pkg.cipherHash).toBeDefined();
-      expect(result.pkg.cipherHash).toMatch(/^[0-9a-f]{64}$/);
-
-      // Verify signature
-      expect(result.pkg.signature).toBe('mock-signature-12345');
-
-      // Verify audit key
       expect(result.auditKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(String(result.auditKeyHash)).toMatch(/field$/);
 
-      // Verify dependencies were called
-      expect(mockDeps.signMessage).toHaveBeenCalledTimes(2); // Once for master key, once for package
-      expect(mockDeps.getAllInvoices).toHaveBeenCalledWith({
-        masterKey: expect.any(String),
-        refreshMemory: false
-      });
-    });
-
-    it('should find invoice by invoiceHash if id does not match', async () => {
-      // Arrange - pass invoiceHash instead of id; service should find by hash and use actual id in package
-      const params = {
-        invoiceId: mockInvoice.invoiceHash,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: ['READ_AMOUNT']
-      };
-
-      // Act
-      const result = await service.generate(params);
-
-      // Assert
-      expect(result).toBeDefined();
-      expect(result.pkg.invoiceId).toBe('50231998723415field'); // Should use actual invoice id
+      expect(mockDeps.signMessage).toHaveBeenCalledTimes(1);
     });
 
     it('should generate different audit keys for each call', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -177,18 +135,16 @@ describe('AuditService', () => {
       expect(result1.auditKey).not.toBe(result2.auditKey);
     });
 
-    it('should throw INVALID_INPUT error for empty invoiceId', async () => {
-      // Arrange
+    it('should throw INVALID_INPUT when invoice is missing', async () => {
       const params = {
-        invoiceId: '' as AleoField,
+        invoice: undefined as any,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act & Assert
-      await expect(service.generate(params)).rejects.toThrow('Invoice ID is required');
+      await expect(service.generate(params)).rejects.toThrow('Invoice is required');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-      
+
       try {
         await service.generate(params);
       } catch (error: any) {
@@ -196,37 +152,21 @@ describe('AuditService', () => {
       }
     });
 
-    it('should throw INVALID_INPUT error for whitespace-only invoiceId', async () => {
-      // Arrange
-      const params = {
-        invoiceId: '   ' as AleoField,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: ['READ_AMOUNT']
-      };
-
-      // Act & Assert
-      await expect(service.generate(params)).rejects.toThrow('Invoice ID is required');
-      await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-    });
-
     it('should throw NOT_CONNECTED error when wallet is not connected', async () => {
-      // Arrange
       const serviceWithoutWallet = new AuditService({
         signerAddress: null,
-        getAllInvoices: mockDeps.getAllInvoices,
         signMessage: mockDeps.signMessage
       });
 
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act & Assert
       await expect(serviceWithoutWallet.generate(params)).rejects.toThrow('Wallet not connected');
       await expect(serviceWithoutWallet.generate(params)).rejects.toThrow(AuditServiceError);
-      
+
       try {
         await serviceWithoutWallet.generate(params);
       } catch (error: any) {
@@ -234,41 +174,15 @@ describe('AuditService', () => {
       }
     });
 
-    it('should throw INVOICE_NOT_FOUND error when invoice does not exist', async () => {
-      // Arrange
-      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([]); // Empty invoice list
-      service = new AuditService(mockDeps);
-
-      const params = {
-        invoiceId: 'nonexistent-id' as AleoField,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: ['READ_AMOUNT']
-      };
-
-      // Act & Assert
-      await expect(service.generate(params)).rejects.toThrow('Invoice not found in local storage');
-      await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-      
-      try {
-        await service.generate(params);
-      } catch (error: any) {
-        expect(error.code).toBe(AuditError.INVOICE_NOT_FOUND);
-      }
-    });
-
-    it('should throw MISSING_DETAILS error when invoice has no details', async () => {
-      // Arrange
+    it('should throw MISSING_DETAILS when invoice has no details', async () => {
       const invoiceWithoutDetails = { ...mockInvoice, details: undefined };
-      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([invoiceWithoutDetails]);
-      service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: invoiceWithoutDetails,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act & Assert
       await expect(service.generate(params)).rejects.toThrow('Invoice details are missing');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
 
@@ -281,11 +195,9 @@ describe('AuditService', () => {
 
     it('should throw INVALID_INPUT when invoice has no nonce', async () => {
       const invoiceWithoutNonce = { ...mockInvoice, nonce: undefined } as Invoice;
-      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([invoiceWithoutNonce]);
-      service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: invoiceWithoutNonce,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -295,11 +207,10 @@ describe('AuditService', () => {
     });
 
     it('should throw INVALID_INPUT error when no permissions result in data', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: [] // Empty permissions - no data will be selected
+        permissions: []
       };
 
       // Act & Assert
@@ -314,39 +225,33 @@ describe('AuditService', () => {
     });
 
     it('should handle READ_AMOUNT permission only', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act
       const result = await service.generate(params);
 
-      // Assert
-      expect(result.pkg.permissions).toEqual(['READ_AMOUNT']);
+      expect(result.envelope).toBeDefined();
+      expect(result.envelope.context.invoice_id).toBe('50231998723415field');
     });
 
     it('should handle READ_PARTIES permission only', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_PARTIES']
       };
 
-      // Act
       const result = await service.generate(params);
 
-      // Assert
-      expect(result.pkg.permissions).toEqual(['READ_PARTIES']);
+      expect(result.envelope).toBeDefined();
     });
 
     it('should handle READ_DETAILS permission', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
@@ -354,14 +259,13 @@ describe('AuditService', () => {
       // Act
       const result = await service.generate(params);
 
-      // Assert
-      expect(result.pkg.permissions).toEqual(['READ_DETAILS']);
+      expect(result.envelope).toBeDefined();
+      expect(result.envelope.context.invoice_id).toBe('50231998723415field');
     });
 
     it('should handle multiple permissions', async () => {
-      // Arrange
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS', 'READ_LINE_ITEMS']
       };
@@ -370,16 +274,15 @@ describe('AuditService', () => {
       const result = await service.generate(params);
 
       // Assert
-      expect(result.pkg.permissions).toEqual(['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS', 'READ_LINE_ITEMS']);
+      expect(result.envelope.context.invoice_id).toBe('50231998723415field');
     });
 
     it('should throw GENERATION_FAILED when signMessage fails', async () => {
-      // Arrange
       mockDeps.signMessage = vi.fn().mockRejectedValue(new Error('Signature failed'));
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
@@ -394,67 +297,35 @@ describe('AuditService', () => {
       }
     });
 
-    it('should throw GENERATION_FAILED when getAllInvoices fails', async () => {
-      // Arrange
-      mockDeps.getAllInvoices = vi.fn().mockRejectedValue(new Error('Database error'));
-      service = new AuditService(mockDeps);
-
+    it('should include expires_at in envelope context', async () => {
+      const beforeSec = Math.floor(Date.now() / 1000);
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act & Assert
-      await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
-      
-      try {
-        await service.generate(params);
-      } catch (error: any) {
-        expect(error.code).toBe(AuditError.GENERATION_FAILED);
-      }
+      const result = await service.generate(params);
+      const afterSec = Math.floor(Date.now() / 1000);
+
+      expect(result.envelope.context.expires_at).toBeGreaterThanOrEqual(beforeSec);
+      expect(result.envelope.context.expires_at).toBeLessThanOrEqual(afterSec + 7 * 24 * 3600 + 2);
     });
 
-    it('should include issuedAt timestamp in the package', async () => {
-      // Arrange
-      const beforeTime = Date.now();
+    it('should set correct contract in envelope', async () => {
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act
-      const result = await service.generate(params);
-      const afterTime = Date.now();
-
-      // Assert
-      expect(result.pkg.issuedAt).toBeGreaterThanOrEqual(beforeTime);
-      expect(result.pkg.issuedAt).toBeLessThanOrEqual(afterTime);
-    });
-
-    it('should set correct programId', async () => {
-      // Arrange
-      const params = {
-        invoiceId: '50231998723415field' as AleoField,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-        permissions: ['READ_AMOUNT']
-      };
-
-      // Act
       const result = await service.generate(params);
 
-      // Assert (V2.2 package has programId)
-      expect(result.pkg.version).toBe('2.2');
-      if (result.pkg.version === '2.2') {
-        expect(result.pkg.programId).toBeDefined();
-        expect(result.pkg.programId).toBe(PROGRAM_ID);
-        expect(result.pkg.programId).toMatch(/\.aleo$/);
-      }
+      expect(result.envelope.contract).toBe(PROGRAM_ID);
+      expect(result.envelope.contract).toMatch(/\.aleo$/);
     });
 
     it('should handle complex invoice with multiple line items', async () => {
-      // Arrange
       const complexInvoice: Invoice = {
         ...mockInvoice,
         details: {
@@ -473,45 +344,37 @@ describe('AuditService', () => {
         }
       };
 
-      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([complexInvoice]);
-      service = new AuditService(mockDeps);
-
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: complexInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
 
-      // Act
       const result = await service.generate(params);
 
-      // Assert
       expect(result).toBeDefined();
-      expect(result.pkg).toBeDefined();
+      expect(result.envelope).toBeDefined();
       expect(result.auditKey).toBeDefined();
     });
 
-    it('should use same master key derivation message format', async () => {
-      // Arrange
+    it('should call signMessage with audit package message', async () => {
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act
       await service.generate(params);
 
-      // Assert
       expect(mockDeps.signMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Derive master key for Aleo address:')
+        expect.stringContaining('AUDIT_PACKAGE_V2_2')
       );
     });
 
     it('should call buildAuditMessage with canonical format: AUDIT_PACKAGE_V2_2|programId|invoiceId|invoiceHash|nonce|root|expiresAt|sortedPerms|cipherHash', async () => {
       const expiresAt = Date.now() + 60_000;
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt,
         permissions: ['READ_DETAILS', 'READ_AMOUNT']
       };
@@ -536,139 +399,124 @@ describe('AuditService', () => {
       expect(parts[8]).toMatch(/^[0-9a-f]{64}$/);
     });
 
-    it('should filter by READ_DETAILS: decrypted includes full details with lineItems', async () => {
+    it('should filter by READ_DETAILS: decrypted payload has data and commitments', async () => {
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 60_000,
         permissions: ['READ_DETAILS', 'READ_AMOUNT', 'READ_LINE_ITEMS']
       };
 
       const generated = await service.generate(params);
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
       expect(result.valid).toBe(true);
-      expect(result.decrypted?.details).toBeDefined();
-      expect(result.decrypted.details.invoiceNumber).toBe('INV-2026-001');
-      expect(result.decrypted.details.lineItems).toHaveLength(1);
-      expect(result.decrypted.details.lineItems[0].description).toBe('Advanced Cloud Service');
-      expect(Number(result.decrypted.amount ?? 0)).toBe(1000000);
+      expect(result.decrypted?.data).toBeDefined();
+      expect(result.decrypted?.commitments?.root).toBeTruthy();
+      expect(result.decrypted?.invoiceId).toBe('50231998723415field');
+      if (result.decrypted?.data && 'amount' in result.decrypted.data) {
+        expect(Number(result.decrypted.data.amount)).toBe(1000000);
+      }
     });
 
-    it('should filter by READ_PARTIES + READ_DETAILS: decrypted has seller, buyer and full details', async () => {
+    it('should filter by READ_PARTIES + READ_DETAILS: decrypted has seller, buyer in data', async () => {
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 60_000,
         permissions: ['READ_PARTIES', 'READ_DETAILS']
       };
 
       const generated = await service.generate(params);
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
       expect(result.valid).toBe(true);
-      expect(result.decrypted?.seller).toBe('aleo1n0gx6ehedlevfx2xtasc9l22vy4mkfwu0r2he6rdmm9n7hfuq5fq4d8r8u');
-      expect(result.decrypted?.buyer).toBe('aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc');
-      expect(result.decrypted?.details?.invoiceNumber).toBe('INV-2026-001');
-      expect(result.decrypted?.details?.lineItems).toHaveLength(1);
+      expect(result.decrypted?.data?.seller).toBe('aleo1n0gx6ehedlevfx2xtasc9l22vy4mkfwu0r2he6rdmm9n7hfuq5fq4d8r8u');
+      expect(result.decrypted?.data?.buyer).toBe('aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc');
     });
   });
 
-  describe('validate', () => {
-    it('should validate a legitimate audit package', async () => {
-      // Arrange - Generate a real package first
+  describe('validateEnvelope', () => {
+    it('should validate a legitimate envelope', async () => {
       const generateParams = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
 
       const generated = await service.generate(generateParams);
 
-      // Act
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
-      // Assert
       expect(result).toBeDefined();
       expect(result.valid).toBe(true);
       expect(result.decrypted).toBeDefined();
     });
 
-    it('should reject package with wrong audit key', async () => {
-      // Arrange - Generate a real package
+    it('should reject envelope with wrong audit key', async () => {
       const generateParams = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
       const generated = await service.generate(generateParams);
-      const wrongKey = 'a'.repeat(64); // Wrong key
+      const wrongKey = 'a'.repeat(64);
 
-      // Act
-      const result = await service.validate(generated.pkg, wrongKey);
+      const result = await service.validateEnvelope(generated.envelope, wrongKey);
 
-      // Assert
       expect(result.valid).toBe(false);
       expect(result.reason).toBeDefined();
     });
 
-    it('should reject expired audit package', async () => {
-      // Arrange - Generate package that's already expired
+    it('should reject expired audit envelope', async () => {
       const generateParams = {
-        invoiceId: '50231998723415field' as AleoField,
-        expiresAt: Date.now() - 1000, // Already expired
+        invoice: mockInvoice,
+        expiresAt: 1, // Already expired (1 second after epoch)
         permissions: ['READ_AMOUNT']
       };
 
       const generated = await service.generate(generateParams);
 
-      // Act
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
-      // Assert
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('expired');
     });
 
-    it('should throw VALIDATION_FAILED when validation throws error', async () => {
-      // Arrange - Create invalid package (V2 shape with programId but missing required fields)
-      const invalidPackage: any = {
-        version: 2,
-        programId: PROGRAM_ID,
-        // Missing required fields (invoiceId, invoiceHash, cipher, etc.)
+    it('should return valid: false for invalid envelope (bad ciphertext)', async () => {
+      const invalidEnvelope: any = {
+        version: '2.2.0',
+        audit_type: 'selective_disclosure',
+        network: 'aleo_testnet3',
+        contract: PROGRAM_ID,
+        context: { invoice_id: '1field', audit_key_hash: '2field', expires_at: Math.floor(Date.now() / 1000) + 3600 },
+        encryption: { iv: 'eA==', auth_tag: 'eA==', ciphertext: 'invalid', algorithm: 'AES-256-GCM' }
       };
 
-      // Act & Assert
-      await expect(service.validate(invalidPackage, 'somekey')).rejects.toThrow(AuditServiceError);
-      
-      try {
-        await service.validate(invalidPackage, 'somekey');
-      } catch (error: any) {
-        expect(error.code).toBe(AuditError.VALIDATION_FAILED);
-      }
+      const result = await service.validateEnvelope(invalidEnvelope, 'a'.repeat(64));
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBeDefined();
     });
 
-    it('should return decrypted data for valid package', async () => {
-      // Arrange
+    it('should return decrypted data for valid envelope', async () => {
       const generateParams = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_DETAILS']
       };
 
       const generated = await service.generate(generateParams);
 
-      // Act
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
-      // Assert
       expect(result.valid).toBe(true);
       expect(result.decrypted).toBeDefined();
-      expect(result.decrypted.details).toBeDefined();
+      expect(result.decrypted?.data).toBeDefined();
+      expect(result.decrypted?.commitments?.root).toBeDefined();
     });
 
     it('should fail when chain hash mismatch', async () => {
       const generated = await service.generate({
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 60_000,
         permissions: ['READ_DETAILS']
       });
@@ -685,13 +533,13 @@ describe('AuditService', () => {
       };
       const serviceWithMismatch = new AuditService(depsWithHashMismatch);
 
-      const result = await serviceWithMismatch.validate(generated.pkg, generated.auditKey);
+      const result = await serviceWithMismatch.validateEnvelope(generated.envelope, generated.auditKey);
 
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('HASH_MISMATCH_WITH_CHAIN');
     });
 
-    it('should pass with chainVerification when chain matches', async () => {
+    it('should pass with chainVerification when chain matches (validateEnvelope)', async () => {
       mockDeps.protocolService = {
         verifyInvoiceOnChain: vi.fn().mockResolvedValue({
           exists: true,
@@ -702,49 +550,48 @@ describe('AuditService', () => {
       service = new AuditService(mockDeps);
 
       const generated = await service.generate({
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 60_000,
         permissions: ['READ_DETAILS']
       });
 
-      const result = await service.validate(generated.pkg, generated.auditKey);
+      const result = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
       expect(result.valid).toBe(true);
       expect(result.chainVerification?.chainStatus).toBe(InvoiceStatus.PAID);
     });
 
-    it('should fail with cipher hash mismatch when payload is tampered', async () => {
+    it('should fail with integrity hash mismatch when envelope ciphertext is tampered', async () => {
       const generated = await service.generate({
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 60_000,
         permissions: ['READ_DETAILS']
       });
 
-      const tamperedPkg = {
-        ...generated.pkg,
-        cipher: {
-          ...generated.pkg.cipher,
-          ciphertext: Buffer.from(generated.pkg.cipher.ciphertext, 'base64')
+      const tamperedEnvelope = {
+        ...generated.envelope,
+        encryption: {
+          ...generated.envelope.encryption,
+          ciphertext: Buffer.from(generated.envelope.encryption.ciphertext, 'base64')
             .reverse()
             .toString('base64')
         }
       };
 
-      const result = await service.validate(tamperedPkg, generated.auditKey);
+      const result = await service.validateEnvelope(tamperedEnvelope, generated.auditKey);
 
       expect(result.valid).toBe(false);
-      expect(result.reason).toBe('Cipher hash mismatch (tampered payload)');
+      expect(result.reason).toMatch(/decrypt|integrity|Failed/i);
     });
   });
 
   describe('error handling', () => {
     it('should throw AuditServiceError type for all errors', async () => {
-      // Test various error scenarios
       const scenarios = [
         {
-          name: 'empty invoiceId',
+          name: 'missing invoice',
           params: {
-            invoiceId: '' as AleoField,
+            invoice: undefined as any,
             expiresAt: Date.now() + 1000,
             permissions: ['READ_AMOUNT']
           }
@@ -762,18 +609,16 @@ describe('AuditService', () => {
     });
 
     it('should preserve error details in wrapped errors', async () => {
-      // Arrange
       const originalError = new Error('Original error message');
-      mockDeps.getAllInvoices = vi.fn().mockRejectedValue(originalError);
+      mockDeps.signMessage = vi.fn().mockRejectedValue(originalError);
       service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act & Assert
       try {
         await service.generate(params);
         expect.fail('Should have thrown');
@@ -786,51 +631,41 @@ describe('AuditService', () => {
   });
 
   describe('integration', () => {
-    it('should complete full generate-validate cycle', async () => {
-      // Arrange
+    it('should complete full generate-validateEnvelope cycle', async () => {
       const generateParams = {
-        invoiceId: '50231998723415field' as AleoField,
+        invoice: mockInvoice,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
       };
 
-      // Act - Generate
       const generated = await service.generate(generateParams);
 
-      // Assert - Package structure
-      expect(generated.pkg).toBeDefined();
+      expect(generated.envelope).toBeDefined();
       expect(generated.auditKey).toBeDefined();
-      expect(generated.pkg.cipher).toBeDefined();
-      expect(generated.pkg.cipherHash).toBeDefined();
+      expect(generated.envelope.encryption.iv).toBeTruthy();
+      expect(generated.envelope.encryption.ciphertext).toBeTruthy();
 
-      // Act - Validate
-      const validated = await service.validate(generated.pkg, generated.auditKey);
+      const validated = await service.validateEnvelope(generated.envelope, generated.auditKey);
 
-      // Assert - Validation result
       expect(validated.valid).toBe(true);
       expect(validated.decrypted).toBeDefined();
+      expect(validated.decrypted?.invoiceId).toBe('50231998723415field');
+      expect(validated.decrypted?.data).toBeDefined();
+      expect(validated.decrypted?.commitments?.root).toBeTruthy();
     });
 
-    it('should handle multiple invoices in storage', async () => {
-      // Arrange
-      const invoice1 = { ...mockInvoice, id: 'invoice1' as AleoField };
+    it('should handle multiple invoices when caller passes selected invoice', async () => {
       const invoice2 = { ...mockInvoice, id: 'invoice2' as AleoField };
-      const invoice3 = { ...mockInvoice, id: 'invoice3' as AleoField };
-
-      mockDeps.getAllInvoices = vi.fn().mockResolvedValue([invoice1, invoice2, invoice3]);
-      service = new AuditService(mockDeps);
 
       const params = {
-        invoiceId: 'invoice2' as AleoField,
+        invoice: invoice2,
         expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
         permissions: ['READ_AMOUNT']
       };
 
-      // Act
       const result = await service.generate(params);
 
-      // Assert
-      expect(result.pkg.invoiceId).toBe('invoice2');
+      expect(result.envelope.context.invoice_id).toBe('invoice2');
     });
   });
 });

@@ -242,6 +242,11 @@ export interface ICryptoService {
   hashCipher(payload: EncryptedPayload): Promise<string>;
 
   /**
+   * SHA-256 hash of UTF-8 string to hex (e.g. for canonical payload integrity).
+   */
+  hashUtf8ToHex(input: string): Promise<string>;
+
+  /**
    * Encrypt invoice details with raw audit key (without PBKDF2 derivation)
    * 
    * Unlike encryptPayload which uses a master key string,

@@ -22,3 +22,19 @@ export function buildScopesBitmask(fields: string[]): bigint {
   }
   return mask;
 }
+
+/** Map selected field keys to AuditService permission strings. */
+export function fieldsToPermissions(selectedFields: string[]): string[] {
+  const perms = new Set<string>();
+  if (selectedFields.includes('amount')) perms.add('READ_AMOUNT');
+  if (selectedFields.includes('tax_amount')) perms.add('READ_TAX');
+  if (selectedFields.includes('buyer') || selectedFields.includes('seller')) perms.add('READ_PARTIES');
+  if (
+    selectedFields.some((f) =>
+      ['due_date', 'currency', 'items_hash', 'memo_hash', 'order_id'].includes(f)
+    )
+  ) {
+    perms.add('READ_DETAILS');
+  }
+  return [...perms];
+}
