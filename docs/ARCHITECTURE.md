@@ -98,7 +98,9 @@ app/
 | `useInvoices` | Invoice list compositor (initialize, filter, role, categorization) |
 | `useInvoiceDetail` | Invoice detail compositor (data, role, manual sync, actions) |
 | `useTransactionController` | Transaction flow management (create/pay/cancel) |
-| `useAuditController` | Audit package generation & validation (selective disclosure) |
+| `useAuditPackageGenerate` | Generate audit package (envelope + auditKey) |
+| `useAuditPackageDecrypt` | Decrypt audit package (envelope + key → payload) |
+| `useAuditPackageVerify` | Verify audit package (four-phase trustless verification) |
 | `useInvoiceListPolling` | Batch polling manager (used by InvoiceAutoPoller) |
 | `useInvoiceChainSync` | Manual chain sync and key migration (detail page only) |
 | `useInvoicePollingCore` | Core polling logic shared by all polling operations |

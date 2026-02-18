@@ -46,7 +46,8 @@ export default function AuditPage() {
         <div>
           <div className="font-semibold text-slate-900">Verify Audit Package</div>
           <div className="text-sm text-slate-500">
-            Auditor? Paste the package JSON and Audit Key to run four-phase verification.
+            Paste the package JSON and Audit Key on the verify page to preview disclosed content or run full
+            verification.
           </div>
         </div>
       </Link>

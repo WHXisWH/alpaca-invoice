@@ -174,7 +174,7 @@ export class AuditService implements IAuditService {
       base.details = invoice.details;
     } else if (invoice.details && allow('READ_AMOUNT')) {
       base.details = {
-        invoiceNumber: invoice.details.invoiceNumber,
+        orderId: invoice.details.orderId ?? invoice.details.invoiceNumber,
         subtotal: invoice.details.subtotal,
         taxRate: invoice.details.taxRate,
         taxAmount: invoice.details.taxAmount,
@@ -247,7 +247,7 @@ export class AuditService implements IAuditService {
     if (disclosedSnake.has('currency')) data.currency = inv.details?.currency ?? (typeof inv.currency === 'string' ? inv.currency : 'unknown');
     if (disclosedSnake.has('items_hash')) data.items_hash = inv.itemsHash ?? (inv.details ? await this.cryptoService.hashObjectToField(inv.details.lineItems ?? []) : ('0field' as AleoField));
     if (disclosedSnake.has('memo_hash')) data.memo_hash = inv.details?.notes ?? (inv.memoHash ?? '');
-    if (disclosedSnake.has('order_id')) data.order_id = inv.details?.invoiceNumber ?? (inv.orderId ?? '0field');
+    if (disclosedSnake.has('order_id')) data.order_id = inv.details?.orderId ?? (inv.orderId ?? '0field');
     data.hidden_masks = [...COMMITMENT_FIELD_KEYS].filter(k => !disclosedSnake.has(k));
     return { data, disclosedSnake };
   }
@@ -295,7 +295,7 @@ export class AuditService implements IAuditService {
       const invExt = invoice as Invoice & { taxAmount?: bigint; currency?: AleoField; itemsHash?: AleoField; memoHash?: AleoField; orderId?: AleoField };
       const { root: r, fields } = await this.buildFieldCommitments({
         amount: invoice.amount,
-        taxAmount: invExt.taxAmount ?? BigInt(invoice.details?.taxAmount ?? 0),
+        taxAmount: invExt.taxAmount ?? BigInt(Math.round(Number(invoice.details?.taxAmount ?? 0))),
         dueDate: toSeconds(invoice.dueDate),
         buyer: invoice.buyer,
         seller: invoice.seller,
@@ -381,7 +381,7 @@ export class AuditService implements IAuditService {
    * Caller must pass the invoice from local DB/chain, including nonce from create_invoice.
    */
   async generate(params: GenerateAuditPackageParams): Promise<GenerateAuditPackageResult> {
-    const { invoice, expiresAt, permissions, chainCommitmentRoot, chainFieldCommitments, auditKey: providedAuditKey } = params;
+    const { invoice, expiresAt, permissions, auditKey: providedAuditKey } = params;
 
     if (!invoice || !invoice.id) {
       throw new AuditServiceError(
@@ -421,9 +421,7 @@ export class AuditService implements IAuditService {
         invoice,
         permissions,
         expiresAt,
-        auditKey,
-        chainCommitmentRoot,
-        chainFieldCommitments
+        auditKey
       });
 
       return { envelope: result.envelope, auditKey: result.auditKey, auditKeyHash: result.auditKeyHash };
