@@ -1,6 +1,6 @@
 /**
  * Pure helpers for audit package generation.
- * Used by useAuditController.
+ * Used by useAuditPackageGenerate.
  */
 
 import { FIELD_SCOPE_IDS } from './auditConstants';

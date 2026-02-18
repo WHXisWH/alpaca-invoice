@@ -15,7 +15,7 @@ describe('AuditService', () => {
   beforeEach(async () => {
     // Off-chain details (for audit decryption and frontend display, corresponding to InvoiceDetails)
     const details: InvoiceDetails = {
-      invoiceNumber: 'INV-2026-001',
+      orderId: 'ORD-2026-001',
       lineItems: [
         {
           description: 'Advanced Cloud Service',
@@ -86,6 +86,7 @@ describe('AuditService', () => {
     service = new AuditService(mockDeps);
   });
 
+  // ========== 1. 生成审计包（useAuditPackageGenerate） ==========
   describe('generate', () => {
     it('should successfully generate an audit package (envelope + auditKey + auditKeyHash)', async () => {
       const params = {
@@ -133,6 +134,44 @@ describe('AuditService', () => {
 
       // Assert
       expect(result1.auditKey).not.toBe(result2.auditKey);
+    });
+
+    it('should use caller-provided audit key when passed', async () => {
+      const userAuditKey = 'a'.repeat(64);
+      const params = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT', 'READ_DETAILS'],
+        auditKey: userAuditKey
+      };
+
+      const result = await service.generate(params);
+
+      expect(result.auditKey).toBe(userAuditKey);
+      expect(result.auditKeyHash).toBeDefined();
+      expect(result.envelope).toBeDefined();
+
+      const valid = await service.validate(result.envelope as any, userAuditKey);
+      expect(valid.valid).toBe(true);
+    });
+
+    it('should produce valid envelope when user provides audit key (64 hex)', async () => {
+      const hexKey = '0123456789abcdef'.repeat(4);
+      const params = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT'],
+        auditKey: hexKey
+      };
+
+      const result = await service.generate(params);
+
+      expect(result.auditKey).toBe(hexKey);
+      expect(result.auditKey).toMatch(/^[0-9a-f]{64}$/);
+
+      const validation = await service.validate(result.envelope as any, hexKey);
+      expect(validation.valid).toBe(true);
+      expect(validation.decrypted).toBeDefined();
     });
 
     it('should throw INVALID_INPUT when invoice is missing', async () => {
@@ -329,7 +368,7 @@ describe('AuditService', () => {
       const complexInvoice: Invoice = {
         ...mockInvoice,
         details: {
-          invoiceNumber: 'INV-COMPLEX-001',
+          orderId: 'ORD-COMPLEX-001',
           lineItems: [
             { description: 'Product A', quantity: 5, unitPrice: 123.45, amount: 617.25 },
             { description: 'Product B', quantity: 3, unitPrice: 67.89, amount: 203.67 },
@@ -434,6 +473,7 @@ describe('AuditService', () => {
     });
   });
 
+  // ========== 2. 解密审计包（useAuditPackageDecrypt，基于 validateEnvelope） ==========
   describe('validateEnvelope', () => {
     it('should validate a legitimate envelope', async () => {
       const generateParams = {
@@ -584,6 +624,8 @@ describe('AuditService', () => {
       expect(result.reason).toMatch(/decrypt|integrity|Failed/i);
     });
   });
+
+  // ========== 3. 验证审计包（useAuditPackageVerify：四阶段 verifyEnvelopePhases，见 integration） ==========
 
   describe('error handling', () => {
     it('should throw AuditServiceError type for all errors', async () => {

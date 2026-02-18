@@ -3,11 +3,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import AuditVerifyFlow from '@/components/audit-verify-flow';
-import { useAuditVerifyController } from '@/controller/Audit/useAuditVerifyController';
+import { useAuditPackageVerify } from '@/controller/Audit/useAuditPackageVerify';
 import { ShieldCheck, ArrowLeft } from 'lucide-react';
 
 export default function AuditVerifyPage() {
-  const controller = useAuditVerifyController();
+  const controller = useAuditPackageVerify();
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-6">
@@ -26,8 +26,9 @@ export default function AuditVerifyPage() {
             <div>
               <h1 className="text-xl font-semibold text-primary-900">Verify Audit Package</h1>
               <p className="text-sm text-primary-500">
-                Upload or paste the audit package JSON and the Audit Key to run a four-phase trustless
-                verification (pre-check, on-chain access control, chain anchoring, and mathematical proof).
+                Upload or paste the audit package JSON and Audit Key, then preview disclosed content (decrypt only)
+                or run full four-phase trustless verification (pre-check, on-chain access control, chain anchoring,
+                and mathematical proof).
               </p>
             </div>
           </div>
@@ -51,9 +52,11 @@ export default function AuditVerifyPage() {
         auditKey={controller.auditKey}
         setAuditKey={controller.setAuditKey}
         result={controller.result}
+        previewResult={controller.previewResult}
         loading={controller.loading}
         error={controller.error}
         onFileUpload={controller.handleFileUpload}
+        onPreview={controller.handlePreview}
         onVerify={controller.handleVerify}
         onExportReport={controller.handleExportReport}
       />

@@ -3,20 +3,22 @@ import { AuditService } from '@/services/AuditService/AuditServiceImpl';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import type { AuditPackageEnvelope } from '@/types/audit-package';
-import type { VerifyEnvelopePhasesResult } from '@/services/AuditService/IAuditService';
+import type {
+  VerifyEnvelopePhasesResult,
+  ValidateAuditPackageResult
+} from '@/services/AuditService/IAuditService';
 
 /**
- * Audit Verify Controller
+ * Audit Package Verify Controller
  *
- * Responsibilities:
- * - Manage state for audit package verification (envelope, audit key, result, loading, error)
- * - Orchestrate four-phase verification via AuditService
- * - Provide handlers for file upload, verify, and export report
+ * - Preview: decrypt only (validateEnvelope), show disclosed content.
+ * - Full verify: four-phase trustless verification (verifyEnvelopePhases).
  */
-export function useAuditVerifyController() {
+export function useAuditPackageVerify() {
   const [envelopeText, setEnvelopeText] = useState('');
   const [auditKey, setAuditKey] = useState('');
   const [result, setResult] = useState<VerifyEnvelopePhasesResult | null>(null);
+  const [previewResult, setPreviewResult] = useState<ValidateAuditPackageResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,11 +53,38 @@ export function useAuditVerifyController() {
     e.target.value = '';
   }, []);
 
+  const handlePreview = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      setError(null);
+      setResult(null);
+      setPreviewResult(null);
+      setLoading(true);
+      try {
+        const envelope = JSON.parse(envelopeText) as AuditPackageEnvelope;
+        const key = auditKey.trim().replace(/\s/g, '');
+        if (!key || !/^[0-9a-fA-F]{64}$/.test(key)) {
+          setError('Audit Key must be 64 hex characters');
+          return;
+        }
+        const res = await auditService.validateEnvelope(envelope, key);
+        setPreviewResult(res);
+      } catch (err: any) {
+        setError(err?.message ?? 'Preview failed');
+        setPreviewResult(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [envelopeText, auditKey, auditService]
+  );
+
   const handleVerify = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
       setResult(null);
+      setPreviewResult(null);
       setLoading(true);
       try {
         const envelope = JSON.parse(envelopeText) as AuditPackageEnvelope;
@@ -106,9 +135,11 @@ export function useAuditVerifyController() {
     auditKey,
     setAuditKey,
     result,
+    previewResult,
     loading,
     error,
     handleFileUpload,
+    handlePreview,
     handleVerify,
     handleExportReport
   };

@@ -1,6 +1,6 @@
 /**
  * Audit feature constants and config.
- * Shared by useAuditController and audit UI components.
+ * Shared by useAuditPackageGenerate and audit UI components.
  */
 
 export const FIELD_SCOPE_IDS: Record<string, number> = {
