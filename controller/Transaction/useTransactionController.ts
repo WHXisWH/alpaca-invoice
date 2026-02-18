@@ -12,6 +12,7 @@ import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
 import { PROGRAM_ID } from '@/lib/contract';
+import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // Initialize service instance (used inside the hook)
@@ -85,9 +86,9 @@ export function useTransactionController(): ITxController {
           updateProgress(0, 'AUTHORIZING - Requesting signature authorization...');
 
           try {
-            // Request signature
+            // Request signature (same message as auth/unlock so derived masterKey matches)
             const signature = await walletService.signMessage(
-              'Sign to access your private invoices',
+              MASTER_KEY_SIGNATURE_MESSAGE,
               publicKey
             );
 

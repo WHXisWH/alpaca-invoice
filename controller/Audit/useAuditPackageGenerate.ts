@@ -119,6 +119,8 @@ export function useAuditPackageGenerate() {
         const invoice =
           list.find((i) => i.id === opts.invoiceId) ||
           list.find((i) => i.invoiceHash === opts.invoiceId);
+        
+        console.log('invoice', invoice)
 
         if (!invoice) {
           throw new Error('Invoice not found locally. Please sync invoices first.');
@@ -143,8 +145,6 @@ export function useAuditPackageGenerate() {
         const selectedFields =
           opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS;
         const permissions = fieldsToPermissions(selectedFields);
-        console.log('permissions', permissions)
-        console.log('invoice', invoice)
 
         const genResult = await auditService.generate({
           invoice,
@@ -153,9 +153,14 @@ export function useAuditPackageGenerate() {
           auditKey: invoiceWithAuditKey.auditKey
         });
 
+        console.log('[Audit] generate() success, setting result', {
+          hasEnvelope: !!genResult?.envelope,
+          hasAuditKey: !!genResult?.auditKey
+        });
         setResult({ envelope: genResult.envelope, auditKey: genResult.auditKey });
         return { envelope: genResult.envelope, auditKey: genResult.auditKey };
       } catch (err: any) {
+        console.log('[Audit] generate() caught error', err?.message ?? err);
         handleError(err);
         throw err;
       } finally {
@@ -173,6 +178,7 @@ export function useAuditPackageGenerate() {
         expiresAt: new Date(expiresAt).getTime(),
         selectedFields: fields
       });
+      console.log('[Audit] generateFromForm received pkg', !!pkg?.envelope, !!pkg?.auditKey);
       setResult(pkg);
     } catch {
       // Error is already handled by unified error handler

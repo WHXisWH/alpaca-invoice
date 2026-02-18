@@ -6,6 +6,7 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
+import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { toast } from 'sonner';
 
 /**
@@ -48,9 +49,9 @@ export function useAuthCheck() {
     try {
       toast.loading('Requesting authorization...', { id: 'auth-unlock' });
 
-      // Request signature
+      // Request signature (same message as create-invoice so derived masterKey matches)
       const signature = await walletService.signMessage(
-        'Authorize Access',
+        MASTER_KEY_SIGNATURE_MESSAGE,
         publicKey
       );
 
