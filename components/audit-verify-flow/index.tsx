@@ -1,8 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import type { VerifyEnvelopePhasesResult, VerifyPhaseResult } from '@/services/AuditService/IAuditService';
-import { Check, X, ChevronDown, ChevronRight, FileJson, Key } from 'lucide-react';
+import type {
+  VerifyEnvelopePhasesResult,
+  VerifyPhaseResult,
+  ValidateAuditPackageResult
+} from '@/services/AuditService/IAuditService';
+import { Check, X, ChevronDown, ChevronRight, FileJson, Key, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 
 function PhaseCard({
   title,
@@ -68,9 +73,11 @@ export interface AuditVerifyFlowProps {
   auditKey: string;
   setAuditKey: (value: string) => void;
   result: VerifyEnvelopePhasesResult | null;
+  previewResult: ValidateAuditPackageResult | null;
   loading: boolean;
   error: string | null;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onPreview: (e?: React.FormEvent) => void;
   onVerify: (e: React.FormEvent) => void;
   onExportReport: () => void;
 }
@@ -81,12 +88,27 @@ export default function AuditVerifyFlow({
   auditKey,
   setAuditKey,
   result,
+  previewResult,
   loading,
   error,
   onFileUpload,
+  onPreview,
   onVerify,
   onExportReport
 }: AuditVerifyFlowProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [fileName, setFileName] = useState<string>('');
+
+  const handleChooseFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const name = e.target.files?.[0]?.name ?? '';
+    setFileName(name);
+    onFileUpload(e);
+  };
+
   return (
     <div className="space-y-6">
       <form onSubmit={onVerify} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -96,12 +118,24 @@ export default function AuditVerifyFlow({
               <FileJson className="h-4 w-4" />
               Audit package JSON
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleChooseFile}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Select JSON file
+                </button>
+                {fileName && <span className="text-xs text-slate-500 truncate">{fileName}</span>}
+              </div>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".json,application/json"
-                onChange={onFileUpload}
-                className="block w-full max-w-xs cursor-pointer rounded-lg border border-slate-200 text-sm file:mr-2 file:rounded-l file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium"
+                onChange={handleFileChange}
+                className="hidden"
               />
             </div>
             <textarea
@@ -134,14 +168,53 @@ export default function AuditVerifyFlow({
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading || !envelopeText.trim() || !auditKey.trim()}
-          className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-        >
-          {loading ? 'Verifying...' : 'Verify'}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => onPreview()}
+            disabled={loading || !envelopeText.trim() || !auditKey.trim()}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {loading ? '...' : 'Preview disclosed content'}
+          </button>
+          <button
+            type="submit"
+            disabled={loading || !envelopeText.trim() || !auditKey.trim()}
+            className="rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {loading ? 'Verifying...' : 'Full verification'}
+          </button>
+        </div>
       </form>
+
+      {previewResult !== null && (
+        <div className="space-y-4">
+          <div
+            className={`flex items-center rounded-xl border px-4 py-3 ${
+              previewResult.valid ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              {previewResult.valid ? (
+                <Check className="h-6 w-6 text-emerald-600" />
+              ) : (
+                <X className="h-6 w-6 text-red-600" />
+              )}
+              <span className="font-semibold text-slate-900">
+                {previewResult.valid ? 'Disclosed content decrypted' : previewResult.reason ?? 'Decryption failed'}
+              </span>
+            </div>
+          </div>
+          {previewResult.valid && previewResult.decrypted?.data && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-2 text-sm font-semibold text-slate-800">Disclosed content (preview only)</h3>
+              <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
+                {JSON.stringify(previewResult.decrypted.data, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="space-y-4">

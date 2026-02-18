@@ -185,6 +185,7 @@ export class CryptoService implements ICryptoService {
     paramsOrDetails: ContractInvoiceHashParams | InvoiceDetails
   ): Promise<AleoField> {
     try {
+      // Warning: this uses browser SHA-256 (mod p). Contract uses BHP256; do not compare result to on-chain invoice_hash.
       if (CryptoService.isContractParams(paramsOrDetails)) {
         return this.hashFromContractParams(paramsOrDetails);
       }
@@ -432,7 +433,8 @@ export class CryptoService implements ICryptoService {
   async verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    chainContext?: InvoiceHashChainContext
+    chainContext?: InvoiceHashChainContext,
+    options?: { expectedChainHash?: AleoField; mode?: 'chain' | 'recompute' }
   ): Promise<boolean> {
     if (!localDetails || typeof localDetails !== 'object') {
       throw new CryptoServiceError(
@@ -442,13 +444,21 @@ export class CryptoService implements ICryptoService {
       );
     }
 
+    const cleanChainHash = this.normalizeField(chainInvoiceHash) as AleoField;
+
+    if (options?.mode === 'chain') {
+      const expected = options.expectedChainHash
+        ? (this.normalizeField(options.expectedChainHash) as AleoField)
+        : cleanChainHash;
+      return cleanChainHash === expected;
+    }
+
     try {
       const computedHash =
         chainContext != null
           ? await this.computeInvoiceHash(this.buildContractHashParams(localDetails, chainContext))
           : await this.computeInvoiceHash(localDetails);
-      const cleanChainHash = chainInvoiceHash.replace(/field\.(private|public)$/, 'field') as AleoField;
-      return computedHash === cleanChainHash;
+      return this.normalizeField(computedHash) === cleanChainHash;
     } catch (error: any) {
       throw new CryptoServiceError(
         CryptoError.HASH_MISMATCH,
@@ -456,6 +466,10 @@ export class CryptoService implements ICryptoService {
         { originalError: error?.message || error }
       );
     }
+  }
+
+  private normalizeField(field: AleoField | string): string {
+    return String(field).replace(/field\.(private|public)$/i, 'field').trim();
   }
 
   /**

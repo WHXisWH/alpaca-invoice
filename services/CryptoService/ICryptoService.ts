@@ -103,6 +103,7 @@ export interface ICryptoService {
    *
    * Contract path: pass ContractInvoiceHashParams (same 10 fields as main.leo compute_invoice_hash_internal). No details.
    * Legacy path: pass InvoiceDetails only; uses sorted JSON hash (e.g. for payment nonce).
+   * Warning: implementation currently uses SHA-256 (mod field) and is NOT equal to contract BHP256 hash.
    */
   computeInvoiceHash(params: ContractInvoiceHashParams): Promise<AleoField>;
   computeInvoiceHash(details: InvoiceDetails): Promise<AleoField>;
@@ -145,7 +146,8 @@ export interface ICryptoService {
   verifyInvoiceIntegrity(
     localDetails: InvoiceDetails,
     chainInvoiceHash: AleoField,
-    chainContext?: InvoiceHashChainContext
+    chainContext?: InvoiceHashChainContext,
+    options?: { expectedChainHash?: AleoField; mode?: 'chain' | 'recompute' }
   ): Promise<boolean>;
 
   /**

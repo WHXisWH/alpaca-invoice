@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
+import { cleanAleoField } from '@/lib/invoice';
 import { toast } from 'sonner';
 
 /**
@@ -15,7 +16,8 @@ import { toast } from 'sonner';
  */
 export function useInvoiceListInitialize() {
   const { publicKey, masterKey } = useUserStore();
-  const { 
+  const {
+    invoices: currentInvoices,
     getAllInvoices,
     setInvoices,
     rebuildSendingIndex  // ✅ 新增：重建 sending 索引
@@ -37,12 +39,24 @@ export function useInvoiceListInitialize() {
       
       // ✅ 直接调用 scanAndBuildInvoices 获取构建好的 Invoice 对象
       const invoices = await scanAndBuildInvoices();
-      
+
       if (invoices.length === 0) {
         console.log('📋 [syncFromChain] No records found on chain');
         return;
       }
-      
+
+      // Merge nonce/auditKey from existing in-memory invoices (local-only fields not on chain)
+      for (const inv of invoices) {
+        const existing = currentInvoices.find(
+          (e) => cleanAleoField(e.id) === cleanAleoField(inv.id) || e.invoiceHash === inv.invoiceHash
+        );
+        if (existing) {
+          if (!inv.nonce && existing.nonce) inv.nonce = existing.nonce;
+          if (!inv.auditKey && existing.auditKey) inv.auditKey = existing.auditKey;
+          if (!inv.details && existing.details) inv.details = existing.details;
+        }
+      }
+
       // ✅ 批量存入 IndexedDB（metadata 设置为 CONFIRMED）
       await setInvoices(invoices, { 
         masterKey, 
@@ -63,7 +77,7 @@ export function useInvoiceListInitialize() {
     } finally {
       setIsLoading(false);
     }
-  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices]);
+  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices, currentInvoices, rebuildSendingIndex]);
 
   /**
    * 初始化流程：处理两种情况
@@ -125,4 +139,3 @@ export function useInvoiceListInitialize() {
     initialize
   };
 }
-

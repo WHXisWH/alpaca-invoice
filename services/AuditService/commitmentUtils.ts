@@ -5,7 +5,7 @@
  * - commitment_root = BHP256::hash_to_field(commitments)
  */
 
-import { BHP768, Field, Address, Poseidon8 } from '@provablehq/sdk';
+import { BHP256, Field, Address } from '@provablehq/sdk';
 import type { AleoField } from '@/lib/types';
 
 /** Field bit size in Aleo (toBitsLe returns 256 bits for canonical representation) */
@@ -52,7 +52,7 @@ function fieldToBits(value: string): boolean[] {
 
 /**
  * Pad bits to target length (for BHP chunk alignment).
- * Aleo fields may be 254 bits; BHP768 needs 768, BHP1024 needs 1024.
+ * Aleo fields may be 254 bits; pad to FIELD_BITS for proper struct serialization.
  */
 function padBits(bits: boolean[], length: number): boolean[] {
   if (bits.length >= length) return bits.slice(0, length);
@@ -64,7 +64,8 @@ function padBits(bits: boolean[], length: number): boolean[] {
  *   let input = FieldCommitInput { val, salt, tag };
  *   return BHP256::hash_to_field(input);
  *
- * FieldCommitInput has 3 fields → 3×256 = 768 bits → BHP768.
+ * FieldCommitInput has 3 fields → 3×256 = 768 bits → BHP256 (hash_to_field).
+ * The "256" is the BHP window config, not an input size limit.
  */
 export function commitField(val: AleoField | string, salt: AleoField, tag: AleoField): AleoField {
   const valBits = fieldToBits(typeof val === 'string' ? val : String(val));
@@ -75,7 +76,7 @@ export function commitField(val: AleoField | string, salt: AleoField, tag: AleoF
     ...padBits(saltBits, FIELD_BITS),
     ...padBits(tagBits, FIELD_BITS)
   ];
-  const bhp = new BHP768();
+  const bhp = new BHP256();
   const result = bhp.hash(bits);
   const s = result.toString();
   return (s.endsWith('field') ? s : `${s}field`) as AleoField;
@@ -83,19 +84,19 @@ export function commitField(val: AleoField | string, salt: AleoField, tag: AleoF
 
 /**
  * Compute commitment root from FieldCommitments struct.
- * Contract uses BHP256::hash_to_field(commitments); SDK BHP accepts fixed input sizes.
- * We use Poseidon8 to hash the 9 commitment fields for a deterministic root.
- * For exact chain match, fetch root via get_invoice_commitment.
+ * Contract uses BHP256::hash_to_field(commitments) where commitments is a struct
+ * with 9 field elements → 9×256 = 2304 bits → BHP256 (hash_to_field).
  */
 export function computeCommitmentRoot(fields: Record<string, AleoField>): AleoField {
-  const fieldArr: Field[] = [];
+  const allBits: boolean[] = [];
   for (const key of COMMITMENT_FIELD_ORDER) {
     const v = fields[key];
     if (v !== undefined) {
-      fieldArr.push(toField(v));
+      allBits.push(...padBits(fieldToBits(v), FIELD_BITS));
     }
   }
-  const hasher = new Poseidon8();
-  const result = hasher.hash(fieldArr);
-  return `${result.toString()}field` as AleoField;
+  const bhp = new BHP256();
+  const result = bhp.hash(allBits);
+  const s = result.toString();
+  return (s.endsWith('field') ? s : `${s}field`) as AleoField;
 }

@@ -3,12 +3,10 @@ import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
 import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 // Service instances (singleton pattern, lazy initialization)
 let storageServiceInstance: StorageService | null = null;
 let cryptoServiceInstance: CryptoService | null = null;
-let protocolServiceInstance: AleoProtocolService | null = null;
 
 const getStorageService = (): StorageService => {
   if (!storageServiceInstance) {
@@ -22,13 +20,6 @@ const getCryptoService = (): CryptoService => {
     cryptoServiceInstance = new CryptoService();
   }
   return cryptoServiceInstance;
-};
-
-const getProtocolService = (): AleoProtocolService => {
-  if (!protocolServiceInstance) {
-    protocolServiceInstance = new AleoProtocolService();
-  }
-  return protocolServiceInstance;
 };
 
 // Table name constant
@@ -48,6 +39,8 @@ interface InvoiceStorageData {
   dueDate: Date;
   createdAt: Date;
   status: InvoiceStatus;
+  nonce?: AleoField;
+  auditKey?: string;
   // Encrypted details
   encryptedDetails: EncryptedPayload | null;
   // Metadata
@@ -94,6 +87,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           dueDate: invoice.dueDate,
           createdAt: invoice.createdAt,
           status: invoice.status,
+          nonce: invoice.nonce,
+          auditKey: invoice.auditKey,
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: 'SENDING',
@@ -228,6 +223,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           dueDate: updatedInvoice.dueDate,
           createdAt: updatedInvoice.createdAt,
           status: updatedInvoice.status,
+          ...(updatedInvoice.nonce !== undefined && { nonce: updatedInvoice.nonce }),
+          ...(updatedInvoice.auditKey !== undefined && { auditKey: updatedInvoice.auditKey }),
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: finalMetadata.confirmationStatus,
@@ -367,6 +364,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         dueDate: updatedInvoiceFull.dueDate,
         createdAt: updatedInvoiceFull.createdAt,
         status: updatedInvoiceFull.status,
+        nonce: updatedInvoiceFull.nonce ?? oldRecordData.nonce,
+        auditKey: updatedInvoiceFull.auditKey ?? oldRecordData.auditKey,
         encryptedDetails: encryptedDetails,
         metadata: {
           confirmationStatus: finalMetadata.confirmationStatus,
@@ -478,6 +477,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             dueDate: dbRecord.dueDate,
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
+            nonce: dbRecord.nonce,
+            auditKey: dbRecord.auditKey,
             details: details,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -534,6 +535,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             dueDate: dbRecord.dueDate,
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
+            nonce: dbRecord.nonce,
+            auditKey: dbRecord.auditKey,
             details: details,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -551,6 +554,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             dueDate: dbRecord.dueDate,
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
+            nonce: dbRecord.nonce,
+            auditKey: dbRecord.auditKey,
             details: undefined,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -642,6 +647,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               dueDate: invoice.dueDate,
               createdAt: invoice.createdAt,
               status: invoice.status,
+              nonce: invoice.nonce,
+              auditKey: invoice.auditKey,
               encryptedDetails: encryptedDetails,
               metadata: invoiceMetadata // Use the provided metadata
             };

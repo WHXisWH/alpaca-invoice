@@ -101,6 +101,8 @@ export interface GenerateAuditPackageParams {
   chainCommitmentRoot?: AleoField;
   /** When provided, use chain field commitments (snake_case keys). */
   chainFieldCommitments?: Record<string, AleoField>;
+  /** When provided, use this audit key instead of generating a new one (from invoice creation). */
+  auditKey?: string;
 }
 
 /**
@@ -224,11 +226,11 @@ export interface IAuditService {
   /**
    * Four-phase verification for auditors: pre-check, on-chain access control,
    * chain anchoring, and trustless verification.
-   */
+  */
   verifyEnvelopePhases(
     envelope: AuditPackageEnvelope,
     auditKey: string,
-    registry: IInvoiceRegistryService
+    registry?: IInvoiceRegistryService
   ): Promise<VerifyEnvelopePhasesResult>;
 }
 

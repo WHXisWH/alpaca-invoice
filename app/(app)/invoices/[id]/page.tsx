@@ -9,7 +9,7 @@ import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { useAuditController } from '@/controller/Audit/useAuditController';
+import { useAuditPackageGenerate } from '@/controller/Audit/useAuditPackageGenerate';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
@@ -38,7 +38,7 @@ export default function InvoiceDetailPage() {
     handleCancel,
     handleSyncStatus
   } = useInvoiceDetail(invoiceHash);
-  const { generate } = useAuditController();
+  const { generate } = useAuditPackageGenerate();
   const protocolService = useMemo(() => new AleoProtocolService(), []);
   const [anchors, setAnchors] = useState<{
     commitment?: string | null;
