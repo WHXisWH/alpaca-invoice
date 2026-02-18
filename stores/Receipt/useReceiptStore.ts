@@ -12,6 +12,13 @@ export type ReceiptItem = {
   txId: string;
 };
 
+function reviveReceiptDates(list: any[]): ReceiptItem[] {
+  return list.map((r) => ({
+    ...r,
+    paidAt: r?.paidAt instanceof Date ? r.paidAt : new Date(r?.paidAt)
+  }));
+}
+
 type ReceiptState = {
   receipts: ReceiptItem[];
   addReceipt: (r: ReceiptItem) => void;
@@ -50,6 +57,14 @@ export const useReceiptStore = create<ReceiptState>()(
     }),
     {
       name: 'receipt-store'
+      ,
+      deserialize: (str) => {
+        const data = JSON.parse(str);
+        if (data?.state?.receipts) {
+          data.state.receipts = reviveReceiptDates(data.state.receipts);
+        }
+        return data;
+      }
     }
   )
 );

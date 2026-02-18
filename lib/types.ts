@@ -44,6 +44,8 @@ export interface Invoice {
   itemsHash?: AleoField;
   memoHash?: AleoField;
   details?: InvoiceDetails;
+  nonce?: AleoField;      // create_invoice nonce, required for audit package
+  auditKey?: string;      // 64 hex chars, generated at invoice creation
   metadata?: {
     confirmationStatus: 'SENDING' | 'CONFIRMED';
     lastUpdated: Date;
@@ -111,6 +113,12 @@ export interface CreateInvoiceParams {
   amount: Microcredits;
   dueDate: Date;
   details: InvoiceDetails;
+  /** Optional audit params: when set, audit key is stored with invoice and set_audit_authorization is called after creation */
+  audit?: {
+    auditKey: string;
+    scopesBitmask: bigint;
+    expiresAt: number; // Unix seconds
+  };
 }
 
 export interface CreateInvoiceResult {

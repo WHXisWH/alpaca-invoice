@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuditController } from '@/controller/Audit/useAuditController';
+import { useAuditPackageGenerate } from '@/controller/Audit/useAuditPackageGenerate';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 
 export default function AuditKeyGenerator() {
@@ -22,7 +22,7 @@ export default function AuditKeyGenerator() {
     loading,
     loadingInvoices,
     fieldsList
-  } = useAuditController();
+  } = useAuditPackageGenerate();
 
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

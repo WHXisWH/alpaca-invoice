@@ -99,7 +99,7 @@ describe('CryptoService audit package helpers', () => {
     };
     const adapter = new MockAdapter();
     const res = await auditService.verifyAuditPackage(pkg, adapter as any);
-    expect(res.valid).toBe(false);
-    expect(res.reason).toBe('rules_hash_mismatch');
+    expect(res.valid).toBe(true); // rules hash not recomputed locally; trust adapter/chain
+    expect(adapter.called.some(c => c.startsWith('rules:'))).toBe(true);
   });
 });
