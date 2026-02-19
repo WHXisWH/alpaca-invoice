@@ -191,7 +191,12 @@ export async function runCompute(
     return outputs;
   } catch (err: any) {
     if (err instanceof ComputeError) throw err;
-    throw new ComputeError('SDK_ERROR', err?.message ?? 'Unknown SDK error');
+    // SDK may throw strings, WASM error objects, or non-standard Error shapes;
+    // stringify the whole thing so the message is never silently lost.
+    const msg =
+      err?.message ??
+      (typeof err === 'string' ? err : JSON.stringify(err) ?? 'Unknown SDK error');
+    throw new ComputeError('SDK_ERROR', msg);
   } finally {
     if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
   }
