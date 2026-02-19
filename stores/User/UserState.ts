@@ -10,7 +10,9 @@ export interface UserState {
   
   // Actions
   setAccount: (publicKey: AleoAddress, connected: boolean) => void;
-  setMasterKey: (masterKey: string) => void;
+  setMasterKey: (masterKey: string, options?: { persistToDevice?: boolean }) => void;
+  /** Restore masterKey from device-wrapped storage if available (no re-sign). Returns true if restored. */
+  tryRestoreMasterKey: () => Promise<boolean>;
   updateBalances: (pub: Microcredits, priv: Microcredits) => void;
   clearUser: () => void;
 }

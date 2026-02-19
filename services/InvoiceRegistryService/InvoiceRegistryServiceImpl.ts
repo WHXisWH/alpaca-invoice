@@ -16,6 +16,21 @@ export interface IProgramMappingReader {
 
 const CACHE_TTL_MS = 30_000;
 
+/** Parse Leo struct string (e.g. "amount: 123field, tax_amount: 456field, ... } string") into Record<string, AleoField>. */
+function parseLeoFieldCommitmentsString(raw: string): Record<string, AleoField> | null {
+  const out: Record<string, string> = {};
+  // Match "key: digitsfield" (key = word chars, value = digits + "field")
+  const re = /(\w+):\s*(\d+field)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const key = m[1];
+    const val = m[2];
+    out[key] = val.endsWith('field') ? val : `${val}field`;
+  }
+  if (Object.keys(out).length === 0) return null;
+  return out as Record<string, AleoField>;
+}
+
 export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
   private readonly reader: IProgramMappingReader;
   private readonly hashCache = new Map<string, { ts: number; hash: AleoField | null }>();
@@ -67,7 +82,8 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
     const key = `commit-${invoiceId}`;
     const cached = this.commitmentCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
-    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'getter_commitment_cache', invoiceId);
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'invoice_commitment', invoiceId);
+
     const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
     this.commitmentCache.set(key, { ts: Date.now(), value: val });
     return val;
@@ -77,12 +93,21 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
     const key = `fields-${invoiceId}`;
     const cached = this.fieldsCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
-    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'getter_field_commitments_cache', invoiceId);
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'invoice_field_commitments', invoiceId);
     if (!raw) {
       this.fieldsCache.set(key, { ts: Date.now(), value: null });
       return null;
     }
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    let parsed: Record<string, AleoField> | null = null;
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw) as Record<string, AleoField>;
+      } catch {
+        parsed = parseLeoFieldCommitmentsString(raw);
+      }
+    } else {
+      parsed = raw as Record<string, AleoField>;
+    }
     this.fieldsCache.set(key, { ts: Date.now(), value: parsed });
     return parsed;
   }

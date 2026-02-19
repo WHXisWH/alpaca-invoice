@@ -16,7 +16,7 @@ import { toast } from 'sonner';
  */
 export function useAuthCheck() {
   const wallet = useWallet();
-  const { masterKey, publicKey, setMasterKey } = useUserStore();
+  const { masterKey, publicKey, setMasterKey, tryRestoreMasterKey } = useUserStore();
   const { handleError } = useErrorHandler();
   const [isRequestingAuth, setIsRequestingAuth] = useState(false);
 
@@ -47,6 +47,16 @@ export function useAuthCheck() {
 
     setIsRequestingAuth(true);
     try {
+      // Try restore from device first (no re-sign; same masterKey as before)
+      const restored = await tryRestoreMasterKey();
+      if (restored) {
+        toast.success('Authorization successful', {
+          id: 'auth-unlock',
+          description: 'You can now access your private invoice data'
+        });
+        return;
+      }
+
       toast.loading('Requesting authorization...', { id: 'auth-unlock' });
 
       // Request signature (same message as create-invoice so derived masterKey matches)
@@ -62,7 +72,7 @@ export function useAuthCheck() {
         );
       }
 
-      // Derive master key from signature
+      // Derive master key from signature and persist to device for future restore
       const derivedMasterKey = await cryptoService.deriveMasterKey(signature);
       setMasterKey(derivedMasterKey);
 
@@ -89,7 +99,7 @@ export function useAuthCheck() {
     } finally {
       setIsRequestingAuth(false);
     }
-  }, [walletService, publicKey, cryptoService, setMasterKey, handleError]);
+  }, [walletService, publicKey, cryptoService, setMasterKey, tryRestoreMasterKey, handleError]);
 
   return {
     isAuthRequired,

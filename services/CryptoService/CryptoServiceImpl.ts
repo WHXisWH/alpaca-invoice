@@ -303,6 +303,68 @@ export class CryptoService implements ICryptoService {
   }
 
   /**
+   * Wrap master key with device key (AES-GCM) for localStorage persistence.
+   * Same device can later unwrap without re-signing.
+   */
+  async wrapMasterKeyWithDeviceKey(
+    masterKey: string,
+    deviceKeyBytes: Uint8Array
+  ): Promise<EncryptedPayload> {
+    const crypto = this.getWebCrypto();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(masterKey);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      deviceKeyBytes as BufferSource,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt']
+    );
+    const fullOutput = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv as BufferSource },
+      key,
+      plaintext as BufferSource
+    );
+    const buf = new Uint8Array(fullOutput);
+    const ciphertextBytes = buf.slice(0, buf.length - AES_GCM_TAG_LENGTH);
+    const authTagBytes = buf.slice(buf.length - AES_GCM_TAG_LENGTH);
+    return {
+      iv: Buffer.from(iv).toString('base64'),
+      ciphertext: Buffer.from(ciphertextBytes).toString('base64'),
+      authTag: Buffer.from(authTagBytes).toString('base64')
+    };
+  }
+
+  /**
+   * Unwrap master key from device-key-encrypted payload.
+   */
+  async unwrapMasterKeyWithDeviceKey(
+    payload: EncryptedPayload,
+    deviceKeyBytes: Uint8Array
+  ): Promise<string> {
+    const crypto = this.getWebCrypto();
+    const iv = Buffer.from(payload.iv, 'base64');
+    let ciphertextBytes = Buffer.from(payload.ciphertext, 'base64');
+    if (payload.authTag) {
+      const tagBytes = Buffer.from(payload.authTag, 'base64');
+      ciphertextBytes = Buffer.concat([ciphertextBytes, tagBytes]);
+    }
+    const key = await crypto.subtle.importKey(
+      'raw',
+      deviceKeyBytes as BufferSource,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv as BufferSource },
+      key,
+      ciphertextBytes as BufferSource
+    );
+    return new TextDecoder().decode(plaintext);
+  }
+
+  /**
    * Parse a decrypted InvoiceRecord from wallet.requestRecords()
    *
    * This is a key step in the invoice verification flow:

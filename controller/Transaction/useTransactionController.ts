@@ -26,7 +26,7 @@ const cryptoService = new CryptoService();
 export function useTransactionController(): ITxController {
   const wallet = useWallet();
   const { isProcessing, progress, logs, startTx, updateProgress, completeTx } = useTransactionStore();
-  const { publicKey, masterKey, setMasterKey } = useUserStore();
+  const { publicKey, masterKey, setMasterKey, tryRestoreMasterKey } = useUserStore();
   const invoiceStore = useInvoiceStore();
   const receiptStore = useReceiptStore();
   const { scanInvoiceRecord } = useInvoiceChainScan(); // Use scan hook to fetch record
@@ -85,32 +85,36 @@ export function useTransactionController(): ITxController {
         // Trigger identity authorization on demand (if masterKey does not exist)
         let currentMasterKey = masterKey;
         if (!currentMasterKey) {
-          updateProgress(0, 'AUTHORIZING - Requesting signature authorization...');
-
+          updateProgress(0, 'AUTHORIZING - Restoring or requesting signature...');
           try {
-            // Request signature (same message as auth/unlock so derived masterKey matches)
-            const signature = await walletService.signMessage(
-              MASTER_KEY_SIGNATURE_MESSAGE,
-              publicKey
-            );
-
-            if (!signature) {
-              throw new WalletServiceError(
-                WalletError.USER_REJECTED,
-                'Failed to obtain signature for master key generation'
-              );
+            // Try restore from device first (no re-sign; same masterKey as before)
+            const restored = await tryRestoreMasterKey();
+            if (restored) {
+              currentMasterKey = useUserStore.getState().masterKey;
+              updateProgress(5, '✓ Master key restored');
             }
+            if (!currentMasterKey) {
+              updateProgress(0, 'AUTHORIZING - Requesting signature authorization...');
+              const signature = await walletService.signMessage(
+                MASTER_KEY_SIGNATURE_MESSAGE,
+                publicKey
+              );
 
-            // Derive master key from signature
-            currentMasterKey = await cryptoService.deriveMasterKey(signature);
-            setMasterKey(currentMasterKey);
-            updateProgress(5, '✓ Master key generated');
+              if (!signature) {
+                throw new WalletServiceError(
+                  WalletError.USER_REJECTED,
+                  'Failed to obtain signature for master key generation'
+                );
+              }
+
+              currentMasterKey = await cryptoService.deriveMasterKey(signature);
+              setMasterKey(currentMasterKey);
+              updateProgress(5, '✓ Master key generated');
+            }
           } catch (error: any) {
-            // If user rejected the signature, throw directly
             if (error instanceof WalletServiceError && error.code === WalletError.USER_REJECTED) {
               throw error;
             }
-            // Wrap other errors as WalletServiceError
             throw new WalletServiceError(
               WalletError.UNAUTHORIZED,
               'Failed to generate master key',
@@ -376,7 +380,7 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, masterKey, setMasterKey, startTx, updateProgress, completeTx, invoiceStore, walletService]
+    [publicKey, masterKey, setMasterKey, tryRestoreMasterKey, startTx, updateProgress, completeTx, invoiceStore, walletService]
   );
 
   /**

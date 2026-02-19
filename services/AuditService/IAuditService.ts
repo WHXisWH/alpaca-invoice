@@ -226,11 +226,25 @@ export interface IAuditService {
   /**
    * Four-phase verification for auditors: pre-check, on-chain access control,
    * chain anchoring, and trustless verification.
-  */
+   * @param options.chainRecordFields - When provided and chain has no field_commitments cache, use these 9 field values + package nonce to recompute commit_field and compare to package commitments (proves disclosed data matches chain).
+   */
   verifyEnvelopePhases(
     envelope: AuditPackageEnvelope,
     auditKey: string,
-    registry?: IInvoiceRegistryService
+    registry?: IInvoiceRegistryService,
+    options?: {
+      chainRecordFields?: {
+        amount: bigint;
+        taxAmount: bigint;
+        dueDate: number;
+        buyer: string;
+        seller: string;
+        currency: string;
+        itemsHash: string;
+        memoHash: string;
+        orderId: string;
+      };
+    }
   ): Promise<VerifyEnvelopePhasesResult>;
 }
 
@@ -247,5 +261,6 @@ export interface VerifyEnvelopePhasesResult {
   phase2: VerifyPhaseResult;
   phase3: VerifyPhaseResult;
   phase4: VerifyPhaseResult;
+  phase5: VerifyPhaseResult;
   decrypted?: any;
 }

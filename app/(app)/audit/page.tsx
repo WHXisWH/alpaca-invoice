@@ -17,8 +17,8 @@ export default function AuditPage() {
             <div>
               <h1 className="text-xl font-semibold text-primary-900">Audit Center</h1>
               <p className="text-sm text-primary-500">
-                Select an invoice from your local list (with nonce from create_invoice), then generate an audit
-                package and key for selective disclosure to auditors.
+                Select an invoice from your local list (including chain-synced invoices without nonce), then
+                generate an audit package and key for selective disclosure to auditors.
               </p>
             </div>
           </div>
