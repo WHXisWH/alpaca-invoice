@@ -300,6 +300,17 @@ export function useInvoices(): IInvoices {
         }
       }
       
+      // Preserve SENDING invoices (not yet on chain) so they don't get deleted
+      for (const inv of invoices) {
+        const cleanId = cleanAleoField(inv.id);
+        const alreadySynced = syncedInvoices.some(
+          (s) => cleanAleoField(s.id) === cleanId
+        );
+        if (!alreadySynced && inv.metadata?.confirmationStatus === 'SENDING') {
+          syncedInvoices.push(inv);
+        }
+      }
+
       // Reset store with synced invoices (rebuilds sending index automatically)
       if (syncedInvoices.length > 0) {
         await setInvoices(syncedInvoices, {

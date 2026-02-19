@@ -14,11 +14,22 @@ vi.mock('@provablehq/sdk', () => {
   };
   const mockPM = {
     run: vi.fn().mockResolvedValue({ outputs: ['999field'] }),
-    buildAuthorization: vi.fn().mockResolvedValue({})
+    buildAuthorization: vi.fn().mockResolvedValue({}),
+    setAccount: vi.fn()
   };
+  class PrivateKey {
+    to_string() {
+      return 'mock-private-key';
+    }
+  }
+  class Account {
+    constructor(_: any) {}
+  }
   return {
     AleoNetworkClient: vi.fn(() => mockClient),
-    ProgramManager: vi.fn(() => mockPM)
+    ProgramManager: vi.fn(() => mockPM),
+    PrivateKey,
+    Account
   };
 });
 
@@ -55,4 +66,3 @@ describe('AleoProtocolService', () => {
     await expect(svc.getLatestBlockHeight()).rejects.toHaveProperty('code', ProtocolError.NODE_CONNECTION_FAILED);
   });
 });
-

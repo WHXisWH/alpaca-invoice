@@ -164,7 +164,9 @@ export function updateInvoiceFromPaymentRecord(
     amount: BigInt(cleanAmount) as any,
     dueDate: invoice.dueDate,
     createdAt: invoice.createdAt,
-    status: 1 as any // PaymentRecord indicates paid
+    status: 1 as any, // PaymentRecord indicates paid
+    nonce: invoice.nonce,       // Preserve local-only field
+    auditKey: invoice.auditKey  // Preserve local-only field
   };
 }
 
@@ -202,6 +204,8 @@ export function updateInvoiceFromInvoiceRecord(
     currency: invoiceRecord.currency ? cleanAleoField(invoiceRecord.currency) as AleoField : invoice.currency,
     itemsHash: invoiceRecord.items_hash ? cleanAleoField(invoiceRecord.items_hash) as AleoField : invoice.itemsHash,
     memoHash: invoiceRecord.memo_hash ? cleanAleoField(invoiceRecord.memo_hash) as AleoField : invoice.memoHash,
+    nonce: invoice.nonce,       // Preserve local-only field
+    auditKey: invoice.auditKey  // Preserve local-only field
   };
 }
 

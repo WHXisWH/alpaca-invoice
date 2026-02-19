@@ -226,11 +226,11 @@ export interface IAuditService {
   /**
    * Four-phase verification for auditors: pre-check, on-chain access control,
    * chain anchoring, and trustless verification.
-   */
+  */
   verifyEnvelopePhases(
     envelope: AuditPackageEnvelope,
     auditKey: string,
-    registry: IInvoiceRegistryService
+    registry?: IInvoiceRegistryService
   ): Promise<VerifyEnvelopePhasesResult>;
 }
 

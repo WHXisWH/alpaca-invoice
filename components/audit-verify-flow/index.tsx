@@ -1,12 +1,11 @@
 'use client';
-
-import { useState } from 'react';
 import type {
   VerifyEnvelopePhasesResult,
   VerifyPhaseResult,
   ValidateAuditPackageResult
 } from '@/services/AuditService/IAuditService';
-import { Check, X, ChevronDown, ChevronRight, FileJson, Key } from 'lucide-react';
+import { Check, X, ChevronDown, ChevronRight, FileJson, Key, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 
 function PhaseCard({
   title,
@@ -95,6 +94,19 @@ export default function AuditVerifyFlow({
   onVerify,
   onExportReport
 }: AuditVerifyFlowProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [fileName, setFileName] = useState<string>('');
+
+  const handleChooseFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const name = e.target.files?.[0]?.name ?? '';
+    setFileName(name);
+    onFileUpload(e);
+  };
+
   return (
     <div className="space-y-6">
       <form onSubmit={onVerify} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -104,12 +116,24 @@ export default function AuditVerifyFlow({
               <FileJson className="h-4 w-4" />
               Audit package JSON
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleChooseFile}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Select JSON file
+                </button>
+                {fileName && <span className="text-xs text-slate-500 truncate">{fileName}</span>}
+              </div>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".json,application/json"
-                onChange={onFileUpload}
-                className="block w-full max-w-xs cursor-pointer rounded-lg border border-slate-200 text-sm file:mr-2 file:rounded-l file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium"
+                onChange={handleFileChange}
+                className="hidden"
               />
             </div>
             <textarea

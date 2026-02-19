@@ -74,8 +74,8 @@ export default function InvoiceForm() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const ps = new AleoProtocolService();
-      ps.warmUp().catch(() => {});
+      // Instantiate to trigger lazy WASM initialization
+      new AleoProtocolService();
     } catch {
       // SDK may not be available yet; ignore — will load on demand later.
     }

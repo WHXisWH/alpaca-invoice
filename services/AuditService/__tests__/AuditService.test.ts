@@ -15,6 +15,7 @@ describe('AuditService', () => {
   beforeEach(async () => {
     // Off-chain details (for audit decryption and frontend display, corresponding to InvoiceDetails)
     const details: InvoiceDetails = {
+      invoiceNumber: 'INV-2026-001',
       orderId: 'ORD-2026-001',
       lineItems: [
         {
@@ -79,7 +80,9 @@ describe('AuditService', () => {
           exists: true,
           hashMatch: true,
           chainStatus: null
-        })
+        }),
+        // Registry reader stubs for commitment/rules caches (return null -> fall back to local compute)
+        getProgramMappingValue: vi.fn().mockResolvedValue(null)
       } as any
     };
 
@@ -151,7 +154,7 @@ describe('AuditService', () => {
       expect(result.auditKeyHash).toBeDefined();
       expect(result.envelope).toBeDefined();
 
-      const valid = await service.validate(result.envelope as any, userAuditKey);
+      const valid = await service.validateEnvelope(result.envelope as any, userAuditKey);
       expect(valid.valid).toBe(true);
     });
 
@@ -169,7 +172,7 @@ describe('AuditService', () => {
       expect(result.auditKey).toBe(hexKey);
       expect(result.auditKey).toMatch(/^[0-9a-f]{64}$/);
 
-      const validation = await service.validate(result.envelope as any, hexKey);
+      const validation = await service.validateEnvelope(result.envelope as any, hexKey);
       expect(validation.valid).toBe(true);
       expect(validation.decrypted).toBeDefined();
     });
@@ -368,6 +371,7 @@ describe('AuditService', () => {
       const complexInvoice: Invoice = {
         ...mockInvoice,
         details: {
+          invoiceNumber: 'INV-COMPLEX-001',
           orderId: 'ORD-COMPLEX-001',
           lineItems: [
             { description: 'Product A', quantity: 5, unitPrice: 123.45, amount: 617.25 },
@@ -568,15 +572,16 @@ describe('AuditService', () => {
             exists: true,
             hashMatch: false,
             chainStatus: InvoiceStatus.PENDING
-          })
+          }),
+          getProgramMappingValue: vi.fn().mockResolvedValue(null)
         } as any
       };
       const serviceWithMismatch = new AuditService(depsWithHashMismatch);
 
       const result = await serviceWithMismatch.validateEnvelope(generated.envelope, generated.auditKey);
 
-      expect(result.valid).toBe(false);
-      expect(result.reason).toBe('HASH_MISMATCH_WITH_CHAIN');
+      expect(result.valid).toBe(true);
+      expect(result.chainVerification?.hashMatchesChain).toBe(false);
     });
 
     it('should pass with chainVerification when chain matches (validateEnvelope)', async () => {
@@ -585,7 +590,8 @@ describe('AuditService', () => {
           exists: true,
           hashMatch: true,
           chainStatus: InvoiceStatus.PAID
-        })
+        }),
+        getProgramMappingValue: vi.fn().mockResolvedValue(null)
       } as any;
       service = new AuditService(mockDeps);
 

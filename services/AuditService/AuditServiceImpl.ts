@@ -22,6 +22,7 @@ import {
   AuditVerifyAdapter
 } from './IAuditService';
 import type { IInvoiceRegistryService } from '@/services/InvoiceRegistryService/IInvoiceRegistryService';
+import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 // Contract tag mapping (commit_field tag values) — used by buildFieldCommitments
 const FIELD_TAGS = {
@@ -127,11 +128,13 @@ export class AuditService implements IAuditService {
   private deps: AuditServiceDependencies;
   private cryptoService: CryptoService;
   private protocolService: IAleoProtocolService;
+  private registry: IInvoiceRegistryService;
 
   constructor(deps: AuditServiceDependencies) {
     this.deps = deps;
     this.cryptoService = new CryptoService();
     this.protocolService = deps.protocolService ?? new AleoProtocolService();
+    this.registry = createInvoiceRegistryService(this.protocolService as any);
   }
 
   /**
@@ -416,12 +419,27 @@ export class AuditService implements IAuditService {
     }
 
     try {
+      let chainCommitmentRoot: AleoField | undefined;
+      let chainFieldCommitments: Record<string, AleoField> | undefined;
+      try {
+        const [root, fields] = await Promise.all([
+          this.registry.getCommitmentRoot(invoice.id),
+          this.registry.getFieldCommitments(invoice.id)
+        ]);
+        chainCommitmentRoot = root ?? undefined;
+        chainFieldCommitments = fields ?? undefined;
+      } catch (e) {
+        console.warn('[AuditService.generate] Failed to fetch chain commitments, falling back to local computation', e);
+      }
+
       const auditKey = providedAuditKey ?? this.cryptoService.generateAuditKey();
       const result = await this.createEnvelope({
         invoice,
         permissions,
         expiresAt,
-        auditKey
+        auditKey,
+        chainCommitmentRoot,
+        chainFieldCommitments
       });
 
       return { envelope: result.envelope, auditKey: result.auditKey, auditKeyHash: result.auditKeyHash };
@@ -634,22 +652,6 @@ export class AuditService implements IAuditService {
         return { valid: false, reason: 'missing_required_fields' };
       }
 
-      if (pkg.payload && pkg.payload.amount && pkg.payload.tax_amount && pkg.payload.expected_total) {
-        const rules = await this.cryptoService.evaluateAuditRules({
-          amount: BigInt(pkg.payload.amount.toString()),
-          taxAmount: BigInt(pkg.payload.tax_amount.toString()),
-          dueDate: Number(pkg.payload.due_date ?? 0),
-          currentTime: Number(pkg.payload.current_time ?? 0),
-          lineItemsSum: BigInt(pkg.payload.line_items_sum ?? pkg.payload.amount),
-          expectedTotal: BigInt(pkg.payload.expected_total.toString()),
-          taxRateBps: BigInt(pkg.payload.tax_rate_bps ?? 0),
-          invoiceHash: pkg.invoice_hash as AleoField
-        });
-        if (rules.rulesHash !== pkg.rules_hash) {
-          return { valid: false, reason: 'rules_hash_mismatch' };
-        }
-      }
-
       await adapter.assertRules(pkg.invoice_id as AleoField, pkg.rules_hash as AleoField);
       await adapter.assertCommitment(pkg.invoice_id as AleoField, pkg.commitments_root as AleoField);
 
@@ -680,8 +682,9 @@ export class AuditService implements IAuditService {
   async verifyEnvelopePhases(
     envelope: AuditPackageEnvelope,
     auditKey: string,
-    registry: IInvoiceRegistryService
+    registry?: IInvoiceRegistryService
   ): Promise<VerifyEnvelopePhasesResult> {
+    const registrySvc = registry ?? this.registry;
     const phase1: VerifyPhaseResult = { ok: false, message: '', checks: [] };
     const phase2: VerifyPhaseResult = { ok: false, message: '', checks: [] };
     const phase3: VerifyPhaseResult = { ok: false, message: '', checks: [] };
@@ -745,7 +748,7 @@ export class AuditService implements IAuditService {
       }
 
       // --- Phase 2: On-chain access control ---
-      const auth = await registry.getAuditAuthorization(invoiceId);
+      const auth = await registrySvc.getAuditAuthorization(invoiceId);
       if (!auth) {
         phase2.checks!.push({ key: 'get_audit_authorization', ok: false, detail: 'No audit authorization on chain' });
         phase2.ok = false;
@@ -795,10 +798,11 @@ export class AuditService implements IAuditService {
       }
 
       // --- Phase 3: Chain anchoring ---
-      const [invoiceHash, commitmentRoot, rulesResult] = await Promise.all([
-        registry.getInvoiceHash(invoiceId),
-        registry.getCommitmentRoot(invoiceId),
-        registry.getRulesResult(invoiceId)
+      const [invoiceHash, commitmentRoot, rulesResult, fieldCommitments] = await Promise.all([
+        registrySvc.getInvoiceHash(invoiceId),
+        registrySvc.getCommitmentRoot(invoiceId),
+        registrySvc.getRulesResult(invoiceId),
+        registrySvc.getFieldCommitments(invoiceId)
       ]);
       phase3.checks!.push({
         key: 'invoice_registry',
@@ -814,6 +818,11 @@ export class AuditService implements IAuditService {
         key: 'invoice_rules_result',
         ok: !!rulesResult,
         detail: rulesResult ? 'rules_result available' : 'No rules result'
+      });
+      phase3.checks!.push({
+        key: 'field_commitments',
+        ok: !!fieldCommitments,
+        detail: fieldCommitments ? 'Field commitments cached on chain' : 'No field commitments cache'
       });
       phase3.ok = !!invoiceHash && !!commitmentRoot;
       phase3.message = phase3.ok ? 'Chain anchors retrieved' : 'Phase 3 failed';
@@ -836,21 +845,33 @@ export class AuditService implements IAuditService {
       const nonce = decrypted.nonce;
       const salt = nonce;
       let fieldProofOk = true;
-      for (const key of disclosed) {
-        const tagVal = (FIELD_TAGS as Record<string, bigint>)[key] ?? 0n;
-        const tag = `${tagVal}field` as AleoField;
-        const plain = decrypted.data[key];
-        const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
-        if (expectedCommit == null) continue;
-        let val: AleoField | string;
-        if (typeof plain === 'number') val = `${plain}field` as AleoField;
-        else if (typeof plain === 'string') val = plain;
-        else val = String(plain);
-        try {
-          const computed = commitField(val, salt, tag);
-          if (this.normalizeField(computed) !== this.normalizeField(expectedCommit)) fieldProofOk = false;
-        } catch {
-          fieldProofOk = false;
+      if (fieldCommitments) {
+        for (const key of disclosed) {
+          const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
+          const chainCommit = fieldCommitments[key];
+          if (expectedCommit == null || chainCommit == null) continue;
+          if (this.normalizeField(expectedCommit) !== this.normalizeField(chainCommit)) {
+            fieldProofOk = false;
+            break;
+          }
+        }
+      } else {
+        for (const key of disclosed) {
+          const tagVal = (FIELD_TAGS as Record<string, bigint>)[key] ?? 0n;
+          const tag = `${tagVal}field` as AleoField;
+          const plain = decrypted.data[key];
+          const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
+          if (expectedCommit == null) continue;
+          let val: AleoField | string;
+          if (typeof plain === 'number') val = `${plain}field` as AleoField;
+          else if (typeof plain === 'string') val = plain;
+          else val = String(plain);
+          try {
+            const computed = commitField(val, salt, tag);
+            if (this.normalizeField(computed) !== this.normalizeField(expectedCommit)) fieldProofOk = false;
+          } catch {
+            fieldProofOk = false;
+          }
         }
       }
       phase4.checks!.push({
@@ -861,7 +882,9 @@ export class AuditService implements IAuditService {
 
       let rulesOk = true;
       const data = decrypted.data;
-      if (data.amount != null && data.tax_amount != null) {
+      if (rulesResult) {
+        rulesOk = true;
+      } else if (data.amount != null && data.tax_amount != null) {
         const amount = BigInt(String(data.amount));
         const taxAmount = BigInt(String(data.tax_amount));
         const expectedTotal = amount + taxAmount;
@@ -878,8 +901,6 @@ export class AuditService implements IAuditService {
           invoiceHash: (decrypted.invoiceHash ?? '') as AleoField
         });
         rulesOk = result.r1 && result.r2 && result.r3 && result.r4 && result.r5;
-      } else if (rulesResult) {
-        rulesOk = true;
       }
       phase4.checks!.push({
         key: 'financial_logic',

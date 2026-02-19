@@ -79,7 +79,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {
@@ -118,7 +123,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {
@@ -164,7 +174,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '2u8' as any, // CANCELLED
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {
@@ -201,7 +216,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {
@@ -236,7 +256,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any, // PENDING，但 action 是 cancel
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const invoiceWithCancel: Invoice = {
@@ -289,7 +314,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '0u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {
@@ -331,7 +361,12 @@ describe('InvoiceStatusValidatorAdapter', () => {
         buyer: 'aleo1buyer',
         due_date: 1234567890,
         status: '1u8' as any,
-        created_at: 1234567800
+        created_at: 1234567800,
+        tax_amount: '0',
+        order_id: '0field',
+        currency: '0field',
+        items_hash: '0field',
+        memo_hash: '0field'
       };
 
       const scanResult: InvoiceScanResult = {

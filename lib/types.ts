@@ -34,18 +34,23 @@ export interface Invoice {
   seller: AleoAddress;
   buyer: AleoAddress;
   amount: Microcredits;
+  taxAmount?: Microcredits;
   invoiceHash: AleoField;
   dueDate: Date;
   createdAt: Date;
   status: InvoiceStatus;
+  orderId?: AleoField;
+  currency?: AleoField;
+  itemsHash?: AleoField;
+  memoHash?: AleoField;
   details?: InvoiceDetails;
   nonce?: AleoField;      // create_invoice nonce, required for audit package
   auditKey?: string;      // 64 hex chars, generated at invoice creation
-  metadata?: {  // ✅ 新增：可选的 metadata（与 InvoiceStorageData 保持一致）
+  metadata?: {
     confirmationStatus: 'SENDING' | 'CONFIRMED';
     lastUpdated: Date;
     dataSource: 'local' | 'chain';
-    action?: 'create' | 'cancel' | 'pay'; // ✅ 标识当前操作类型
+    action?: 'create' | 'cancel' | 'pay';
   };
 }
 
