@@ -631,7 +631,7 @@ describe('AuditService', () => {
     });
   });
 
-  // ========== 3. 验证审计包（useAuditPackageVerify：四阶段 verifyEnvelopePhases，见 integration） ==========
+  // ========== 3. 验证审计包（useAuditPackageVerify：五阶段 verifyEnvelopePhases，见 integration） ==========
 
   describe('error handling', () => {
     it('should throw AuditServiceError type for all errors', async () => {

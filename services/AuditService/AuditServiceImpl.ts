@@ -259,6 +259,9 @@ export class AuditService implements IAuditService {
    * Create envelope + audit key. Builds DecryptedAuditPayload, encrypts it, returns envelope and auditKeyHash.
    * @private
    */
+  /** Sentinel nonce for chain-anchored packages (no local nonce; verify only compares package to chain). */
+  private static readonly CHAIN_ANCHORED_NONCE = '0field' as AleoField;
+
   private async createEnvelope(params: {
     invoice: Invoice;
     permissions: string[];
@@ -266,20 +269,27 @@ export class AuditService implements IAuditService {
     auditKey: string;
     chainCommitmentRoot?: AleoField;
     chainFieldCommitments?: Record<string, AleoField>;
+    /** When true, use chain root/fields and sentinel nonce (for invoices without nonce from chain sync). */
+    useChainAnchored?: boolean;
   }): Promise<{ envelope: AuditPackageEnvelope; auditKey: string; auditKeyHash: AleoField }> {
-    const { invoice, permissions, expiresAt, auditKey, chainCommitmentRoot, chainFieldCommitments } = params;
+    const { invoice, permissions, expiresAt, auditKey, chainCommitmentRoot, chainFieldCommitments, useChainAnchored } = params;
 
-    const nonce = (invoice as Invoice & { nonce?: AleoField }).nonce;
+    const invoiceNonce = (invoice as Invoice & { nonce?: AleoField }).nonce;
+    const nonce: AleoField =
+      useChainAnchored && chainCommitmentRoot
+        ? AuditService.CHAIN_ANCHORED_NONCE
+        : invoiceNonce!;
     if (!nonce) {
       throw new AuditServiceError(
         AuditError.INVALID_INPUT,
         'Invoice nonce is required for audit package (auditor needs it to recompute commitments)',
-        { hint: 'Invoice must have nonce from create_invoice' }
+        { hint: 'Invoice must have nonce from create_invoice, or use chain-anchored package when commitment_root is on chain' }
       );
     }
 
     const filtered = this.filterDetailsByPermissions(invoice, permissions);
-    if (!filtered.details && !filtered.amount && !filtered.seller && !filtered.buyer) {
+    const hasAnyDisclosure = !!(filtered.details || filtered.amount != null || filtered.seller || filtered.buyer);
+    if (!hasAnyDisclosure) {
       throw new AuditServiceError(
         AuditError.INVALID_INPUT,
         'No data selected for disclosure',
@@ -291,7 +301,15 @@ export class AuditService implements IAuditService {
     let root: AleoField;
     let fieldsSnake: Record<string, AleoField>;
 
-    if (chainCommitmentRoot && chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 9) {
+    if (useChainAnchored && chainCommitmentRoot) {
+      root = chainCommitmentRoot;
+      fieldsSnake = (chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 9)
+        ? { ...chainFieldCommitments } as Record<string, AleoField>
+        : {
+            amount: '0field', tax_amount: '0field', due_date: '0field', buyer: '0field', seller: '0field',
+            currency: '0field', items_hash: '0field', memo_hash: '0field', order_id: '0field'
+          } as Record<string, AleoField>;
+    } else if (chainCommitmentRoot && chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 9) {
       root = chainCommitmentRoot;
       fieldsSnake = { ...chainFieldCommitments } as Record<string, AleoField>;
     } else {
@@ -306,7 +324,7 @@ export class AuditService implements IAuditService {
         itemsHash: invExt.itemsHash ?? ('0field' as AleoField),
         memoHash: invExt.memoHash ?? ('0field' as AleoField),
         orderId: invExt.orderId ?? ('0field' as AleoField),
-        nonce
+        nonce: invoiceNonce!
       });
       root = r;
       fieldsSnake = fields as Record<string, AleoField>;
@@ -401,37 +419,45 @@ export class AuditService implements IAuditService {
       );
     }
 
-    if (!invoice.details) {
+    const nonce = (invoice as Invoice & { nonce?: AleoField }).nonce;
+    let chainCommitmentRoot: AleoField | undefined;
+    let chainFieldCommitments: Record<string, AleoField> | undefined;
+    try {
+      const [rootSettled, fieldsSettled] = await Promise.allSettled([
+        this.registry.getCommitmentRoot(invoice.id),
+        this.registry.getFieldCommitments(invoice.id)
+      ]);
+      if (rootSettled.status === 'fulfilled') {
+        chainCommitmentRoot = rootSettled.value ?? undefined;
+      } else {
+        console.warn('[AuditService.generate] getCommitmentRoot failed', rootSettled.reason);
+      }
+      if (fieldsSettled.status === 'fulfilled') {
+        chainFieldCommitments = fieldsSettled.value ?? undefined;
+      } else {
+        console.warn('[AuditService.generate] getFieldCommitments failed', fieldsSettled.reason);
+      }
+    } catch (e) {
+      console.warn('[AuditService.generate] Failed to fetch chain commitments', e);
+    }
+
+    const useChainAnchored = !nonce && !!chainCommitmentRoot;
+    if (!nonce && !chainCommitmentRoot) {
+      throw new AuditServiceError(
+        AuditError.INVALID_INPUT,
+        'Cannot generate chain-anchored audit package: no commitment_root on chain for this invoice.',
+        { hint: 'Invoice must have nonce from create_invoice, or chain must have commitment_root for this invoice_id' }
+      );
+    }
+    if (!useChainAnchored && !invoice.details) {
       throw new AuditServiceError(
         AuditError.MISSING_DETAILS,
-        'Invoice details are missing; cannot generate audit package.',
+        'Invoice details are missing; cannot generate full audit package.',
         { invoiceId: invoice.id }
       );
     }
 
-    const nonce = (invoice as Invoice & { nonce?: AleoField }).nonce;
-    if (!nonce) {
-      throw new AuditServiceError(
-        AuditError.INVALID_INPUT,
-        'Invoice nonce is required (from create_invoice)',
-        { hint: 'Pass the invoice with nonce from local DB/chain' }
-      );
-    }
-
     try {
-      let chainCommitmentRoot: AleoField | undefined;
-      let chainFieldCommitments: Record<string, AleoField> | undefined;
-      try {
-        const [root, fields] = await Promise.all([
-          this.registry.getCommitmentRoot(invoice.id),
-          this.registry.getFieldCommitments(invoice.id)
-        ]);
-        chainCommitmentRoot = root ?? undefined;
-        chainFieldCommitments = fields ?? undefined;
-      } catch (e) {
-        console.warn('[AuditService.generate] Failed to fetch chain commitments, falling back to local computation', e);
-      }
-
       const auditKey = providedAuditKey ?? this.cryptoService.generateAuditKey();
       const result = await this.createEnvelope({
         invoice,
@@ -439,7 +465,8 @@ export class AuditService implements IAuditService {
         expiresAt,
         auditKey,
         chainCommitmentRoot,
-        chainFieldCommitments
+        chainFieldCommitments,
+        useChainAnchored
       });
 
       return { envelope: result.envelope, auditKey: result.auditKey, auditKeyHash: result.auditKeyHash };
@@ -677,18 +704,33 @@ export class AuditService implements IAuditService {
   }
 
   /**
-   * Four-phase verification for auditors.
+   * Five-phase verification for auditors.
+   * Phase 1: Package integrity. Phase 2: Invoice on chain. Phase 3: Audit authorization. Phase 4: Chain anchoring. Phase 5: Trustless verification.
    */
   async verifyEnvelopePhases(
     envelope: AuditPackageEnvelope,
     auditKey: string,
-    registry?: IInvoiceRegistryService
+    registry?: IInvoiceRegistryService,
+    options?: {
+      chainRecordFields?: {
+        amount: bigint;
+        taxAmount: bigint;
+        dueDate: number;
+        buyer: string;
+        seller: string;
+        currency: string;
+        itemsHash: string;
+        memoHash: string;
+        orderId: string;
+      };
+    }
   ): Promise<VerifyEnvelopePhasesResult> {
     const registrySvc = registry ?? this.registry;
     const phase1: VerifyPhaseResult = { ok: false, message: '', checks: [] };
     const phase2: VerifyPhaseResult = { ok: false, message: '', checks: [] };
     const phase3: VerifyPhaseResult = { ok: false, message: '', checks: [] };
     const phase4: VerifyPhaseResult = { ok: false, message: '', checks: [] };
+    const phase5: VerifyPhaseResult = { ok: false, message: '', checks: [] };
 
     let decrypted: DecryptedAuditPayload | undefined;
     const invoiceId = envelope.context.invoice_id;
@@ -714,7 +756,7 @@ export class AuditService implements IAuditService {
         phase1.checks!.push({ key: 'decrypt', ok: false, detail: 'Failed to decrypt with provided audit key' });
         phase1.ok = false;
         phase1.message = 'Phase 1 failed: decryption or expiry';
-        return { overallValid: false, phase1, phase2, phase3, phase4 };
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5 };
       }
 
       const payloadWithoutIntegrity = {
@@ -737,28 +779,55 @@ export class AuditService implements IAuditService {
       phase1.checks!.push({
         key: 'signature',
         ok: sigOk,
-        detail: sigOk ? 'Signature present (issuer verified in Phase 2)' : 'Missing signature'
+        detail: sigOk
+          ? 'Signature present (full verification requires issuer public key, e.g. chain seller)'
+          : 'Missing signature'
       });
 
       phase1.ok = expiryOk && cipherHashOk && sigOk;
       phase1.message = phase1.ok ? 'Package integrity verified' : 'Pre-check failed';
 
       if (!phase1.ok) {
-        return { overallValid: false, phase1, phase2, phase3, phase4, decrypted };
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
 
-      // --- Phase 2: On-chain access control ---
+      // --- Phase 2: Invoice on chain (minimal proof: package invoice_hash matches chain) ---
+      const chainInvoiceHash = await registrySvc.getInvoiceHash(invoiceId);
+      const invoiceHashMatch =
+        !!chainInvoiceHash &&
+        !!decrypted.invoiceHash &&
+        this.normalizeField(decrypted.invoiceHash) === this.normalizeField(chainInvoiceHash);
+      phase2.checks!.push({
+        key: 'invoice_registry',
+        ok: !!chainInvoiceHash,
+        detail: chainInvoiceHash ? `invoice_hash: ${String(chainInvoiceHash).slice(0, 20)}...` : 'Invoice not found on chain'
+      });
+      phase2.checks!.push({
+        key: 'invoice_hash_match',
+        ok: invoiceHashMatch,
+        detail: invoiceHashMatch
+          ? 'Invoice on chain: package invoice_hash matches chain'
+          : 'Package invoice_hash does not match chain or invoice not found'
+      });
+      phase2.ok = invoiceHashMatch;
+      phase2.message = phase2.ok ? 'Invoice on chain verified' : 'Phase 2 failed: invoice not on chain or hash mismatch';
+
+      if (!phase2.ok) {
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
+      }
+
+      // --- Phase 3: Audit authorization (get_audit_authorization, key hash, scopes) ---
       const auth = await registrySvc.getAuditAuthorization(invoiceId);
       if (!auth) {
-        phase2.checks!.push({ key: 'get_audit_authorization', ok: false, detail: 'No audit authorization on chain' });
-        phase2.ok = false;
-        phase2.message = 'Phase 2 failed: no on-chain audit authorization';
-        return { overallValid: false, phase1, phase2, phase3, phase4, decrypted };
+        phase3.checks!.push({ key: 'get_audit_authorization', ok: false, detail: 'No audit authorization on chain' });
+        phase3.ok = false;
+        phase3.message = 'Phase 3 failed: no on-chain audit authorization';
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
-      phase2.checks!.push({ key: 'get_audit_authorization', ok: true, detail: 'AuditAuthorization retrieved' });
+      phase3.checks!.push({ key: 'get_audit_authorization', ok: true, detail: 'AuditAuthorization retrieved' });
 
       const hashMatch = this.normalizeField(auth.audit_key_hash) === this.normalizeField(envAuditKeyHash);
-      phase2.checks!.push({
+      phase3.checks!.push({
         key: 'audit_key_hash',
         ok: hashMatch,
         detail: hashMatch ? 'Envelope audit_key_hash matches chain' : 'audit_key_hash mismatch'
@@ -766,7 +835,7 @@ export class AuditService implements IAuditService {
 
       const computedKeyHash = (await this.cryptoService.hashObjectToField(auditKey)) as AleoField;
       const bhpOk = this.normalizeField(computedKeyHash) === this.normalizeField(auth.audit_key_hash);
-      phase2.checks!.push({
+      phase3.checks!.push({
         key: 'BHP256(AuditKey)',
         ok: bhpOk,
         detail: bhpOk ? 'BHP256(AuditKey) == chain audit_key_hash' : 'Audit key hash mismatch'
@@ -784,58 +853,58 @@ export class AuditService implements IAuditService {
           break;
         }
       }
-      phase2.checks!.push({
+      phase3.checks!.push({
         key: 'scopes_bitmask',
         ok: scopesOk,
         detail: scopesOk ? 'Disclosed fields within scopes_bitmask' : 'Disclosed fields exceed authorization'
       });
 
-      phase2.ok = hashMatch && bhpOk && scopesOk;
-      phase2.message = phase2.ok ? 'On-chain access control passed' : 'Phase 2 failed';
+      phase3.ok = hashMatch && bhpOk && scopesOk;
+      phase3.message = phase3.ok ? 'Audit authorization passed' : 'Phase 3 failed';
 
-      if (!phase2.ok) {
-        return { overallValid: false, phase1, phase2, phase3, phase4, decrypted };
+      if (!phase3.ok) {
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
 
-      // --- Phase 3: Chain anchoring ---
+      // --- Phase 4: Chain anchoring ---
       const [invoiceHash, commitmentRoot, rulesResult, fieldCommitments] = await Promise.all([
         registrySvc.getInvoiceHash(invoiceId),
         registrySvc.getCommitmentRoot(invoiceId),
         registrySvc.getRulesResult(invoiceId),
         registrySvc.getFieldCommitments(invoiceId)
       ]);
-      phase3.checks!.push({
+      phase4.checks!.push({
         key: 'invoice_registry',
         ok: !!invoiceHash,
         detail: invoiceHash ? `invoice_hash: ${String(invoiceHash).slice(0, 20)}...` : 'Invoice not found'
       });
-      phase3.checks!.push({
+      phase4.checks!.push({
         key: 'invoice_commitment',
         ok: !!commitmentRoot,
         detail: commitmentRoot ? `commitment_root: ${String(commitmentRoot).slice(0, 20)}...` : 'No commitment root'
       });
-      phase3.checks!.push({
+      phase4.checks!.push({
         key: 'invoice_rules_result',
         ok: !!rulesResult,
         detail: rulesResult ? 'rules_result available' : 'No rules result'
       });
-      phase3.checks!.push({
+      phase4.checks!.push({
         key: 'field_commitments',
         ok: !!fieldCommitments,
         detail: fieldCommitments ? 'Field commitments cached on chain' : 'No field commitments cache'
       });
-      phase3.ok = !!invoiceHash && !!commitmentRoot;
-      phase3.message = phase3.ok ? 'Chain anchors retrieved' : 'Phase 3 failed';
+      phase4.ok = !!invoiceHash && !!commitmentRoot;
+      phase4.message = phase4.ok ? 'Chain anchors retrieved' : 'Phase 4 failed';
 
-      if (!phase3.ok) {
-        return { overallValid: false, phase1, phase2, phase3, phase4, decrypted };
+      if (!phase4.ok) {
+        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
 
-      // --- Phase 4: Trustless verification ---
+      // --- Phase 5: Trustless verification ---
       const pkgRoot = this.normalizeField(decrypted.commitments.root);
       const chainRoot = this.normalizeField(commitmentRoot!);
       const rootOk = pkgRoot === chainRoot;
-      phase4.checks!.push({
+      phase5.checks!.push({
         key: 'commitment_root',
         ok: rootOk,
         detail: rootOk ? 'Package root matches chain' : 'Commitment root mismatch'
@@ -843,9 +912,26 @@ export class AuditService implements IAuditService {
 
       const { commitField } = await import('./commitmentUtils');
       const nonce = decrypted.nonce;
+      const isChainAnchoredOnly =
+        this.normalizeField(nonce) === this.normalizeField(AuditService.CHAIN_ANCHORED_NONCE);
       const salt = nonce;
+      const chainRecordFields = options?.chainRecordFields;
       let fieldProofOk = true;
-      if (fieldCommitments) {
+      if (isChainAnchoredOnly) {
+        // No nonce to recompute; only compare package to chain root and (if available) field_commitments.
+        if (fieldCommitments) {
+          for (const key of disclosed) {
+            const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
+            const chainCommit = fieldCommitments[key];
+            if (expectedCommit == null || chainCommit == null) continue;
+            if (this.normalizeField(expectedCommit) !== this.normalizeField(chainCommit)) {
+              fieldProofOk = false;
+              break;
+            }
+          }
+        }
+        // else: no chain field_commitments; root already compared above, fieldProofOk stays true
+      } else if (fieldCommitments) {
         for (const key of disclosed) {
           const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
           const chainCommit = fieldCommitments[key];
@@ -853,6 +939,35 @@ export class AuditService implements IAuditService {
           if (this.normalizeField(expectedCommit) !== this.normalizeField(chainCommit)) {
             fieldProofOk = false;
             break;
+          }
+        }
+      } else if (chainRecordFields) {
+        const fieldsSnake: Record<string, string | number | bigint> = {
+          amount: chainRecordFields.amount,
+          tax_amount: chainRecordFields.taxAmount,
+          due_date: chainRecordFields.dueDate,
+          buyer: chainRecordFields.buyer,
+          seller: chainRecordFields.seller,
+          currency: chainRecordFields.currency,
+          items_hash: chainRecordFields.itemsHash,
+          memo_hash: chainRecordFields.memoHash,
+          order_id: chainRecordFields.orderId
+        };
+        for (const key of disclosed) {
+          const tagVal = (FIELD_TAGS as Record<string, bigint>)[key] ?? 0n;
+          const tag = `${tagVal}field` as AleoField;
+          const expectedCommit = decrypted.commitments[key as keyof typeof decrypted.commitments];
+          if (expectedCommit == null) continue;
+          const raw = fieldsSnake[key];
+          const val: AleoField | string =
+            typeof raw === 'number' || typeof raw === 'bigint'
+              ? `${String(raw)}field` as AleoField
+              : (raw as string);
+          try {
+            const computed = commitField(val, salt, tag);
+            if (this.normalizeField(computed) !== this.normalizeField(expectedCommit)) fieldProofOk = false;
+          } catch {
+            fieldProofOk = false;
           }
         }
       } else {
@@ -874,23 +989,27 @@ export class AuditService implements IAuditService {
           }
         }
       }
-      phase4.checks!.push({
+      phase5.checks!.push({
         key: 'field_proofs',
         ok: fieldProofOk,
-        detail: fieldProofOk ? 'Field commitments match plaintext' : 'Field proof mismatch'
+        detail: fieldProofOk
+          ? isChainAnchoredOnly
+            ? 'Chain-anchored package: verified against chain root (and field_commitments)'
+            : 'Field commitments match plaintext'
+          : 'Field proof mismatch'
       });
 
-      let rulesOk = true;
       const data = decrypted.data;
-      if (rulesResult) {
-        rulesOk = true;
-      } else if (data.amount != null && data.tax_amount != null) {
+      let rulesOk = true;
+      let rulesResultMatch: boolean | null = null; // null = not compared (no chain anchor)
+
+      if (data.amount != null && data.tax_amount != null) {
         const amount = BigInt(String(data.amount));
         const taxAmount = BigInt(String(data.tax_amount));
         const expectedTotal = amount + taxAmount;
         const lineItemsSum = BigInt(String(data.line_items_sum ?? data.amount ?? 0));
         const taxRateBps = BigInt(String(data.tax_rate_bps ?? 0));
-        const result = await this.cryptoService.evaluateAuditRules({
+        const evalResult = await this.cryptoService.evaluateAuditRules({
           amount,
           taxAmount,
           dueDate: Number(data.due_date ?? 0),
@@ -900,24 +1019,52 @@ export class AuditService implements IAuditService {
           taxRateBps,
           invoiceHash: (decrypted.invoiceHash ?? '') as AleoField
         });
-        rulesOk = result.r1 && result.r2 && result.r3 && result.r4 && result.r5;
+        rulesOk = evalResult.r1 && evalResult.r2 && evalResult.r3 && evalResult.r4 && evalResult.r5;
+
+        if (rulesResult) {
+          const { computeRulesResultField } = await import('./commitmentUtils');
+          const recomputedRulesField = computeRulesResultField(
+            evalResult.r1,
+            evalResult.r2,
+            evalResult.r3,
+            evalResult.r4,
+            evalResult.r5
+          );
+          rulesResultMatch =
+            this.normalizeField(recomputedRulesField) === this.normalizeField(rulesResult);
+          phase5.checks!.push({
+            key: 'rules_result_match',
+            ok: rulesResultMatch,
+            detail: rulesResultMatch
+              ? 'Data compliance: recomputed rules_result matches chain'
+              : 'Data compliance failed: rules_result mismatch'
+          });
+        } else {
+          phase5.checks!.push({
+            key: 'rules_result_match',
+            ok: true,
+            detail: 'Rules R1–R5 evaluated (no chain rules_result to compare)'
+          });
+        }
       }
-      phase4.checks!.push({
+
+      phase5.checks!.push({
         key: 'financial_logic',
         ok: rulesOk,
-        detail: rulesOk ? 'R1–R5 (or chain rules) passed' : 'Financial logic check failed'
+        detail: rulesOk ? 'R1–R5 passed' : 'Financial logic check failed'
       });
 
-      phase4.ok = rootOk && fieldProofOk && rulesOk;
-      phase4.message = phase4.ok ? 'Trustless verification passed' : 'Phase 4 failed';
+      const rulesResultOk = rulesResultMatch === null || rulesResultMatch === true;
+      phase5.ok = rootOk && fieldProofOk && rulesOk && rulesResultOk;
+      phase5.message = phase5.ok ? 'Trustless verification passed' : 'Phase 5 failed';
 
-      const overallValid = phase1.ok && phase2.ok && phase3.ok && phase4.ok;
-      return { overallValid, phase1, phase2, phase3, phase4, decrypted };
+      const overallValid = phase1.ok && phase2.ok && phase3.ok && phase4.ok && phase5.ok;
+      return { overallValid, phase1, phase2, phase3, phase4, phase5, decrypted };
     } catch (e: any) {
       phase1.ok = false;
       phase1.message = 'Verification error';
       phase1.checks!.push({ key: 'error', ok: false, detail: e?.message ?? 'Unknown error' });
-      return { overallValid: false, phase1, phase2, phase3, phase4, decrypted };
+      return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
     }
   }
 

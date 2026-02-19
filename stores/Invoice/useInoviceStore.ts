@@ -41,6 +41,12 @@ interface InvoiceStorageData {
   status: InvoiceStatus;
   nonce?: AleoField;
   auditKey?: string;
+  // Chain-originated fields (from on-chain InvoiceRecord)
+  taxAmount?: bigint;
+  currency?: AleoField;
+  itemsHash?: AleoField;
+  memoHash?: AleoField;
+  orderId?: AleoField;
   // Encrypted details
   encryptedDetails: EncryptedPayload | null;
   // Metadata
@@ -77,7 +83,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           ? await getCryptoService().encryptPayload(invoice.details, masterKey)
           : null;
 
-        // Build storage data (directly using Invoice's basic fields)
+        // Build storage data (directly using Invoice's basic fields + chain fields)
         const storageData: InvoiceStorageData = {
           id: invoice.id,
           invoiceHash: invoice.invoiceHash,
@@ -89,6 +95,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           status: invoice.status,
           nonce: invoice.nonce,
           auditKey: invoice.auditKey,
+          taxAmount: invoice.taxAmount,
+          currency: invoice.currency,
+          itemsHash: invoice.itemsHash,
+          memoHash: invoice.memoHash,
+          orderId: invoice.orderId,
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: 'SENDING',
@@ -226,6 +237,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           status: updatedInvoice.status,
           ...(updatedInvoice.nonce !== undefined && { nonce: updatedInvoice.nonce }),
           ...(updatedInvoice.auditKey !== undefined && { auditKey: updatedInvoice.auditKey }),
+          ...(updatedInvoice.taxAmount !== undefined && { taxAmount: updatedInvoice.taxAmount }),
+          ...(updatedInvoice.currency !== undefined && { currency: updatedInvoice.currency }),
+          ...(updatedInvoice.itemsHash !== undefined && { itemsHash: updatedInvoice.itemsHash }),
+          ...(updatedInvoice.memoHash !== undefined && { memoHash: updatedInvoice.memoHash }),
+          ...(updatedInvoice.orderId !== undefined && { orderId: updatedInvoice.orderId }),
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: finalMetadata.confirmationStatus,
@@ -368,6 +384,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         status: updatedInvoiceFull.status,
         nonce: updatedInvoiceFull.nonce ?? oldRecordData.nonce,
         auditKey: updatedInvoiceFull.auditKey ?? oldRecordData.auditKey,
+        taxAmount: updatedInvoiceFull.taxAmount ?? oldRecordData.taxAmount,
+        currency: updatedInvoiceFull.currency ?? oldRecordData.currency,
+        itemsHash: updatedInvoiceFull.itemsHash ?? oldRecordData.itemsHash,
+        memoHash: updatedInvoiceFull.memoHash ?? oldRecordData.memoHash,
+        orderId: updatedInvoiceFull.orderId ?? oldRecordData.orderId,
         encryptedDetails: encryptedDetails,
         metadata: {
           confirmationStatus: finalMetadata.confirmationStatus,
@@ -469,7 +490,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (directly using stored fields, including metadata)
+          // Build complete invoice object (directly using stored fields, including metadata and chain fields)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -481,6 +502,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             status: dbRecord.status,
             nonce: dbRecord.nonce,
             auditKey: dbRecord.auditKey,
+            taxAmount: dbRecord.taxAmount,
+            currency: dbRecord.currency,
+            itemsHash: dbRecord.itemsHash,
+            memoHash: dbRecord.memoHash,
+            orderId: dbRecord.orderId,
             details: details,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -527,7 +553,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (directly using stored fields, including metadata)
+          // Build complete invoice object (directly using stored fields, including metadata and chain fields)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -539,6 +565,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             status: dbRecord.status,
             nonce: dbRecord.nonce,
             auditKey: dbRecord.auditKey,
+            taxAmount: dbRecord.taxAmount,
+            currency: dbRecord.currency,
+            itemsHash: dbRecord.itemsHash,
+            memoHash: dbRecord.memoHash,
+            orderId: dbRecord.orderId,
             details: details,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -558,6 +589,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             status: dbRecord.status,
             nonce: dbRecord.nonce,
             auditKey: dbRecord.auditKey,
+            taxAmount: dbRecord.taxAmount,
+            currency: dbRecord.currency,
+            itemsHash: dbRecord.itemsHash,
+            memoHash: dbRecord.memoHash,
+            orderId: dbRecord.orderId,
             details: undefined,
             metadata: dbRecord.metadata  // Include metadata
           };
@@ -625,6 +661,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         // Prepare batch data
         const dataList: Array<{ key: string; data: InvoiceStorageData }> = [];
 
+        console.log('invoices', invoices)
         for (const invoice of invoices) {
           try {
             // Encrypt details (if present)
@@ -639,7 +676,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               dataSource: 'local' as const
             };
 
-            // Build storage data (directly using Invoice's basic fields)
+            // Build storage data (directly using Invoice's basic fields + chain fields; nonce/auditKey optional for chain-synced invoices)
             const storageData: InvoiceStorageData = {
               id: invoice.id,
               invoiceHash: invoice.invoiceHash,
@@ -651,6 +688,11 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               status: invoice.status,
               nonce: invoice.nonce,
               auditKey: invoice.auditKey,
+              taxAmount: invoice.taxAmount,
+              currency: invoice.currency,
+              itemsHash: invoice.itemsHash,
+              memoHash: invoice.memoHash,
+              orderId: invoice.orderId,
               encryptedDetails: encryptedDetails,
               metadata: invoiceMetadata // Use the provided metadata
             };
@@ -728,7 +770,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (including metadata)
+          // Build complete invoice object (including metadata and chain fields)
           invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -738,6 +780,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             dueDate: dbRecord.dueDate,
             createdAt: dbRecord.createdAt,
             status: dbRecord.status,
+            nonce: dbRecord.nonce,
+            auditKey: dbRecord.auditKey,
+            taxAmount: dbRecord.taxAmount,
+            currency: dbRecord.currency,
+            itemsHash: dbRecord.itemsHash,
+            memoHash: dbRecord.memoHash,
+            orderId: dbRecord.orderId,
             details: details,
             metadata: dbRecord.metadata
           };

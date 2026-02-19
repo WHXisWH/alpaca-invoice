@@ -44,7 +44,8 @@ export function useInvoiceListInitialize() {
         return;
       }
 
-      // Merge nonce/auditKey from existing in-memory invoices (local-only fields not on chain)
+      // Chain data has no nonce/auditKey/details; only fill from local when we have an existing copy (e.g. same device had created this invoice before).
+      // Merge nonce/auditKey/details from existing in-memory invoices (local-only fields not on chain).
       // Read directly from store to avoid stale closure / dependency loop
       const currentInvoices = useInvoiceStore.getState().invoices;
       for (const inv of invoices) {

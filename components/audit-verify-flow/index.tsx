@@ -245,9 +245,10 @@ export default function AuditVerifyFlow({
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-slate-700">Verification phases</h3>
             <PhaseCard title="Phase 1: Package integrity (Pre-check)" phase={result.phase1} />
-            <PhaseCard title="Phase 2: On-chain access control" phase={result.phase2} />
-            <PhaseCard title="Phase 3: Chain anchoring" phase={result.phase3} />
-            <PhaseCard title="Phase 4: Trustless verification" phase={result.phase4} />
+            <PhaseCard title="Phase 2: Invoice on chain" phase={result.phase2} />
+            <PhaseCard title="Phase 3: Audit authorization (get_audit_authorization)" phase={result.phase3} />
+            <PhaseCard title="Phase 4: Chain anchoring" phase={result.phase4} />
+            <PhaseCard title="Phase 5: Trustless verification" phase={result.phase5} />
           </div>
 
           {result.decrypted && result.overallValid && (

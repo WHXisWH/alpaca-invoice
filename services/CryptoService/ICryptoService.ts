@@ -179,6 +179,23 @@ export interface ICryptoService {
   ): Promise<InvoiceDetails>;
 
   /**
+   * Wrap master key with device key (AES-GCM) for localStorage persistence.
+   * Same device can later unwrap without re-signing.
+   */
+  wrapMasterKeyWithDeviceKey(
+    masterKey: string,
+    deviceKeyBytes: Uint8Array
+  ): Promise<EncryptedPayload>;
+
+  /**
+   * Unwrap master key from device-key-encrypted payload.
+   */
+  unwrapMasterKeyWithDeviceKey(
+    payload: EncryptedPayload,
+    deviceKeyBytes: Uint8Array
+  ): Promise<string>;
+
+  /**
    * Derive a master key from a signature (used for local encryption of invoice details)
    *
    * Use cases:
