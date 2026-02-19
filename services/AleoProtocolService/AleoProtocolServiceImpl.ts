@@ -22,6 +22,15 @@ const loadSdk = async () => {
 const WORKER_TIMEOUT_MS = 120_000;
 
 /**
+ * Functions that are eligible for remote compute offloading.
+ * Must match the ALLOWED_FUNCTIONS allowlist on the Render server.
+ */
+const REMOTE_COMPUTE_FUNCTIONS = new Set([
+  'compute_invoice_hash',
+  'compute_invoice_id',
+]);
+
+/**
  * AleoProtocolService implementation class
  *
  * Responsibilities: Interacts with Aleo blockchain nodes to query on-chain data and broadcast transactions
@@ -161,12 +170,118 @@ export class AleoProtocolService implements IAleoProtocolService {
     }) as Promise<T>;
   }
 
+  /**
+   * Call the remote Render compute service for a whitelisted Aleo function.
+   *
+   * Reads three env vars (set at Next.js build time with NEXT_PUBLIC_ prefix):
+   *   NEXT_PUBLIC_ALEO_REMOTE_URL    - base URL of the Render service
+   *   NEXT_PUBLIC_ALEO_REMOTE_SECRET - optional bearer token (must match ALEO_API_SECRET on server)
+   *
+   * Throws ProtocolServiceError on network failure, timeout, or server error.
+   * The caller (runProgram) decides whether to rethrow or fall back to the Worker.
+   */
+  private async callRemote(
+    functionName: string,
+    inputs: string[]
+  ): Promise<string[]> {
+    const remoteUrl = process.env.NEXT_PUBLIC_ALEO_REMOTE_URL;
+    if (!remoteUrl) {
+      throw new ProtocolServiceError(
+        ProtocolError.NODE_CONNECTION_FAILED,
+        'NEXT_PUBLIC_ALEO_REMOTE_URL is not configured',
+        { functionName }
+      );
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const secret = process.env.NEXT_PUBLIC_ALEO_REMOTE_SECRET;
+    if (secret) headers['Authorization'] = `Bearer ${secret}`;
+
+    // Hard cap of 30 s for the HTTP round-trip (server-side timeout is 25 s)
+    let resp: Response;
+    try {
+      resp = await fetch(`${remoteUrl}/api/aleo-run`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ functionName, inputs }),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError' || err?.name === 'TimeoutError';
+      throw new ProtocolServiceError(
+        isTimeout ? ProtocolError.SYNC_TIMEOUT : ProtocolError.NODE_CONNECTION_FAILED,
+        isTimeout
+          ? `Remote compute request timed out for ${functionName}`
+          : `Remote compute network error for ${functionName}: ${err?.message}`,
+        { functionName }
+      );
+    }
+
+    let data: any;
+    try {
+      data = await resp.json();
+    } catch {
+      throw new ProtocolServiceError(
+        ProtocolError.NODE_CONNECTION_FAILED,
+        `Remote compute returned non-JSON response for ${functionName} (HTTP ${resp.status})`,
+        { functionName, status: resp.status }
+      );
+    }
+
+    if (!data?.ok || !Array.isArray(data.outputs) || data.outputs.length === 0) {
+      const serverCode: string = data?.code ?? 'SDK_ERROR';
+      throw new ProtocolServiceError(
+        serverCode === 'TIMEOUT_SERVER' ? ProtocolError.SYNC_TIMEOUT : ProtocolError.NODE_CONNECTION_FAILED,
+        data?.message ?? `Remote compute failed for ${functionName}`,
+        { functionName, serverCode }
+      );
+    }
+
+    return data.outputs as string[];
+  }
+
+  /**
+   * Central dispatch for local Aleo program execution.
+   *
+   * When NEXT_PUBLIC_ALEO_REMOTE_ENABLED=true and functionName is in
+   * REMOTE_COMPUTE_FUNCTIONS, the remote Render service is tried first.
+   * On failure:
+   *   - If NEXT_PUBLIC_ALEO_REMOTE_FALLBACK_LOCAL=false → rethrow
+   *   - Otherwise (default) → warn and fall through to the local Worker
+   *
+   * Local path (unchanged):
+   *   Browser  → Web Worker (avoids UI freeze)
+   *   SSR/test → direct pm.run on main thread
+   */
   private async runProgram(
     functionName: string,
     inputs: any[],
     programSource?: string,
     timeoutMs: number = WORKER_TIMEOUT_MS
   ): Promise<string[]> {
+    // --- Remote compute path ---
+    const remoteEnabled = process.env.NEXT_PUBLIC_ALEO_REMOTE_ENABLED === 'true';
+    const fallbackEnabled = process.env.NEXT_PUBLIC_ALEO_REMOTE_FALLBACK_LOCAL !== 'false'; // default: true
+
+    if (remoteEnabled && REMOTE_COMPUTE_FUNCTIONS.has(functionName)) {
+      try {
+        const outputs = await this.callRemote(functionName, inputs as string[]);
+        console.log(`[AleoProtocolService] Remote compute OK for ${functionName}`);
+        return outputs;
+      } catch (remoteErr: any) {
+        if (!fallbackEnabled) {
+          // Propagate without retrying locally
+          throw remoteErr;
+        }
+        console.warn(
+          `[AleoProtocolService] Remote compute failed for ${functionName}, falling back to local Worker:`,
+          remoteErr?.message
+        );
+        // Fall through to local path below
+      }
+    }
+
+    // --- Local compute path (original logic, unchanged) ---
     const program = programSource ?? (await this.getProgramSource());
 
     // Browser path: require worker (avoid UI freeze); SSR/test path: allow direct pm.run fallback.

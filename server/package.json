@@ -1,0 +1,26 @@
+{
+  "name": "alpaca-invoice-compute-server",
+  "version": "1.0.0",
+  "description": "Long-running Node service that offloads Aleo WASM compute (compute_invoice_hash / compute_invoice_id) from the browser Worker to Render.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@provablehq/sdk": "^0.9.14",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
