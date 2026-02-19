@@ -131,13 +131,14 @@ export function useTransactionController(): ITxController {
           `NONCE-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(16))).join('')}`
         );
 
-        // Derive supporting fields from details
-        const lineItemsSum = cryptoService.sumLineItems(params.details.lineItems);
-        const expectedTotal = cryptoService.calculateTotal(
-          params.amount,
-          BigInt(Math.round(params.details.taxAmount ?? 0))
-        );
+        // Derive supporting fields from details (all in microcredits)
         const taxRateBps = cryptoService.calculateTaxBps(params.details.taxRate ?? 0);
+        const taxAmountMicro = (params.amount * taxRateBps) / 10000n;
+        const expectedTotal = params.amount + taxAmountMicro;
+        const lineItemsSum = params.details.lineItems.reduce<bigint>((acc, item) => {
+          const amt = item.amount ?? Math.round((item.quantity ?? 0) * (item.unitPrice ?? 0));
+          return acc + BigInt(Math.round(amt * 1_000_000));
+        }, 0n);
         const orderIdField = await cryptoService.hashObjectToField(
           params.details.orderId ?? params.details.invoiceNumber
         );
@@ -152,7 +153,7 @@ export function useTransactionController(): ITxController {
             seller: publicKey as AleoAddress,
             buyer: buyerAddress,
             amount: params.amount,
-            taxAmount: BigInt(Math.round(params.details.taxAmount)),
+            taxAmount: taxAmountMicro,
             dueDate: dueTimestamp,
             nonce: nonceField,
             orderId: orderIdField,
@@ -176,7 +177,7 @@ export function useTransactionController(): ITxController {
         updateProgress(15, `✓ Invoice hash: ${invoiceHash.slice(0, 20)}...`);
         const amountStr = `${params.amount.toString()}u64`;
         const orderId = orderIdField;
-        const taxAmount = `${BigInt(Math.max(0, Math.floor(params.details.taxAmount || 0)))}u64`;
+        const taxAmount = `${taxAmountMicro.toString()}u64`;
         const currentTime = `${cryptoService.nowToU32()}u32`;
 
         updateProgress(25, '✓ Transaction parameters prepared');
@@ -231,15 +232,16 @@ export function useTransactionController(): ITxController {
               currencyField,
               itemsHashField,
               memoHashField,
-              `${lineItemsSum}u64`,
-              `${expectedTotal}u64`,
-              `${taxRateBps}u64`
-            ],
+            `${lineItemsSum}u64`,
+            `${expectedTotal}u64`,
+            `${taxRateBps}u64`
+          ],
             publicKey: publicKey,
             programId: PROGRAM_ID,
             fee: 1000000,
             chainId: chainId
           });
+          console.log('[TransactionController] requestTransaction result', requestId);
         } finally {
           if (provingTimer) clearInterval(provingTimer);
         }
