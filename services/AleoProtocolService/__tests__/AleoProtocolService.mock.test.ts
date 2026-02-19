@@ -3,9 +3,22 @@ import { AleoProtocolService } from '../AleoProtocolServiceImpl';
 
 vi.mock('@provablehq/sdk', () => {
   const run = vi.fn(async (_program: string, fn: string, inputs: string[]) => {
-    return { outputs: fn === 'compute_invoice_id' ? ['123field'] : ['456field'] };
+    return { outputs: ['mockfield'] };
   });
   const getProgram = vi.fn(async () => 'program text');
+  class Plaintext {
+    static fromString(_: string) {
+      return new Plaintext();
+    }
+    toBitsLe() {
+      return [true, false];
+    }
+  }
+  class BHP256 {
+    hash(_: boolean[]) {
+      return { toString: () => 'mockfield' };
+    }
+  }
   return {
     AleoNetworkClient: vi.fn().mockImplementation(() => ({
       getProgram,
@@ -18,7 +31,9 @@ vi.mock('@provablehq/sdk', () => {
     PrivateKey: vi.fn().mockImplementation(() => ({
       to_string: () => 'mock-private-key'
     })),
-    Account: vi.fn().mockImplementation(() => ({}))
+    Account: vi.fn().mockImplementation(() => ({})),
+    Plaintext,
+    BHP256
   };
 });
 
@@ -37,7 +52,7 @@ describe('AleoProtocolService (mocked)', () => {
       dueDate: 1,
       nonce: '0field'
     });
-    expect(id).toBe('123field');
+    expect(id).toBe('mockfield');
   });
 
   it('computeInvoiceHashOffline returns hash', async () => {
@@ -53,6 +68,6 @@ describe('AleoProtocolService (mocked)', () => {
       itemsHash: '0field',
       memoHash: '0field'
     });
-    expect(hash).toBe('456field');
+    expect(hash).toBe('mockfield');
   });
 });

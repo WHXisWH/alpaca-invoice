@@ -244,7 +244,7 @@ describe('AuditService', () => {
         permissions: ['READ_AMOUNT']
       };
 
-      await expect(service.generate(params)).rejects.toThrow('Invoice nonce is required');
+      await expect(service.generate(params)).rejects.toThrow('Cannot generate chain-anchored audit package');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
     });
 
@@ -631,7 +631,7 @@ describe('AuditService', () => {
     });
   });
 
-  // ========== 3. 验证审计包（useAuditPackageVerify：四阶段 verifyEnvelopePhases，见 integration） ==========
+  // ========== 3. 验证审计包（useAuditPackageVerify：五阶段 verifyEnvelopePhases，见 integration） ==========
 
   describe('error handling', () => {
     it('should throw AuditServiceError type for all errors', async () => {

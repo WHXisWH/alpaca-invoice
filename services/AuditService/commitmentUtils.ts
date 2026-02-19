@@ -100,3 +100,22 @@ export function computeCommitmentRoot(fields: Record<string, AleoField>): AleoFi
   const s = result.toString();
   return (s.endsWith('field') ? s : `${s}field`) as AleoField;
 }
+
+/**
+ * Compute rules_result field matching Leo compute_rules_result(RulesBits).
+ * Contract: BHP256::hash_to_field(RulesBits { r1, r2, r3, r4, r5 }).
+ * Aleo bool is 1 bit; 5 bits total, padded to 256 for BHP256 input.
+ */
+export function computeRulesResultField(
+  r1: boolean,
+  r2: boolean,
+  r3: boolean,
+  r4: boolean,
+  r5: boolean
+): AleoField {
+  const bits = [...[r1, r2, r3, r4, r5], ...new Array(FIELD_BITS - 5).fill(false)];
+  const bhp = new BHP256();
+  const result = bhp.hash(bits);
+  const s = result.toString();
+  return (s.endsWith('field') ? s : `${s}field`) as AleoField;
+}
