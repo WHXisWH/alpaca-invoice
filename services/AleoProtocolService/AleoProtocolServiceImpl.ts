@@ -143,33 +143,35 @@ export class AleoProtocolService implements IAleoProtocolService {
     return value.endsWith('field') ? value : `${value}field`;
   }
 
+  /** Normalize SDK types to bits using Leo-compatible plaintext serialization when available. */
+  private toBitsLe(value: any): boolean[] {
+    // Force plaintext path when possible to match Leo/contract hashing
+    if (value && typeof value.toPlaintext === 'function') {
+      const pt = value.toPlaintext();
+      if (pt && typeof pt.toBitsLe === 'function') {
+        return pt.toBitsLe();
+      }
+    }
+    if (value && typeof value.toBitsLe === 'function') {
+      return value.toBitsLe();
+    }
+    throw new Error('Unsupported value for toBitsLe');
+  }
+
   private async computeInvoiceHashLocal(inputs: string[]): Promise<string[]> {
     const sdk = await loadSdk();
-    const bits = [
-      ...sdk.Address.from_string(inputs[0]).toBitsLe(),
-      ...sdk.Address.from_string(inputs[1]).toBitsLe(),
-      ...sdk.U64.fromString(inputs[2]).toBitsLe(),
-      ...sdk.U64.fromString(inputs[3]).toBitsLe(),
-      ...sdk.U32.fromString(inputs[4]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[5]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[6]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[7]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[8]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[9]).toBitsLe(),
-    ];
+    const literal = `{ seller: ${inputs[0]}, buyer: ${inputs[1]}, amount: ${inputs[2]}, tax_amount: ${inputs[3]}, due_date: ${inputs[4]}, nonce: ${inputs[5]}, order_id: ${inputs[6]}, currency: ${inputs[7]}, items_hash: ${inputs[8]}, memo_hash: ${inputs[9]} }`;
+    const pt = (sdk as any).Plaintext.fromString(literal);
+    const bits = pt.toBitsLe();
     const hash = new sdk.BHP256().hash(bits).toString();
     return [this.addFieldSuffix(hash)];
   }
 
   private async computeInvoiceIdLocal(inputs: string[]): Promise<string[]> {
     const sdk = await loadSdk();
-    const bits = [
-      ...sdk.Address.from_string(inputs[0]).toBitsLe(),
-      ...sdk.Address.from_string(inputs[1]).toBitsLe(),
-      ...sdk.U64.fromString(inputs[2]).toBitsLe(),
-      ...sdk.U32.fromString(inputs[3]).toBitsLe(),
-      ...sdk.Field.fromString(inputs[4]).toBitsLe(),
-    ];
+    const literal = `{ seller: ${inputs[0]}, buyer: ${inputs[1]}, amount: ${inputs[2]}, due_date: ${inputs[3]}, nonce: ${inputs[4]} }`;
+    const pt = (sdk as any).Plaintext.fromString(literal);
+    const bits = pt.toBitsLe();
     const hash = new sdk.BHP256().hash(bits).toString();
     return [this.addFieldSuffix(hash)];
   }
@@ -184,19 +186,16 @@ export class AleoProtocolService implements IAleoProtocolService {
     programSource?: string,
     timeoutMs: number = WORKER_TIMEOUT_MS
   ): Promise<string[]> {
-    // Fast BHP paths (no pm.run)
+    // Fast path for hash/id using local BHP with proper plaintext serialization
     if (functionName === 'compute_invoice_hash') {
       return await this.computeInvoiceHashLocal(inputs as string[]);
     }
-
     if (functionName === 'compute_invoice_id') {
       return await this.computeInvoiceIdLocal(inputs as string[]);
     }
 
-    // Local compute path for other functions
+    // For other functions, fall back to pm.run
     const program = programSource ?? (await this.getProgramSource());
-
-    // Non-browser (SSR/tests) or worker-disabled path: use main thread
     const pm = await this.getProgramManager();
     const response = await this.withTimeout(pm.run(program, functionName, inputs, false), functionName, inputs, timeoutMs);
     const outputs = (response as any)?.getOutputs ? (response as any).getOutputs() : (response as any)?.outputs;
