@@ -19,6 +19,8 @@ const loadSdk = async () => {
   return sdkPromise;
 };
 
+const WORKER_TIMEOUT_MS = 120_000;
+
 /**
  * AleoProtocolService implementation class
  *
@@ -33,6 +35,15 @@ export class AleoProtocolService implements IAleoProtocolService {
   private baseUrl: string;
   private programSourceCache: string | null = null;
   private readonly registry = createInvoiceRegistryService(this as any);
+  private worker: Worker | null = null;
+  private workerRequests = new Map<
+    string,
+    {
+      resolve: (outputs: string[]) => void;
+      reject: (error: any) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
     this.network = network;
@@ -77,6 +88,124 @@ export class AleoProtocolService implements IAleoProtocolService {
     return src;
   }
 
+  private isWorkerEnv(): boolean {
+    return typeof window !== 'undefined' && typeof Worker !== 'undefined';
+  }
+
+  private getWorker(): Worker | null {
+    if (!this.isWorkerEnv()) return null;
+    if (this.worker) return this.worker;
+    try {
+      const w = new Worker(new URL('../../workers/aleo-worker.ts', import.meta.url), { type: 'module' });
+      w.onmessage = (event: MessageEvent<{ id: string; result?: string[]; error?: any }>) => {
+        const { id, result, error } = event.data || {};
+        const pending = this.workerRequests.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.workerRequests.delete(id);
+        if (error) pending.reject(error);
+        else pending.resolve(result ?? []);
+      };
+      w.onerror = (err) => {
+        console.error('[aleo-worker] Unhandled error', err);
+      };
+      this.worker = w;
+      return w;
+    } catch (e) {
+      console.warn('[AleoProtocolService] Worker init failed, falling back to main thread', e);
+      this.worker = null;
+      return null;
+    }
+  }
+
+  private async runInWorker(params: { program: string; functionName: string; inputs: any[] }): Promise<string[]> {
+    const worker = this.getWorker();
+    if (!worker) throw new Error('worker_unavailable');
+    const id = (globalThis.crypto as any)?.randomUUID?.() ?? `wrk-${Date.now()}-${Math.random()}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.workerRequests.delete(id);
+        reject(
+          new ProtocolServiceError(
+            ProtocolError.SYNC_TIMEOUT,
+            `Worker execution timeout for ${params.functionName}`,
+            { functionName: params.functionName, timeoutMs: WORKER_TIMEOUT_MS }
+          )
+        );
+      }, WORKER_TIMEOUT_MS);
+      this.workerRequests.set(id, { resolve, reject, timer });
+      worker.postMessage({ id, type: 'run', payload: { ...params, baseUrl: this.baseUrl } });
+    });
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    functionName: string,
+    inputs: any[],
+    timeoutMs: number = WORKER_TIMEOUT_MS
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new ProtocolServiceError(
+            ProtocolError.SYNC_TIMEOUT,
+            'Program execution timeout',
+            { functionName, timeoutMs, inputsLength: inputs.length }
+          )
+        );
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer) clearTimeout(timer);
+    }) as Promise<T>;
+  }
+
+  private async runProgram(
+    functionName: string,
+    inputs: any[],
+    programSource?: string,
+    timeoutMs: number = WORKER_TIMEOUT_MS
+  ): Promise<string[]> {
+    const program = programSource ?? (await this.getProgramSource());
+
+    // Browser path: require worker (avoid UI freeze); SSR/test path: allow direct pm.run fallback.
+    const worker = this.getWorker();
+    if (worker) {
+      try {
+        const outputs = await this.runInWorker({ program, functionName, inputs });
+        if (!outputs || outputs.length === 0) {
+          throw new ProtocolServiceError(
+            ProtocolError.INVALID_RECORD,
+            `Program execution returned empty output for ${functionName}`,
+            { functionName, inputsLength: inputs.length }
+          );
+        }
+        return outputs;
+      } catch (e: any) {
+        if (e instanceof ProtocolServiceError) throw e;
+        throw new ProtocolServiceError(
+          ProtocolError.SYNC_TIMEOUT,
+          'Local compute worker failed',
+          { functionName, reason: 'worker_failed', originalError: e?.message || e }
+        );
+      }
+    }
+
+    // Non-browser (SSR/tests) fallback: safe to use main thread
+    const pm = await this.getProgramManager();
+    const response = await this.withTimeout(pm.run(program, functionName, inputs, false), functionName, inputs, timeoutMs);
+    const outputs = (response as any)?.getOutputs ? (response as any).getOutputs() : (response as any)?.outputs;
+    if (!outputs) {
+      throw new ProtocolServiceError(
+        ProtocolError.INVALID_RECORD,
+        `Program execution returned no output for ${functionName}`,
+        { functionName, inputsLength: inputs.length }
+      );
+    }
+    return outputs as string[];
+  }
+
   /**
    * Compute invoice_id deterministically by running compute_invoice_id locally (no fee).
    * Falls back to on-chain program source fetched via Aleo explorer.
@@ -88,8 +217,6 @@ export class AleoProtocolService implements IAleoProtocolService {
     dueDate: number;
     nonce: AleoField;
   }): Promise<AleoField> {
-    const program = await this.getProgramSource();
-    const pm = await this.getProgramManager();
     const inputs = [
       params.seller,
       params.buyer,
@@ -97,8 +224,7 @@ export class AleoProtocolService implements IAleoProtocolService {
       `${params.dueDate}u32`,
       params.nonce
     ];
-    const response = await pm.run(program, 'compute_invoice_id', inputs, false);
-    const outputs = response.getOutputs();
+    const outputs = await this.runProgram('compute_invoice_id', inputs);
     if (!outputs || !outputs[0]) {
       throw new ProtocolServiceError(
         ProtocolError.INVALID_RECORD,
@@ -124,8 +250,6 @@ export class AleoProtocolService implements IAleoProtocolService {
     itemsHash: AleoField;
     memoHash: AleoField;
   }): Promise<AleoField> {
-    const program = await this.getProgramSource();
-    const pm = await this.getProgramManager();
     const inputs = [
       params.seller,
       params.buyer,
@@ -138,8 +262,7 @@ export class AleoProtocolService implements IAleoProtocolService {
       params.itemsHash,
       params.memoHash
     ];
-    const response = await pm.run(program, 'compute_invoice_hash', inputs, false);
-    const outputs = response.getOutputs();
+    const outputs = await this.runProgram('compute_invoice_hash', inputs);
     if (!outputs || !outputs[0]) {
       throw new ProtocolServiceError(
         ProtocolError.INVALID_RECORD,
@@ -367,11 +490,8 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   private async callAssert(functionName: string, inputs: any[]): Promise<void> {
-    const pm = await this.getProgramManager();
-    const program = await this.getProgramSource();
-    const response = await pm.run(program, functionName, inputs, false);
-    const outputs = response.getOutputs();
-    if (outputs === undefined) {
+    const outputs = await this.runProgram(functionName, inputs);
+    if (outputs === undefined || outputs === null) {
       throw new ProtocolServiceError(
         ProtocolError.TRANSACTION_REJECTED,
         `Assert call failed: ${functionName}`,

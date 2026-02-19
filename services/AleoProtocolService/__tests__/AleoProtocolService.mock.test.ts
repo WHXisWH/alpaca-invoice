@@ -12,8 +12,13 @@ vi.mock('@provablehq/sdk', () => {
       getProgramMappingValue: vi.fn(async () => null)
     })),
     ProgramManager: vi.fn().mockImplementation(() => ({
-      run
-    }))
+      run,
+      setAccount: vi.fn()
+    })),
+    PrivateKey: vi.fn().mockImplementation(() => ({
+      to_string: () => 'mock-private-key'
+    })),
+    Account: vi.fn().mockImplementation(() => ({}))
   };
 });
 

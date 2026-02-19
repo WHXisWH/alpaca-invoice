@@ -17,8 +17,7 @@ import { AuditService, AuditServiceDependencies } from './AuditServiceImpl';
  */
 export function createAuditService(
   walletService: IWalletService,
-  publicKey: string | null,
-  getAllInvoices: AuditServiceDependencies['getAllInvoices']
+  publicKey: string | null
 ): IAuditService {
   // Validate signMessage availability
   if (!walletService.signMessage) {
@@ -37,7 +36,6 @@ export function createAuditService(
   // Note: masterKey is NOT passed; service will derive it internally
   const auditService = new AuditService({
     signerAddress: publicKey as AleoAddress | null,
-    getAllInvoices,
     signMessage
   });
 
