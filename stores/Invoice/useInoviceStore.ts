@@ -93,7 +93,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           metadata: {
             confirmationStatus: 'SENDING',
             lastUpdated: new Date(),
-            dataSource: 'local'
+            dataSource: 'local',
+            action: invoice.metadata?.action
           }
         };
 
@@ -229,7 +230,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           metadata: {
             confirmationStatus: finalMetadata.confirmationStatus,
             lastUpdated: new Date(),
-            dataSource: finalMetadata.dataSource
+            dataSource: finalMetadata.dataSource,
+            action: finalMetadata.action
           }
         };
 
