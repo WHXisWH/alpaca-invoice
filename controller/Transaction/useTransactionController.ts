@@ -120,7 +120,13 @@ export function useTransactionController(): ITxController {
 
         // Begin HASHING phase
         startTx('HASHING');
-        updateProgress(10, 'HASHING - Computing invoice hash (fast path via worker)...');
+        const computeViaServer = process.env.NEXT_PUBLIC_ALEO_REMOTE_ENABLED === 'true';
+        updateProgress(
+          10,
+          computeViaServer
+            ? 'HASHING - Computing via server...'
+            : 'HASHING - Computing invoice hash (fast path via worker)...'
+        );
 
         // Prepare on-chain parameters
         updateProgress(20, 'PREPARING - Preparing transaction parameters...');
