@@ -1,4 +1,4 @@
-import { ProgramManager, PrivateKey, Account } from '@provablehq/sdk';
+import { BHP256, Address, U64, U32, Field } from '@provablehq/sdk';
 
 type RunRequest = {
   id: string;
@@ -17,17 +17,37 @@ type RunResponse = {
   error?: string;
 };
 
-let pmCache: ProgramManager | null = null;
-let cachedBaseUrl: string | null = null;
+function addFieldSuffix(value: string): string {
+  return value.endsWith('field') ? value : `${value}field`;
+}
 
-async function getProgramManager(baseUrl: string): Promise<ProgramManager> {
-  if (!pmCache || cachedBaseUrl !== baseUrl) {
-    pmCache = new ProgramManager(baseUrl);
-    const tempKey = new PrivateKey();
-    pmCache.setAccount(new Account({ privateKey: tempKey.to_string() }));
-    cachedBaseUrl = baseUrl;
-  }
-  return pmCache;
+function computeInvoiceHash(inputs: string[]): string {
+  const bits = [
+    ...Address.from_string(inputs[0]).toBitsLe(),
+    ...Address.from_string(inputs[1]).toBitsLe(),
+    ...U64.fromString(inputs[2]).toBitsLe(),
+    ...U64.fromString(inputs[3]).toBitsLe(),
+    ...U32.fromString(inputs[4]).toBitsLe(),
+    ...Field.fromString(inputs[5]).toBitsLe(),
+    ...Field.fromString(inputs[6]).toBitsLe(),
+    ...Field.fromString(inputs[7]).toBitsLe(),
+    ...Field.fromString(inputs[8]).toBitsLe(),
+    ...Field.fromString(inputs[9]).toBitsLe(),
+  ];
+  const hash = new BHP256().hash(bits).toString();
+  return addFieldSuffix(hash);
+}
+
+function computeInvoiceId(inputs: string[]): string {
+  const bits = [
+    ...Address.from_string(inputs[0]).toBitsLe(),
+    ...Address.from_string(inputs[1]).toBitsLe(),
+    ...U64.fromString(inputs[2]).toBitsLe(),
+    ...U32.fromString(inputs[3]).toBitsLe(),
+    ...Field.fromString(inputs[4]).toBitsLe(),
+  ];
+  const hash = new BHP256().hash(bits).toString();
+  return addFieldSuffix(hash);
 }
 
 self.onmessage = async (event: MessageEvent<RunRequest>) => {
@@ -36,10 +56,15 @@ self.onmessage = async (event: MessageEvent<RunRequest>) => {
 
   const response: RunResponse = { id };
   try {
-    const pm = await getProgramManager(payload.baseUrl);
-    const res = await pm.run(payload.program, payload.functionName, payload.inputs, false);
-    const outputs = (res as any)?.getOutputs ? (res as any).getOutputs() : (res as any)?.outputs;
-    response.result = outputs ?? [];
+    if (payload.functionName === 'compute_invoice_hash') {
+      const bhp = computeInvoiceHash(payload.inputs as string[]);
+      response.result = [bhp];
+    } else if (payload.functionName === 'compute_invoice_id') {
+      const bhp = computeInvoiceId(payload.inputs as string[]);
+      response.result = [bhp];
+    } else {
+      response.error = 'Unsupported functionName';
+    }
   } catch (e: any) {
     response.error = e?.message || 'Worker execution failed';
   }
