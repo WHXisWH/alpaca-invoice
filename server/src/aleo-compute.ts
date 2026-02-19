@@ -165,8 +165,13 @@ export async function runCompute(
   });
 
   try {
+    // Pass cacheKey so the SDK stores synthesized proving/verifying keys in its
+    // internal in-memory KeyProvider after the first (slow) synthesis.
+    // Subsequent calls with the same cacheKey skip synthesis entirely and are fast.
+    const keySearchParams = { cacheKey: `${PROGRAM_ID}/${functionName}` };
+
     const result = await Promise.race([
-      (pm as any).run(program, functionName, inputs, false),
+      (pm as any).run(program, functionName, inputs, false, undefined, keySearchParams),
       timeoutPromise,
     ]);
 
@@ -236,7 +241,11 @@ export async function prewarm(): Promise<void> {
     // compute_invoice_id expects 5 inputs: seller, buyer, amount(u64), due_date(u32), nonce(field)
     const prewarmInputs = [tempAddr, tempAddr, '1u64', '1u32', '1field'];
 
-    await (pm as any).run(program, 'compute_invoice_id', prewarmInputs, false);
+    // Use the same cacheKey convention as runCompute so the synthesized keys
+    // are stored under the key that real requests will look up.
+    await (pm as any).run(program, 'compute_invoice_id', prewarmInputs, false, undefined, {
+      cacheKey: `${PROGRAM_ID}/compute_invoice_id`,
+    });
 
     console.log('[prewarm] Done — WASM fully initialized, program source cached');
   } catch (err: any) {
