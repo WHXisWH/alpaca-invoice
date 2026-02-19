@@ -89,33 +89,11 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   private isWorkerEnv(): boolean {
-    return typeof window !== 'undefined' && typeof Worker !== 'undefined';
+    return false; // Worker disabled
   }
 
   private getWorker(): Worker | null {
-    if (!this.isWorkerEnv()) return null;
-    if (this.worker) return this.worker;
-    try {
-      const w = new Worker(new URL('../../workers/aleo-worker.ts', import.meta.url), { type: 'module' });
-      w.onmessage = (event: MessageEvent<{ id: string; result?: string[]; error?: any }>) => {
-        const { id, result, error } = event.data || {};
-        const pending = this.workerRequests.get(id);
-        if (!pending) return;
-        clearTimeout(pending.timer);
-        this.workerRequests.delete(id);
-        if (error) pending.reject(error);
-        else pending.resolve(result ?? []);
-      };
-      w.onerror = (err) => {
-        console.error('[aleo-worker] Unhandled error', err);
-      };
-      this.worker = w;
-      return w;
-    } catch (e) {
-      console.warn('[AleoProtocolService] Worker init failed, falling back to main thread', e);
-      this.worker = null;
-      return null;
-    }
+    return null;
   }
 
   private async runInWorker(params: { program: string; functionName: string; inputs: any[] }): Promise<string[]> {
@@ -161,6 +139,41 @@ export class AleoProtocolService implements IAleoProtocolService {
     }) as Promise<T>;
   }
 
+  private addFieldSuffix(value: string): string {
+    return value.endsWith('field') ? value : `${value}field`;
+  }
+
+  private async computeInvoiceHashLocal(inputs: string[]): Promise<string[]> {
+    const sdk = await loadSdk();
+    const bits = [
+      ...sdk.Address.from_string(inputs[0]).toBitsLe(),
+      ...sdk.Address.from_string(inputs[1]).toBitsLe(),
+      ...sdk.U64.fromString(inputs[2]).toBitsLe(),
+      ...sdk.U64.fromString(inputs[3]).toBitsLe(),
+      ...sdk.U32.fromString(inputs[4]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[5]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[6]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[7]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[8]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[9]).toBitsLe(),
+    ];
+    const hash = new sdk.BHP256().hash(bits).toString();
+    return [this.addFieldSuffix(hash)];
+  }
+
+  private async computeInvoiceIdLocal(inputs: string[]): Promise<string[]> {
+    const sdk = await loadSdk();
+    const bits = [
+      ...sdk.Address.from_string(inputs[0]).toBitsLe(),
+      ...sdk.Address.from_string(inputs[1]).toBitsLe(),
+      ...sdk.U64.fromString(inputs[2]).toBitsLe(),
+      ...sdk.U32.fromString(inputs[3]).toBitsLe(),
+      ...sdk.Field.fromString(inputs[4]).toBitsLe(),
+    ];
+    const hash = new sdk.BHP256().hash(bits).toString();
+    return [this.addFieldSuffix(hash)];
+  }
+
   /**
    * Central dispatch for local Aleo program execution.
    * Browser → Web Worker (avoids UI freeze); SSR/test → direct pm.run.
@@ -171,33 +184,19 @@ export class AleoProtocolService implements IAleoProtocolService {
     programSource?: string,
     timeoutMs: number = WORKER_TIMEOUT_MS
   ): Promise<string[]> {
-    // Local compute path
-    const program = programSource ?? (await this.getProgramSource());
-
-    // Browser path: require worker (avoid UI freeze); SSR/test path: allow direct pm.run fallback.
-    const worker = this.getWorker();
-    if (worker) {
-      try {
-        const outputs = await this.runInWorker({ program, functionName, inputs });
-        if (!outputs || outputs.length === 0) {
-          throw new ProtocolServiceError(
-            ProtocolError.INVALID_RECORD,
-            `Program execution returned empty output for ${functionName}`,
-            { functionName, inputsLength: inputs.length }
-          );
-        }
-        return outputs;
-      } catch (e: any) {
-        if (e instanceof ProtocolServiceError) throw e;
-        throw new ProtocolServiceError(
-          ProtocolError.SYNC_TIMEOUT,
-          'Local compute worker failed',
-          { functionName, reason: 'worker_failed', originalError: e?.message || e }
-        );
-      }
+    // Fast BHP paths (no pm.run)
+    if (functionName === 'compute_invoice_hash') {
+      return await this.computeInvoiceHashLocal(inputs as string[]);
     }
 
-    // Non-browser (SSR/tests) fallback: safe to use main thread
+    if (functionName === 'compute_invoice_id') {
+      return await this.computeInvoiceIdLocal(inputs as string[]);
+    }
+
+    // Local compute path for other functions
+    const program = programSource ?? (await this.getProgramSource());
+
+    // Non-browser (SSR/tests) or worker-disabled path: use main thread
     const pm = await this.getProgramManager();
     const response = await this.withTimeout(pm.run(program, functionName, inputs, false), functionName, inputs, timeoutMs);
     const outputs = (response as any)?.getOutputs ? (response as any).getOutputs() : (response as any)?.outputs;
