@@ -17,10 +17,9 @@ import { toast } from 'sonner';
 export function useInvoiceListInitialize() {
   const { publicKey, masterKey } = useUserStore();
   const {
-    invoices: currentInvoices,
     getAllInvoices,
     setInvoices,
-    rebuildSendingIndex  // ✅ 新增：重建 sending 索引
+    rebuildSendingIndex
   } = useInvoiceStore();
   const { scanAndBuildInvoices } = useInvoiceChainScan();
   
@@ -46,6 +45,8 @@ export function useInvoiceListInitialize() {
       }
 
       // Merge nonce/auditKey from existing in-memory invoices (local-only fields not on chain)
+      // Read directly from store to avoid stale closure / dependency loop
+      const currentInvoices = useInvoiceStore.getState().invoices;
       for (const inv of invoices) {
         const existing = currentInvoices.find(
           (e) => cleanAleoField(e.id) === cleanAleoField(inv.id) || e.invoiceHash === inv.invoiceHash
@@ -77,7 +78,7 @@ export function useInvoiceListInitialize() {
     } finally {
       setIsLoading(false);
     }
-  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices, currentInvoices, rebuildSendingIndex]);
+  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices, rebuildSendingIndex]);
 
   /**
    * 初始化流程：处理两种情况
