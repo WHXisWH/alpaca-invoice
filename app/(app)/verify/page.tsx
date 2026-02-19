@@ -31,6 +31,7 @@ export default function VerifyPage() {
     exists: boolean;
     hash?: string | null;
     status?: InvoiceStatus | null;
+    rulesResult?: string | null;
     error?: string;
   } | null>(null);
 
@@ -43,12 +44,16 @@ export default function VerifyPage() {
         throw new Error('Invoice ID must be a field (suffix "field").');
       }
       const registry = createInvoiceRegistryService(protocolService);
-      const hash = await registry.getInvoiceHash(normalized as any);
-      const status = await registry.getInvoiceStatus(normalized as any);
+      const [hash, status, rulesResult] = await Promise.all([
+        registry.getInvoiceHash(normalized as any),
+        registry.getInvoiceStatus(normalized as any),
+        registry.getRulesResult(normalized as any)
+      ]);
       setResult({
         exists: hash !== null,
         hash,
-        status
+        status,
+        rulesResult
       });
     } catch (error: any) {
       setResult({ exists: false, error: error?.message || 'Lookup failed' });
@@ -90,6 +95,13 @@ export default function VerifyPage() {
                 <div>Exists: {result.exists ? 'Yes' : 'No'}</div>
                 <div>Hash: {result.hash ?? 'N/A'}</div>
                 <div>Status: {formatStatus(result.status ?? null)}</div>
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <span className="font-medium text-slate-700">Data compliance (rules_result):</span>{' '}
+                  {result.rulesResult ?? 'N/A'}
+                  <p className="mt-1 text-xs text-slate-500">
+                    Chain anchor for R1–R5 compliance at creation time.
+                  </p>
+                </div>
               </>
             )}
           </div>

@@ -114,7 +114,8 @@ export function useAuditPackageVerify() {
         phase1: result.phase1,
         phase2: result.phase2,
         phase3: result.phase3,
-        phase4: result.phase4
+        phase4: result.phase4,
+        phase5: result.phase5
       },
       decryptedData: result.decrypted
         ? { invoiceId: result.decrypted.invoiceId, data: result.decrypted.data }

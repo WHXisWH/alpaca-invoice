@@ -72,6 +72,7 @@ export interface DecryptedAuditPayload {
     [key: string]: unknown;
     hidden_masks: string[];
   };
+  /** Field order matches contract FieldCommitments and commitmentUtils.COMMITMENT_FIELD_ORDER; used for comparison with chain commitment_root / field_commitments. */
   commitments: {
     amount: AleoField;
     tax_amount: AleoField;

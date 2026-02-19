@@ -111,11 +111,8 @@ export function useAuditPackageGenerate() {
     }): Promise<{ envelope: AuditPackageEnvelope; auditKey: string }> => {
       setLoading(true);
       try {
-        if (!masterKey) {
-          throw new Error('Master key missing. Please sign in to load invoice details.');
-        }
-
-        const list = await getAllInvoices({ masterKey, refreshMemory: false });
+        // masterKey optional: chain-synced invoices (no details) can generate chain-anchored package without decryption
+        const list = await getAllInvoices({ masterKey: masterKey ?? undefined, refreshMemory: false });
         const invoice =
           list.find((i) => i.id === opts.invoiceId) ||
           list.find((i) => i.invoiceHash === opts.invoiceId);
@@ -124,38 +121,29 @@ export function useAuditPackageGenerate() {
           throw new Error('Invoice not found locally. Please sync invoices first.');
         }
 
-        if (!invoice.details) {
-          throw new Error('Invoice details are not decrypted. Cannot build audit package.');
-        }
-
-        const invoiceWithNonce = invoice as Invoice & { nonce?: AleoField };
-        if (!invoiceWithNonce.nonce) {
-          throw new Error('Invoice nonce is missing. Use an invoice created on-chain (with nonce).');
-        }
-
+        // Allow chain-synced invoices (no nonce/auditKey/details): AuditService.generate will use chain-anchored path when commitment_root is on chain.
         const invoiceWithAuditKey = invoice as Invoice & { auditKey?: string };
-        if (!invoiceWithAuditKey.auditKey || !/^[0-9a-fA-F]{64}$/.test(invoiceWithAuditKey.auditKey)) {
-          throw new Error(
-            'Invoice has no audit key. Enable audit authorization when creating the invoice and generate an audit key.'
-          );
-        }
+        const hasAuditKey = invoiceWithAuditKey.auditKey && /^[0-9a-fA-F]{64}$/.test(invoiceWithAuditKey.auditKey);
 
         const selectedFields =
           opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS;
         const permissions = fieldsToPermissions(selectedFields);
-        console.log('permissions', permissions)
-        console.log('invoice', invoice)
 
         const genResult = await auditService.generate({
           invoice,
           expiresAt: opts.expiresAt,
           permissions,
-          auditKey: invoiceWithAuditKey.auditKey
+          auditKey: hasAuditKey ? invoiceWithAuditKey.auditKey : undefined
         });
 
+        console.log('[Audit] generate() success, setting result', {
+          hasEnvelope: !!genResult?.envelope,
+          hasAuditKey: !!genResult?.auditKey
+        });
         setResult({ envelope: genResult.envelope, auditKey: genResult.auditKey });
         return { envelope: genResult.envelope, auditKey: genResult.auditKey };
       } catch (err: any) {
+        console.log('[Audit] generate() caught error', err?.message ?? err);
         handleError(err);
         throw err;
       } finally {
@@ -173,6 +161,7 @@ export function useAuditPackageGenerate() {
         expiresAt: new Date(expiresAt).getTime(),
         selectedFields: fields
       });
+      console.log('[Audit] generateFromForm received pkg', !!pkg?.envelope, !!pkg?.auditKey);
       setResult(pkg);
     } catch {
       // Error is already handled by unified error handler
