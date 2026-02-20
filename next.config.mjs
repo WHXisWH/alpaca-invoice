@@ -7,10 +7,19 @@ const nextConfig = {
       type: 'asset/source',
     });
 
-    // Workaround: @provablehq/sdk ships an ESM node polyfill file that Terser
-    // (used in the server build pipeline) fails to parse as a script module.
-    // Disable server-side minification to keep build green while keeping
-    // client bundles minified by SWC.
+    config.experiments = {
+      ...config.experiments,
+      topLevelAwait: true,
+    };
+
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      {
+        module: /(@provablehq[\\/]sdk|@provablehq[\\/]wasm)/,
+        message: /topLevelAwait/,
+      },
+    ];
+
     config.optimization.minimize = false;
 
     return config;
