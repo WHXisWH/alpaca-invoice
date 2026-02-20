@@ -16,6 +16,32 @@ export interface IProgramMappingReader {
 
 const CACHE_TTL_MS = 30_000;
 
+function parseLeoAuditAuthString(raw: string): {
+  audit_key_hash: AleoField;
+  scopes_bitmask: bigint;
+  expires_at: number;
+  issuer: AleoAddress;
+} | null {
+  const cleaned = raw.replace(/[{}]/g, '').trim();
+  if (!cleaned.includes('audit_key_hash')) return null;
+  const parts = cleaned.split(',').map((p) => p.trim());
+  const kv: Record<string, string> = {};
+  for (const p of parts) {
+    const [k, v] = p.split(':').map((s) => s.trim());
+    if (k && v) kv[k] = v.replace(/["']/g, '');
+  }
+  if (!kv.audit_key_hash) return null;
+  const scopes = kv.scopes_bitmask || kv.scopesBitmask;
+  const expires = kv.expires_at || kv.expiresAt;
+  const issuer = kv.issuer;
+  return {
+    audit_key_hash: kv.audit_key_hash as AleoField,
+    scopes_bitmask: scopes ? BigInt(scopes.replace(/u64$/i, '')) : 0n,
+    expires_at: expires ? Number(expires.replace(/u32$/i, '')) : 0,
+    issuer: issuer as AleoAddress
+  };
+}
+
 /** Parse Leo struct string (e.g. "amount: 123field, tax_amount: 456field, ... } string") into Record<string, AleoField>. */
 function parseLeoFieldCommitmentsString(raw: string): Record<string, AleoField> | null {
   const out: Record<string, string> = {};
@@ -136,7 +162,14 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
       this.authCache.set(key, { ts: Date.now(), value: null });
       return null;
     }
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    let parsed: any = raw;
+    if (typeof raw === 'string') {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = parseLeoAuditAuthString(raw);
+      }
+    }
     const value = parsed
       ? {
           audit_key_hash: parsed.audit_key_hash ?? parsed.auditKeyHash,
