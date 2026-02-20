@@ -6,7 +6,6 @@ import {
   getOrCreateDeviceKey,
   getEncryptedMasterKey,
   setEncryptedMasterKey,
-  clearEncryptedMasterKey,
 } from '@/lib/masterKeyPersistence';
 
 let cryptoServiceInstance: CryptoService | null = null;
@@ -95,7 +94,6 @@ export const useUserStore = create<UserState>()(
       },
 
       clearUser: () => {
-        const publicKey = get().publicKey;
         set({
           publicKey: null,
           connected: false,
@@ -103,7 +101,8 @@ export const useUserStore = create<UserState>()(
           publicBalance: 0n,
           privateBalance: 0n,
         });
-        if (publicKey) clearEncryptedMasterKey(publicKey);
+        // Do not clear encryptedMasterKey here: disconnect/reconnect same account should
+        // restore the same masterKey via tryRestoreMasterKey (see docs TODO §10).
       },
     }),
     {
