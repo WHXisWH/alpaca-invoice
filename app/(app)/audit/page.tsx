@@ -38,6 +38,7 @@ export default function AuditPage() {
 
       <Link
         href="/audit/verify"
+        data-tour="audit-center"
         className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/50"
       >
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">

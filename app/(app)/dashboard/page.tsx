@@ -64,9 +64,11 @@ export default function DashboardPage() {
   // Display loading state
   if (showLoading) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
-        <p className="mt-4 text-sm text-primary-500">Loading invoices...</p>
+      <div className="space-y-6">
+        <div className="flex min-h-[40vh] flex-col items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+          <p className="mt-4 text-sm text-primary-500">Loading invoices...</p>
+        </div>
       </div>
     );
   }
@@ -74,28 +76,30 @@ export default function DashboardPage() {
   // Display wallet connection prompt
   if (showWalletPrompt) {
     return (
-      <MotionContainer className="flex min-h-[60vh] flex-col items-center justify-center">
-        <MotionItem className="surface-card p-10 text-center">
-          <div className="relative mx-auto mb-6 h-32 w-32">
-            <Image
-              src="/images/mascot/mascot-waiting.png"
-              alt="Connect wallet"
-              fill
-              className="object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-          </div>
-          <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40 mb-4">
-            <Wallet className="h-6 w-6 text-accent-600" />
-          </div>
-          <h2 className="text-xl font-bold text-primary-900">Connect Wallet</h2>
-          <p className="mt-2 text-sm text-primary-500 max-w-xs">
-            Connect your Aleo wallet to view and manage your invoices
-          </p>
-        </MotionItem>
-      </MotionContainer>
+      <div className="space-y-6">
+        <MotionContainer className="flex min-h-[40vh] flex-col items-center justify-center">
+          <MotionItem className="surface-card p-10 text-center">
+            <div className="relative mx-auto mb-6 h-32 w-32">
+              <Image
+                src="/images/mascot/mascot-waiting.png"
+                alt="Connect wallet"
+                fill
+                className="object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+            <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40 mb-4">
+              <Wallet className="h-6 w-6 text-accent-600" />
+            </div>
+            <h2 className="text-xl font-bold text-primary-900">Connect Wallet</h2>
+            <p className="mt-2 text-sm text-primary-500 max-w-xs">
+              Connect your Aleo wallet to view and manage your invoices
+            </p>
+          </MotionItem>
+        </MotionContainer>
+      </div>
     );
   }
 
@@ -181,7 +185,7 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <MotionItem className="surface-card p-6">
         <h2 className="mb-4 text-lg font-semibold text-primary-900">Quick Actions</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-tour="dashboard-stats">
           <Link
             href="/invoices/create"
             className="flex cursor-pointer items-center gap-3 rounded-xl border border-primary-200/60 bg-white/70 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-md"
