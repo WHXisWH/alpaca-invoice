@@ -638,6 +638,10 @@ export function useTransactionController(): ITxController {
         completeTx();
         throw new Error('Invoice record not found on chain. Please sync and try again.');
       }
+      if (rawRecord.spent === true || rawRecord.spent === 'true') {
+        completeTx();
+        throw new Error('Invoice record is already spent. Cannot set audit authorization on spent record.');
+      }
 
       const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
       const requestId = await walletService.requestTransaction({
