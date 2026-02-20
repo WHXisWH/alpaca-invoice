@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
@@ -91,6 +91,12 @@ export function useAuditPackageGenerate() {
       setLoadingInvoices(false);
     }
   }, [getAllInvoices]);
+
+  // Auto-load invoice list from IndexedDB when the audit page mounts.
+  useEffect(() => {
+    loadInvoiceOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleField = useCallback((key: string) => {
     setFields((prev) =>
