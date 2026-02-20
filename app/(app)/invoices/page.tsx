@@ -138,7 +138,7 @@ function InvoicesPageInner() {
   // Authorization modal
   if (isAuthRequired) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
+      <div className="flex min-h-[400px] items-center justify-center" data-tour="invoice-list">
         <MotionContainer>
           <MotionItem className="surface-card p-8 text-center">
           <div className="relative mx-auto mb-4 h-20 w-20">
@@ -182,7 +182,7 @@ function InvoicesPageInner() {
   // Loading state
   if (showLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
+      <div className="flex min-h-[400px] items-center justify-center" data-tour="invoice-list">
         <MotionContainer>
           <MotionItem className="text-center">
           <div className="relative mx-auto mb-4 h-20 w-20">
@@ -209,23 +209,26 @@ function InvoicesPageInner() {
   // Wallet connection prompt
   if (showWalletPrompt) {
     return (
-      <MotionContainer>
-        <MotionItem className="surface-card p-8">
-          <EmptyState
-            icon={Wallet}
-            title="Connect Wallet"
-            description="Connect your Aleo wallet to view and manage invoices"
-          />
-        </MotionItem>
-      </MotionContainer>
+      <div data-tour="invoice-list">
+        <MotionContainer>
+          <MotionItem className="surface-card p-8">
+            <EmptyState
+              icon={Wallet}
+              title="Connect Wallet"
+              description="Connect your Aleo wallet to view and manage invoices"
+            />
+          </MotionItem>
+        </MotionContainer>
+      </div>
     );
   }
 
   if (!showMainContent) {
-    return null;
+    return <div data-tour="invoice-list" />;
   }
 
   return (
+    <div data-tour="invoice-list">
     <MotionContainer className="space-y-6">
       {/* Actions */}
       <MotionItem className="flex flex-wrap items-center justify-end gap-3">
@@ -368,5 +371,6 @@ function InvoicesPageInner() {
         </MotionContainer>
       )}
     </MotionContainer>
+    </div>
   );
 }

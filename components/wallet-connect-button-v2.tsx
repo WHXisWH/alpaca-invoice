@@ -34,7 +34,7 @@ export default function WalletConnectButtonV2() {
         )}
 
         {/* Connect Button with integrated network badge */}
-        <div className="inline-flex items-center gap-2">
+        <div className="inline-flex items-center gap-2" data-tour="wallet-connect">
           <span className="rounded-full bg-accent-100/80 px-2.5 py-1 text-xs font-medium text-accent-700 ring-1 ring-accent-200/50">
             {networkName}
           </span>
@@ -67,7 +67,7 @@ export default function WalletConnectButtonV2() {
   }
 
   return (
-    <div className="inline-flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-2.5 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.25)] backdrop-blur">
+    <div className="inline-flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 px-4 py-2.5 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.25)] backdrop-blur" data-tour="wallet-connect">
       {/* Connection Status */}
       <div className="flex items-center gap-2.5">
         <span className="relative flex h-2 w-2">

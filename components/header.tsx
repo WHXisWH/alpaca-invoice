@@ -10,8 +10,12 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
   '/dashboard': { title: 'Dashboard', subtitle: 'Overview of your invoice activity' },
   '/invoices': { title: 'Invoices', subtitle: 'Manage your sent and received invoices' },
   '/invoices/create': { title: 'Create Invoice', subtitle: 'Create a new privacy-preserving invoice' },
+  '/invoice/create': { title: 'Create Invoice', subtitle: 'Create a new privacy-preserving invoice' },
   '/receipts': { title: 'Receipts', subtitle: 'View your payment receipts' },
   '/audit': { title: 'Audit Center', subtitle: 'Generate and manage audit keys' },
+  '/audit/verify': { title: 'Verify Audit Package', subtitle: 'Verify audit package integrity and content' },
+  '/verify': { title: 'Verify Invoice', subtitle: 'Check invoice on-chain anchor (walletless)' },
+  '/settings': { title: 'Settings', subtitle: 'Audit authorization management' },
   '/docs': { title: 'Documentation', subtitle: 'Guides, architecture, and workflows' },
   '/docs/architecture': { title: 'Architecture', subtitle: 'Technical architecture overview' },
   '/docs/business-flow': { title: 'Business Flow', subtitle: 'Business logic and workflows' },
@@ -21,8 +25,10 @@ const pageTitles: Record<string, { title: string; subtitle?: string }> = {
 /** Resolve page info for both static and dynamic routes */
 function resolvePageInfo(pathname: string): { title: string; subtitle?: string } {
   if (pageTitles[pathname]) return pageTitles[pathname];
-  // Dynamic invoice detail route: /invoices/[hash]
-  if (pathname.startsWith('/invoices/') && pathname !== '/invoices/create') {
+  if (
+    (pathname.startsWith('/invoices/') && pathname !== '/invoices/create') ||
+    (pathname.startsWith('/invoice/') && pathname !== '/invoice/create')
+  ) {
     return { title: 'Invoice Detail', subtitle: 'View invoice details and status' };
   }
   return { title: 'Alpaca Invoice' };
