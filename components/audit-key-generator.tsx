@@ -21,7 +21,9 @@ export default function AuditKeyGenerator() {
     handleSubmit,
     loading,
     loadingInvoices,
-    fieldsList
+    fieldsList,
+    submitAuthorization,
+    submittingAuth
   } = useAuditPackageGenerate();
 
   const resultSidebar = result ? (
@@ -56,6 +58,17 @@ export default function AuditKeyGenerator() {
         >
           Download envelope JSON
         </button>
+        <button
+          type="button"
+          onClick={submitAuthorization}
+          disabled={submittingAuth}
+          className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          {submittingAuth ? 'Submitting…' : 'Submit On-chain Authorization'}
+        </button>
+        <p className="text-xs text-slate-500">
+          Required for Phase 3 verification. Submits audit_key_hash and scopes to the contract.
+        </p>
       </div>
     </div>
   ) : null;
