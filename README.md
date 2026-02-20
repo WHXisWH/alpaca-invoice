@@ -9,7 +9,8 @@ Privacy-preserving B2B invoice system on Aleo. Private Records plus public ancho
 - **Privacy-First**: Transaction amounts and party details encrypted on-chain
 - **Two-Step Payment**: Secure payment flow via credits.aleo + zk_invoice_v2.aleo
 - **Dual Records**: Both seller and buyer receive independent invoice records
-- **Audit Support**: Off-chain selective disclosure via wallet-signed audit packages (permissioned + expiring) and shareable audit keys
+- **Audit Support**: Off-chain selective disclosure via wallet-signed audit packages (permissioned + expiring), on-chain audit authorization (set_audit_authorization), and shareable audit keys
+- **Chain Anchors**: Commitments/rules caches on-chain enable chain-anchored packages when the local invoice nonce is missing (requires commitment_root to exist on chain)
 - **IndexedDB Storage**: Encrypted local persistence with integrity verification
 
 ## Quick Start
@@ -110,16 +111,17 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 ## Audit Workflow (Selective Disclosure)
 1. Connect a wallet that supports `signMessage`; ensure the invoice you want to disclose is decrypted locally (masterKey is derived during create/pay flows).
-2. Open `/audit`, choose invoice ID, auditor address, expiry, and permissions; click **Generate** to get an audit package JSON plus a random audit key.
-3. Share the JSON package + audit key to the auditor (out-of-band).
-4. Auditor validates & decrypts via the UI “Validate Audit Package” panel or the offline script `node tests/validate_audit_package.mjs <package.json> <audit_key_hex>`.
-5. Validation checks expiry, cipher-hash integrity, and recomputes `invoice_hash` from disclosed details; the smart contract remains unchanged.
+2. Open `/audit`, choose invoice ID, expiry, and permissions; click **Generate** to get an envelope-format audit package and audit key.  
+   - If the invoice was synced from chain and has no nonce, generation uses chain-anchored mode and requires `commitment_root` on chain; otherwise it will fail fast with “no commitment_root on chain”.
+3. (Recommended) Click **Submit On-chain Authorization** to call `set_audit_authorization` with the envelope’s `audit_key_hash` and scopes. Requires the seller wallet and an **unspent** invoice record.
+4. Share the envelope JSON + audit key to the auditor (out-of-band).
+5. Auditor validates via the UI validator or offline script: `node tests/validate_audit_package.mjs <envelope.json> <audit_key_hex>`. Verification runs five phases: expiry/decrypt → invoice_hash vs chain → audit authorization → anchors → rules.
 
 ## Testing
 
 The project has two layers of tests:
 
-**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2_2.aleo` with mappings/async/ZK proofs (rules, amount, ownership, commitments, audit auth/counter).
+**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2_2.aleo` with mappings/async/ZK proofs (rules, amount, ownership, commitments, audit auth/counter). Main suite: `tests/test_zk_invoice_v2_2.leo`.
 
 **Service Unit Tests (Vitest)** — Unit tests for core services including WalletService, CryptoService, AleoProtocolService, StorageService, InvoiceStatusValidator, PollingService, and InvoiceStore. Run with `npx vitest`.
 

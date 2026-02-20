@@ -4,6 +4,13 @@
 
 This document describes the complete business logic flows for the ZK-Invoice system, covering invoice creation, payment processing, cancellation, and audit workflows.
 
+## Audit Authorization & Selective Disclosure (v2.2)
+
+- **Audit package generation**: Requires wallet `signMessage`. If the invoice is chain-synced without a nonce, generation switches to chain-anchored mode and needs `commitment_root` on chain; otherwise it fails early.
+- **On-chain authorization**: `set_audit_authorization` is seller-only and requires an **unspent** invoice record; spent records (paid/cancelled) will be rejected by the wallet/contract.
+- **Scopes bitmask**: fields 1–9 map to amount, tax_amount, due_date, buyer, seller, currency, items_hash, memo_hash, order_id.
+- **Verification (five phases)**: expiry/decrypt → invoice_hash vs registry → audit authorization (hash + scopes) → anchors (invoice_hash, commitment_root, rules_result, field_commitments) → rules R1–R5 recompute and compare.
+
 ## 1. Invoice Creation Flow
 
 ### High-Level Flow
