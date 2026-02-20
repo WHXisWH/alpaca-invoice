@@ -2,6 +2,13 @@ import { AleoProtocolService } from '../AleoProtocolServiceImpl';
 import { ProtocolError } from '../IAleoProtocolService';
 import { PROGRAM_ID } from '@/lib/contract';
 
+// Share the ProgramManager mock instance so assertions can inspect it.
+const mockPM = {
+  run: vi.fn().mockResolvedValue({ outputs: ['999field'] }),
+  buildAuthorization: vi.fn().mockResolvedValue({}),
+  setAccount: vi.fn()
+};
+
 vi.mock('@provablehq/sdk', () => {
   const mockClient = {
     getProgram: vi.fn().mockResolvedValue('program source'),
@@ -12,11 +19,6 @@ vi.mock('@provablehq/sdk', () => {
       transitions: [{ program: PROGRAM_ID, function: 'foo', outputs: [1, 2] }]
     })
   };
-  const mockPM = {
-    run: vi.fn().mockResolvedValue({ outputs: ['999field'] }),
-    buildAuthorization: vi.fn().mockResolvedValue({}),
-    setAccount: vi.fn()
-  };
   class PrivateKey {
     to_string() {
       return 'mock-private-key';
@@ -25,11 +27,26 @@ vi.mock('@provablehq/sdk', () => {
   class Account {
     constructor(_: any) {}
   }
+  class Plaintext {
+    static fromString(_: string) {
+      return new Plaintext();
+    }
+    toBitsLe() {
+      return [true, false, true]; // dummy bits
+    }
+  }
+  class BHP256 {
+    hash(_: boolean[]) {
+      return { toString: () => '999field' };
+    }
+  }
   return {
     AleoNetworkClient: vi.fn(() => mockClient),
     ProgramManager: vi.fn(() => mockPM),
     PrivateKey,
-    Account
+    Account,
+    Plaintext,
+    BHP256
   };
 });
 
@@ -54,10 +71,8 @@ describe('AleoProtocolService', () => {
   });
 
   test('assertRules calls run', async () => {
-    const sdk = await import('@provablehq/sdk');
-    const pm = (sdk.ProgramManager as any).mock.results[0].value;
     await svc.assertRules('invfield', 'hashfield');
-    expect(pm.run).toHaveBeenCalledWith(expect.any(String), 'assert_rules_anchor', ['invfield', 'hashfield'], false);
+    expect(mockPM.run).toHaveBeenCalledWith(expect.any(String), 'assert_rules_anchor', ['invfield', 'hashfield'], false);
   });
 
   test('getLatestBlockHeight throws on invalid', async () => {
