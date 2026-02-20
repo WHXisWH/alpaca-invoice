@@ -111,8 +111,9 @@ export function useAuditPackageGenerate() {
     }): Promise<{ envelope: AuditPackageEnvelope; auditKey: string }> => {
       setLoading(true);
       try {
+        // Always refresh from chain to avoid using stale local invoices when generating audit packages.
         // masterKey optional: chain-synced invoices (no details) can generate chain-anchored package without decryption
-        const list = await getAllInvoices({ masterKey: masterKey ?? undefined, refreshMemory: false });
+        const list = await getAllInvoices({ masterKey: masterKey ?? undefined, refreshMemory: true });
         const invoice =
           list.find((i) => i.id === opts.invoiceId) ||
           list.find((i) => i.invoiceHash === opts.invoiceId);
