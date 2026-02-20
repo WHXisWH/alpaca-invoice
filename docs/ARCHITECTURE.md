@@ -97,10 +97,10 @@ app/
 | `useAuthCheck` | Independent authorization check, reusable across pages |
 | `useInvoices` | Invoice list compositor (initialize, filter, role, categorization) |
 | `useInvoiceDetail` | Invoice detail compositor (data, role, manual sync, actions) |
-| `useTransactionController` | Transaction flow management (create/pay/cancel) |
-| `useAuditPackageGenerate` | Generate audit package (envelope + auditKey) |
+| `useTransactionController` | Transaction flow management (create/pay/cancel/set_audit_authorization) |
+| `useAuditPackageGenerate` | Generate audit package (envelope + auditKey) + submit on-chain authorization |
 | `useAuditPackageDecrypt` | Decrypt audit package (envelope + key → payload) |
-| `useAuditPackageVerify` | Verify audit package (four-phase trustless verification) |
+| `useAuditPackageVerify` | Verify audit package (five-phase trustless verification) |
 | `useInvoiceListPolling` | Batch polling manager (used by InvoiceAutoPoller) |
 | `useInvoiceChainSync` | Manual chain sync and key migration (detail page only) |
 | `useInvoicePollingCore` | Core polling logic shared by all polling operations |
@@ -228,13 +228,13 @@ Return Updated InvoiceRecord + PaymentRecord
 Update IndexedDB & UI
 ```
 
-### 3.3 Audit Package Flow (Off-chain)
+### 3.3 Audit Package Flow
 
 ```
-Invoice Owner (wallet connected)
+Invoice Owner (wallet connected, invoice must be PENDING/unspent)
         │
         ▼
-Select invoice + permissions + expiry in /audit
+Select invoice + permissions (scopes) + expiry in /audit
         │
         ▼
 Sign audit message with wallet (signMessage)
@@ -243,19 +243,30 @@ Sign audit message with wallet (signMessage)
 Random audit key (32-byte) → AES-GCM encrypt filtered invoice data
         │
         ▼
-Bundle AuditPackage JSON
-  - cipher + hash
-  - permissions, expiry, auditor address
+Bundle AuditPackage envelope JSON
+  - audit_key_hash, scopes_bitmask, expires_at
+  - encrypted ciphertext + iv + auth_tag
   - signerAddress, signature
         │
-        ▼
-Share JSON + audit key off-chain
+        ├─── Download envelope JSON (share off-chain with auditor)
+        │
+        └─── [Optional] Submit On-chain Authorization
+                │
+                ▼
+        zk_invoice_v2_2.aleo/set_audit_authorization
+          - Input: InvoiceRecord (must be unspent)
+          - Input: audit_key_hash, scopes_bitmask, expires_at
+                │
+                ▼
+        On-chain auth mapping updated (enables Phase 3 verification)
         │
         ▼
-Auditor validates (UI or scripts/validate_audit_package.mjs)
-        │
-        ├─ checks expiry, cipher hash, invoice_hash recompute
-        └─ decrypts with audit key
+Auditor validates (UI: /audit/verify)
+  Phase 1 — expiry, cipher hash, signature presence
+  Phase 2 — invoice_hash matches on-chain registry
+  Phase 3 — audit_authorization exists on-chain; key hash & scopes match
+  Phase 4 — chain anchors present (field commitments, rules)
+  Phase 5 — recompute field commitments & rules (R1–R5), compare to cache
 ```
 
 ### 3.4 Unified Polling Architecture
@@ -548,6 +559,6 @@ User Interface
 
 ## 9. Version Information
 
-- **Document Version**: 2.1 (aligned with off-chain audit packages)
-- **Code Version**: 1.3
-- **Last Updated**: January 2026
+- **Document Version**: 2.2 (on-chain audit authorization + five-phase verification)
+- **Code Version**: 1.4
+- **Last Updated**: February 2026
