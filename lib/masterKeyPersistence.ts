@@ -4,6 +4,11 @@ import type { EncryptedPayload } from './types';
 const DEVICE_KEY_STORAGE = 'aleo-wallet-storage-deviceKey';
 const ENCRYPTED_MASTER_KEYS_STORAGE = 'aleo-wallet-storage-encryptedMasterKey';
 
+/** Normalize publicKey for storage key so reconnect with slightly different format still hits same entry. */
+function normalizePublicKey(publicKey: string): string {
+  return publicKey.trim().toLowerCase();
+}
+
 function getCrypto(): Crypto {
   if (typeof window === 'undefined' || !window.crypto) {
     throw new Error('Crypto not available');
@@ -28,13 +33,14 @@ export function getOrCreateDeviceKey(): Uint8Array {
 
 /**
  * Get encrypted master key payload for the given publicKey (if any).
+ * publicKey is normalized so wallet reconnect with different casing/whitespace still hits same entry.
  */
 export function getEncryptedMasterKey(publicKey: string): EncryptedPayload | null {
   const raw = localStorage.getItem(ENCRYPTED_MASTER_KEYS_STORAGE);
   if (!raw) return null;
   try {
     const map: Record<string, EncryptedPayload> = JSON.parse(raw);
-    return map[publicKey] ?? null;
+    return map[normalizePublicKey(publicKey)] ?? null;
   } catch {
     return null;
   }
@@ -42,24 +48,26 @@ export function getEncryptedMasterKey(publicKey: string): EncryptedPayload | nul
 
 /**
  * Store encrypted master key for the given publicKey.
+ * publicKey is normalized for consistent lookup on restore.
  */
 export function setEncryptedMasterKey(publicKey: string, payload: EncryptedPayload): void {
   const raw = localStorage.getItem(ENCRYPTED_MASTER_KEYS_STORAGE);
   const map: Record<string, EncryptedPayload> = raw ? JSON.parse(raw) : {};
-  map[publicKey] = payload;
+  map[normalizePublicKey(publicKey)] = payload;
   localStorage.setItem(ENCRYPTED_MASTER_KEYS_STORAGE, JSON.stringify(map));
 }
 
 /**
- * Clear encrypted master key for the given publicKey (e.g. on logout).
+ * Clear encrypted master key for the given publicKey (e.g. explicit logout / forget this device).
  * Device key is kept so other accounts on same device can still use their stored key.
+ * Normalized publicKey is used so the same key used at set/get is cleared.
  */
 export function clearEncryptedMasterKey(publicKey: string): void {
   const raw = localStorage.getItem(ENCRYPTED_MASTER_KEYS_STORAGE);
   if (!raw) return;
   try {
     const map: Record<string, EncryptedPayload> = JSON.parse(raw);
-    delete map[publicKey];
+    delete map[normalizePublicKey(publicKey)];
     localStorage.setItem(ENCRYPTED_MASTER_KEYS_STORAGE, JSON.stringify(map));
   } catch {
     // ignore
