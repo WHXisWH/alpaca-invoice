@@ -116,7 +116,7 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
     const key = `rules-${invoiceId}`;
     const cached = this.rulesCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
-    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'getter_rules_cache', invoiceId);
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'invoice_rules_result', invoiceId);
     const val = raw ? (String(raw).replace(/["']/g, '') as AleoField) : null;
     this.rulesCache.set(key, { ts: Date.now(), value: val });
     return val;

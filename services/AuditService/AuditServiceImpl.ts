@@ -251,6 +251,13 @@ export class AuditService implements IAuditService {
     if (disclosedSnake.has('items_hash')) data.items_hash = inv.itemsHash ?? (inv.details ? await this.cryptoService.hashObjectToField(inv.details.lineItems ?? []) : ('0field' as AleoField));
     if (disclosedSnake.has('memo_hash')) data.memo_hash = inv.details?.notes ?? (inv.memoHash ?? '');
     if (disclosedSnake.has('order_id')) data.order_id = inv.details?.orderId ?? (inv.orderId ?? '0field');
+    // Rules R1/R4 need tax_rate_bps and line_items_sum for Phase 5 to match chain rules_result
+    if (disclosedSnake.has('amount')) {
+      data.line_items_sum = Number(inv.amount);
+    }
+    if (disclosedSnake.has('amount') || disclosedSnake.has('tax_amount')) {
+      data.tax_rate_bps = Number(this.cryptoService.calculateTaxBps(invoice.details?.taxRate ?? 0));
+    }
     data.hidden_masks = [...COMMITMENT_FIELD_KEYS].filter(k => !disclosedSnake.has(k));
     return { data, disclosedSnake };
   }
@@ -344,7 +351,11 @@ export class AuditService implements IAuditService {
     };
 
     const { data } = await this.buildDecryptedData(invoice, permissions);
-    const issuedAt = Math.floor(Date.now() / 1000);
+    // Use invoice creation time so R2 (due_date >= current_time) matches chain at verify time
+    const issuedAt =
+      invoice.createdAt instanceof Date
+        ? Math.floor(invoice.createdAt.getTime() / 1000)
+        : Math.floor(Date.now() / 1000);
     const payloadWithoutIntegrity = {
       invoiceId: invoice.id,
       invoiceHash: invoice.invoiceHash,
@@ -739,8 +750,10 @@ export class AuditService implements IAuditService {
 
     try {
       // --- Phase 1: Pre-check ---
+      console.log('[VerifyPhases] Phase 1: pre-check (expiry, decrypt, cipherHash, signature)');
       const nowSec = Math.floor(Date.now() / 1000);
       const expiryOk = nowSec <= expiresAtSec;
+      console.log('[VerifyPhases] Phase 1: expiresAt', { expiryOk, nowSec, expiresAtSec, validUntil: new Date(expiresAtSec * 1000).toISOString() });
       phase1.checks!.push({
         key: 'expiresAt',
         ok: expiryOk,
@@ -752,7 +765,9 @@ export class AuditService implements IAuditService {
       try {
         const keyBytes = this.cryptoService.auditKeyToBytes(auditKey);
         decrypted = (await this.cryptoService.decryptWithRawKey(cipher, keyBytes)) as unknown as DecryptedAuditPayload;
+        console.log('[VerifyPhases] Phase 1: decrypt OK');
       } catch {
+        console.log('[VerifyPhases] Phase 1 FAIL: decrypt failed');
         phase1.checks!.push({ key: 'decrypt', ok: false, detail: 'Failed to decrypt with provided audit key' });
         phase1.ok = false;
         phase1.message = 'Phase 1 failed: decryption or expiry';
@@ -769,6 +784,7 @@ export class AuditService implements IAuditService {
       };
       const recomputedHash = await this.cryptoService.hashUtf8ToHex(canonicalJson(payloadWithoutIntegrity));
       const cipherHashOk = recomputedHash === decrypted.integrity.cipherHash;
+      console.log('[VerifyPhases] Phase 1: cipherHash', { cipherHashOk });
       phase1.checks!.push({
         key: 'cipherHash',
         ok: cipherHashOk,
@@ -776,6 +792,7 @@ export class AuditService implements IAuditService {
       });
 
       const sigOk = !!(decrypted.integrity?.signature);
+      console.log('[VerifyPhases] Phase 1: signature', { sigOk });
       phase1.checks!.push({
         key: 'signature',
         ok: sigOk,
@@ -786,17 +803,27 @@ export class AuditService implements IAuditService {
 
       phase1.ok = expiryOk && cipherHashOk && sigOk;
       phase1.message = phase1.ok ? 'Package integrity verified' : 'Pre-check failed';
+      console.log('[VerifyPhases] Phase 1 result:', phase1.ok, { expiryOk, cipherHashOk, sigOk });
 
       if (!phase1.ok) {
+        console.log('[VerifyPhases] Phase 1 FAIL: pre-check failed');
         return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
 
       // --- Phase 2: Invoice on chain (minimal proof: package invoice_hash matches chain) ---
+      console.log('[VerifyPhases] Phase 2: fetching invoice_hash for invoiceId:', invoiceId);
       const chainInvoiceHash = await registrySvc.getInvoiceHash(invoiceId);
       const invoiceHashMatch =
         !!chainInvoiceHash &&
         !!decrypted.invoiceHash &&
         this.normalizeField(decrypted.invoiceHash) === this.normalizeField(chainInvoiceHash);
+      console.log('[VerifyPhases] Phase 2: invoice on chain', {
+        hasChainHash: !!chainInvoiceHash,
+        hasPackageHash: !!decrypted.invoiceHash,
+        invoiceHashMatch,
+        chainHash: chainInvoiceHash ? String(chainInvoiceHash).slice(0, 30) + '...' : null,
+        packageHash: decrypted.invoiceHash ? String(decrypted.invoiceHash).slice(0, 30) + '...' : null
+      });
       phase2.checks!.push({
         key: 'invoice_registry',
         ok: !!chainInvoiceHash,
@@ -811,68 +838,86 @@ export class AuditService implements IAuditService {
       });
       phase2.ok = invoiceHashMatch;
       phase2.message = phase2.ok ? 'Invoice on chain verified' : 'Phase 2 failed: invoice not on chain or hash mismatch';
+      console.log('[VerifyPhases] Phase 2 result:', phase2.ok);
 
       if (!phase2.ok) {
+        console.log('[VerifyPhases] Phase 2 FAIL: invoice not on chain or hash mismatch');
         return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
       }
 
+      // disclosed: used in Phase 3 (scopes) and Phase 5 (field_proofs); compute once so Phase 5 runs even when Phase 3 fails
+      const disclosed = [...COMMITMENT_FIELD_KEYS].filter((k) => !decrypted!.data.hidden_masks?.includes(k));
+
       // --- Phase 3: Audit authorization (get_audit_authorization, key hash, scopes) ---
+      console.log('[VerifyPhases] Phase 3: fetching get_audit_authorization for invoiceId:', invoiceId);
       const auth = await registrySvc.getAuditAuthorization(invoiceId);
+      console.log('[VerifyPhases] Phase 3: get_audit_authorization result:', auth ? { audit_key_hash: auth.audit_key_hash, scopes_bitmask: String(auth.scopes_bitmask) } : null);
       if (!auth) {
+        console.log('[VerifyPhases] Phase 3 FAIL: no on-chain audit authorization');
         phase3.checks!.push({ key: 'get_audit_authorization', ok: false, detail: 'No audit authorization on chain' });
         phase3.ok = false;
         phase3.message = 'Phase 3 failed: no on-chain audit authorization';
-        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
-      }
-      phase3.checks!.push({ key: 'get_audit_authorization', ok: true, detail: 'AuditAuthorization retrieved' });
+        // Do not return: continue to Phase 4 and Phase 5
+      } else {
+        phase3.checks!.push({ key: 'get_audit_authorization', ok: true, detail: 'AuditAuthorization retrieved' });
 
-      const hashMatch = this.normalizeField(auth.audit_key_hash) === this.normalizeField(envAuditKeyHash);
-      phase3.checks!.push({
-        key: 'audit_key_hash',
-        ok: hashMatch,
-        detail: hashMatch ? 'Envelope audit_key_hash matches chain' : 'audit_key_hash mismatch'
-      });
+        const hashMatch = this.normalizeField(auth.audit_key_hash) === this.normalizeField(envAuditKeyHash);
+        console.log('[VerifyPhases] Phase 3: audit_key_hash match (envelope vs chain):', hashMatch, { env: envAuditKeyHash, chain: auth.audit_key_hash });
+        phase3.checks!.push({
+          key: 'audit_key_hash',
+          ok: hashMatch,
+          detail: hashMatch ? 'Envelope audit_key_hash matches chain' : 'audit_key_hash mismatch'
+        });
 
-      const computedKeyHash = (await this.cryptoService.hashObjectToField(auditKey)) as AleoField;
-      const bhpOk = this.normalizeField(computedKeyHash) === this.normalizeField(auth.audit_key_hash);
-      phase3.checks!.push({
-        key: 'BHP256(AuditKey)',
-        ok: bhpOk,
-        detail: bhpOk ? 'BHP256(AuditKey) == chain audit_key_hash' : 'Audit key hash mismatch'
-      });
+        const computedKeyHash = (await this.cryptoService.hashObjectToField(auditKey)) as AleoField;
+        const bhpOk = this.normalizeField(computedKeyHash) === this.normalizeField(auth.audit_key_hash);
+        console.log('[VerifyPhases] Phase 3: BHP256(AuditKey) match:', bhpOk, { computed: computedKeyHash, chain: auth.audit_key_hash });
+        phase3.checks!.push({
+          key: 'BHP256(AuditKey)',
+          ok: bhpOk,
+          detail: bhpOk ? 'BHP256(AuditKey) == chain audit_key_hash' : 'Audit key hash mismatch'
+        });
 
-      const disclosed = [...COMMITMENT_FIELD_KEYS].filter((k) => !decrypted!.data.hidden_masks?.includes(k));
-      let scopesOk = true;
-      const FIELD_SCOPE_IDS: Record<string, number> = {
-        amount: 1, tax_amount: 2, due_date: 3, buyer: 4, seller: 5, currency: 6, items_hash: 7, memo_hash: 8, order_id: 9
-      };
-      for (const f of disclosed) {
-        const scopeId = FIELD_SCOPE_IDS[f];
-        if (scopeId && !(auth.scopes_bitmask & (1n << BigInt(scopeId - 1)))) {
-          scopesOk = false;
-          break;
+        const FIELD_SCOPE_IDS: Record<string, number> = {
+          amount: 1, tax_amount: 2, due_date: 3, buyer: 4, seller: 5, currency: 6, items_hash: 7, memo_hash: 8, order_id: 9
+        };
+        let scopesOk = true;
+        for (const f of disclosed) {
+          const scopeId = FIELD_SCOPE_IDS[f];
+          if (scopeId && !(auth.scopes_bitmask & (1n << BigInt(scopeId - 1)))) {
+            scopesOk = false;
+            console.log('[VerifyPhases] Phase 3: scopes_bitmask FAIL at field:', f, 'scopeId:', scopeId, 'scopes_bitmask:', String(auth.scopes_bitmask));
+            break;
+          }
         }
-      }
-      phase3.checks!.push({
-        key: 'scopes_bitmask',
-        ok: scopesOk,
-        detail: scopesOk ? 'Disclosed fields within scopes_bitmask' : 'Disclosed fields exceed authorization'
-      });
+        if (scopesOk) console.log('[VerifyPhases] Phase 3: scopes_bitmask OK, disclosed:', disclosed);
+        phase3.checks!.push({
+          key: 'scopes_bitmask',
+          ok: scopesOk,
+          detail: scopesOk ? 'Disclosed fields within scopes_bitmask' : 'Disclosed fields exceed authorization'
+        });
 
-      phase3.ok = hashMatch && bhpOk && scopesOk;
-      phase3.message = phase3.ok ? 'Audit authorization passed' : 'Phase 3 failed';
-
-      if (!phase3.ok) {
-        return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
+        phase3.ok = hashMatch && bhpOk && scopesOk;
+        phase3.message = phase3.ok ? 'Audit authorization passed' : 'Phase 3 failed';
+        console.log('[VerifyPhases] Phase 3 result:', phase3.ok, { hashMatch, bhpOk, scopesOk });
       }
+      // Phase 3 failure does not block Phase 4/5: continue
 
       // --- Phase 4: Chain anchoring ---
+      console.log('[VerifyPhases] Phase 4: fetching chain anchors (invoice_hash, commitment_root, rules_result, field_commitments)');
       const [invoiceHash, commitmentRoot, rulesResult, fieldCommitments] = await Promise.all([
         registrySvc.getInvoiceHash(invoiceId),
         registrySvc.getCommitmentRoot(invoiceId),
         registrySvc.getRulesResult(invoiceId),
         registrySvc.getFieldCommitments(invoiceId)
       ]);
+      console.log('[VerifyPhases] Phase 4: anchors', {
+        hasInvoiceHash: !!invoiceHash,
+        hasCommitmentRoot: !!commitmentRoot,
+        hasRulesResult: !!rulesResult,
+        hasFieldCommitments: !!fieldCommitments,
+        commitmentRoot: commitmentRoot ? String(commitmentRoot).slice(0, 30) + '...' : null
+      });
       phase4.checks!.push({
         key: 'invoice_registry',
         ok: !!invoiceHash,
@@ -895,6 +940,7 @@ export class AuditService implements IAuditService {
       });
       phase4.ok = !!invoiceHash && !!commitmentRoot;
       phase4.message = phase4.ok ? 'Chain anchors retrieved' : 'Phase 4 failed';
+      if (!phase4.ok) console.log('[VerifyPhases] Phase 4 FAIL: missing', !invoiceHash ? 'invoice_hash' : '', !commitmentRoot ? 'commitment_root' : '');
 
       if (!phase4.ok) {
         return { overallValid: false, phase1, phase2, phase3, phase4, phase5, decrypted };
@@ -904,6 +950,7 @@ export class AuditService implements IAuditService {
       const pkgRoot = this.normalizeField(decrypted.commitments.root);
       const chainRoot = this.normalizeField(commitmentRoot!);
       const rootOk = pkgRoot === chainRoot;
+      console.log('[VerifyPhases] Phase 5: commitment_root', { rootOk, pkgRoot: pkgRoot.slice(0, 30) + '...', chainRoot: chainRoot.slice(0, 30) + '...' });
       phase5.checks!.push({
         key: 'commitment_root',
         ok: rootOk,
@@ -989,6 +1036,13 @@ export class AuditService implements IAuditService {
           }
         }
       }
+      console.log('[VerifyPhases] Phase 5: field_proofs', {
+        fieldProofOk,
+        isChainAnchoredOnly,
+        hasFieldCommitments: !!fieldCommitments,
+        hasChainRecordFields: !!chainRecordFields,
+        disclosed
+      });
       phase5.checks!.push({
         key: 'field_proofs',
         ok: fieldProofOk,
@@ -1003,17 +1057,27 @@ export class AuditService implements IAuditService {
       let rulesOk = true;
       let rulesResultMatch: boolean | null = null; // null = not compared (no chain anchor)
 
+      // Safely coerce payload numbers to BigInt (audit payload may contain decimals e.g. 71.04)
+      const toBigIntSafe = (v: unknown): bigint => {
+        if (v == null || v === '') return 0n;
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0n;
+        return BigInt(Math.round(n));
+      };
+
       if (data.amount != null && data.tax_amount != null) {
-        const amount = BigInt(String(data.amount));
-        const taxAmount = BigInt(String(data.tax_amount));
+        const amount = toBigIntSafe(data.amount);
+        const taxAmount = toBigIntSafe(data.tax_amount);
         const expectedTotal = amount + taxAmount;
-        const lineItemsSum = BigInt(String(data.line_items_sum ?? data.amount ?? 0));
-        const taxRateBps = BigInt(String(data.tax_rate_bps ?? 0));
+        const lineItemsSum = toBigIntSafe(data.line_items_sum ?? data.amount ?? 0);
+        const taxRateBps = toBigIntSafe(data.tax_rate_bps ?? 0);
+        // Use creation time (issuedAt) for R2 so it matches chain: due_date >= current_time at create_invoice
+        const currentTimeForRules = Number(decrypted.issuedAt ?? 0) || Math.floor(Date.now() / 1000);
         const evalResult = await this.cryptoService.evaluateAuditRules({
           amount,
           taxAmount,
           dueDate: Number(data.due_date ?? 0),
-          currentTime: Math.floor(Date.now() / 1000),
+          currentTime: currentTimeForRules,
           lineItemsSum,
           expectedTotal,
           taxRateBps,
@@ -1032,6 +1096,12 @@ export class AuditService implements IAuditService {
           );
           rulesResultMatch =
             this.normalizeField(recomputedRulesField) === this.normalizeField(rulesResult);
+          console.log('[VerifyPhases] Phase 5: rules_result_match', {
+            rulesResultMatch,
+            recomputed: this.normalizeField(recomputedRulesField),
+            chain: this.normalizeField(rulesResult),
+            R1R5: { r1: evalResult.r1, r2: evalResult.r2, r3: evalResult.r3, r4: evalResult.r4, r5: evalResult.r5 }
+          });
           phase5.checks!.push({
             key: 'rules_result_match',
             ok: rulesResultMatch,
@@ -1048,6 +1118,7 @@ export class AuditService implements IAuditService {
         }
       }
 
+      console.log('[VerifyPhases] Phase 5: financial_logic (R1–R5)', { rulesOk });
       phase5.checks!.push({
         key: 'financial_logic',
         ok: rulesOk,
@@ -1057,10 +1128,19 @@ export class AuditService implements IAuditService {
       const rulesResultOk = rulesResultMatch === null || rulesResultMatch === true;
       phase5.ok = rootOk && fieldProofOk && rulesOk && rulesResultOk;
       phase5.message = phase5.ok ? 'Trustless verification passed' : 'Phase 5 failed';
+      console.log('[VerifyPhases] Phase 5 result:', {
+        phase5Ok: phase5.ok,
+        rootOk,
+        fieldProofOk,
+        rulesOk,
+        rulesResultMatch,
+        rulesResultOk
+      });
 
       const overallValid = phase1.ok && phase2.ok && phase3.ok && phase4.ok && phase5.ok;
       return { overallValid, phase1, phase2, phase3, phase4, phase5, decrypted };
     } catch (e: any) {
+      console.error('[VerifyPhases] Verification error:', e?.message ?? e);
       phase1.ok = false;
       phase1.message = 'Verification error';
       phase1.checks!.push({ key: 'error', ok: false, detail: e?.message ?? 'Unknown error' });
