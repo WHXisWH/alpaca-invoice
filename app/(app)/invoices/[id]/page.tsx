@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft } from 'lucide-react';
@@ -51,6 +51,10 @@ export default function InvoiceDetailPage() {
   const [downloadMsg, setDownloadMsg] = useState('');
 
   const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
+  const safeStringify = useCallback(
+    (obj: any) => JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2),
+    []
+  );
 
   useEffect(() => {
     const fetchAnchors = async () => {
@@ -353,7 +357,7 @@ export default function InvoiceDetailPage() {
                 <div className="md:col-span-2">
                   <div className="text-slate-500">Field commitments</div>
                   <pre className="mt-1 max-h-28 overflow-auto rounded border border-slate-200 bg-white p-2">
-                    {JSON.stringify(anchors.fieldCommitments, null, 2)}
+                    {safeStringify(anchors.fieldCommitments)}
                   </pre>
                 </div>
               )}
@@ -361,7 +365,7 @@ export default function InvoiceDetailPage() {
                 <div className="md:col-span-2">
                   <div className="text-slate-500">Audit authorization</div>
                   <pre className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-white p-2">
-                    {JSON.stringify(anchors.auth, null, 2)}
+                    {safeStringify(anchors.auth)}
                   </pre>
                 </div>
               )}
