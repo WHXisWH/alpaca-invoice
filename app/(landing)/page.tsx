@@ -131,7 +131,7 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav
         className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${
-          isScrolled ? 'border-b border-primary-800 bg-primary-950/80 py-3 backdrop-blur-md' : 'bg-transparent py-5'
+          isScrolled ? 'border-b border-primary-800 bg-primary-950/80 py-3 backdrop-blur-md' : 'bg-transparent py-4'
         }`}
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6">
@@ -170,7 +170,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section — left-right layout */}
-      <section className="relative overflow-hidden pt-32 pb-10 md:pt-48 md:pb-32">
+      <section className="relative overflow-hidden pt-24 pb-10 md:pt-32 md:pb-20">
         <div className="absolute left-1/2 top-0 -z-10 h-full w-full -translate-x-1/2">
           <div className="absolute left-[-10%] top-[-10%] h-[60%] w-[60%] rounded-full bg-accent-600/15 blur-[140px] animate-pulse" />
           <div className="absolute bottom-[10%] right-[-5%] h-[50%] w-[50%] rounded-full bg-primary-600/15 blur-[140px]" />
