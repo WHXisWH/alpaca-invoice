@@ -32,19 +32,19 @@ const steps = [
     icon: CreditCard,
     title: '3. Pay an Invoice',
     description:
-      'Open a received invoice from the "Invoices" page. Review details and click "Pay". The app submits mark_as_paid with paid_at timestamp on zk_invoice_v2_2.aleo.',
+      'Open a received invoice from the "Invoices" page. Review details and click "Pay". Payment is a two-step process: first transfers credits via credits.aleo/transfer_private, then marks the invoice as paid on zk_invoice_v2_2.aleo, generating a PaymentRecord for both parties.',
   },
   {
     icon: ShieldCheck,
     title: '4. Generate Audit Package',
     description:
-      'Go to "/audit" → choose your invoice → pick fields (scopes), set expiry. The package contains rules_hash, commitments_root, field commitments, scopes bitmask, and program_id.',
+      'Go to "/audit" → choose your invoice → pick fields (scopes), set expiry, then generate. The encrypted envelope contains audit_key_hash, scopes_bitmask, expiry, and the ciphertext of the filtered invoice data. After generating, click "Submit On-chain Authorization" to register the audit key on-chain. Important: the invoice must be in PENDING (unspent) state to submit authorization.',
   },
   {
     icon: Receipt,
     title: '5. Verify Package',
     description:
-      'Paste the package JSON + audit key in the validator. The app recomputes rules, checks on-chain anchors (commitment/rules/auth/counter) and shows R1–R5 results.',
+      'Paste the package JSON + audit key in the validator. The app runs five-phase trustless verification: expiry & cipher hash → invoice_hash match on-chain → audit authorization presence & scope match → chain anchors present → recompute field commitments (R1–R5) and compare to on-chain cache.',
   },
 ];
 
@@ -84,6 +84,12 @@ const faqs = [
     question: 'Can I cancel an invoice after it is paid?',
     answer:
       'No. Once an invoice is marked as paid on-chain, it is a final state and cannot be reversed. Only pending invoices can be cancelled, and only by the seller.',
+  },
+  {
+    icon: ShieldCheck,
+    question: 'Why can\'t I submit on-chain authorization?',
+    answer:
+      'On-chain authorization can only be submitted for PENDING (unspent) invoices. Once a record is spent — paid or cancelled — the contract will reject the request. Generate your audit package and submit authorization before the invoice is paid or cancelled.',
   },
 ];
 
