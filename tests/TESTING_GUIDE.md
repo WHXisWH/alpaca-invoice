@@ -1,6 +1,6 @@
-# zk_invoice_v2.aleo Testing Guide (Step-by-Step)
+# zk_invoice_v2_2.aleo Testing Guide (Step-by-Step)
 
-This guide walks through preparation, core tests, negatives, and workflow checks for the Leo contract.
+This guide walks through preparation, core tests, negatives, and workflow checks for the current Leo contract (Wave2).
 
 ## Table of Contents
 1. Environment setup
@@ -35,7 +35,10 @@ leo account new   # save Private Key + Address
 
 ### create_invoice
 ```bash
-leo run create_invoice <buyer_addr> 1000000u64 1735689600u32 123456789field 99999field
+leo run create_invoice <buyer_addr>
+  1000000u64 100000u64 1735689600u32 123456789field 99999field
+  1700000000u32 0field 840field 11111field 0field
+  1000000u64 1100000u64 1000u64
 ```
 Expect: two `InvoiceRecord`s (seller & buyer) with same `invoice_id`, status = 0 (PENDING).
 
@@ -47,7 +50,7 @@ leo run verify_invoice "{seller_record}" 987654321field      # false
 
 ### mark_as_paid
 ```bash
-leo run mark_as_paid "{buyer_invoice_record}" 88888field
+leo run mark_as_paid "{buyer_invoice_record}" 88888field 1700000000u32
 ```
 Expect: `PaymentRecord` + updated `InvoiceRecord` (status=1, PAID).
 
@@ -69,19 +72,28 @@ leo run verify_payment "{payment_record}" "{invoice_record}"
 ```
 Expect: true when invoice_id, amount, and parties match.
 
+### set_audit_authorization
+```bash
+leo run set_audit_authorization "{invoice_record}" <audit_key_hash_field> <scopes_bitmask_u64> <expires_at_u32> <current_time_u32>
+```
+Expect: auth mapping set for the invoice_id; issuer must be seller and record must be unspent.
+
 ---
 
 ## 3) Full Lifecycle (Happy Path)
 ```bash
 # 1) Create
-leo run create_invoice <buyer> 1000000u64 1735689600u32 123456789field 99999field
+leo run create_invoice <buyer>
+  1000000u64 100000u64 1735689600u32 123456789field 99999field
+  1700000000u32 0field 840field 11111field 0field
+  1000000u64 1100000u64 1000u64
 # capture seller_record, buyer_record
 
 # 2) Verify hash
 leo run verify_invoice "{buyer_record}" 123456789field
 
 # 3) Pay
-leo run mark_as_paid "{buyer_record}" 88888field
+leo run mark_as_paid "{buyer_record}" 88888field 1700000000u32
 # capture payment_record, updated_invoice
 
 # 4) Seller receipt
@@ -89,6 +101,9 @@ leo run create_seller_receipt <invoice_id> <buyer> <seller> 1000000u64 88888fiel
 
 # 5) Verify payment
 leo run verify_payment "{payment_record}" "{updated_invoice}"
+
+# 6) (optional) Set audit authorization
+leo run set_audit_authorization "{buyer_record}" <audit_key_hash_field> 31u64 <expires_at_u32> <current_time_u32>
 ```
 
 ---
@@ -98,6 +113,7 @@ leo run verify_payment "{payment_record}" "{updated_invoice}"
 - Maximum amount: `18446744073709551615u64`
 - Different nonces / buyers produce unique `invoice_id`
 - Payment nonce changes `payment_id`
+- Tax/line_items_sum/expected_total must satisfy rules R1–R4
 
 ---
 
@@ -106,10 +122,12 @@ leo run verify_payment "{payment_record}" "{updated_invoice}"
 |----------|----------------|----------|
 | seller == buyer | `leo run create_invoice {caller==buyer} ...` | assert_neq |
 | amount = 0 | `leo run create_invoice <buyer> 0u64 ...` | assert |
+| tax or totals mismatch | wrong tax/line_items_sum/expected_total | assert |
 | mark as paid by non-buyer | run as seller | assert_eq |
 | mark paid twice | reuse paid invoice | assert_eq |
 | cancel by non-seller | run as buyer | assert_eq |
 | cancel after paid | cancel a paid invoice | assert_eq |
+| audit auth by non-seller | set_audit_authorization as buyer | assert_eq |
 
 ---
 

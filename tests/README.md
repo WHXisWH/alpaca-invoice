@@ -1,15 +1,16 @@
-# zk_invoice_v2.aleo Test Suite (legacy zk_invoice.aleo retained for history)
+# zk_invoice_v2_2.aleo Test Suite
 
-This folder holds the Leo test scaffolding. Wave2 uses `zk_invoice_v2.aleo`; legacy references are retained only for history.
+Leo tests targeting the current program `zk_invoice_v2_2.aleo` (Wave2). Legacy v2 artifacts are kept for history only.
 
-## What’s Covered (20 cases)
-- **create_invoice**: happy path, min/max amount, different buyers/nonces.
+## What’s Covered
+- **create_invoice**: happy path, min/max amount, buyer/seller guards, nonce uniqueness.
 - **verify_invoice**: hash match / mismatch.
-- **mark_as_paid**: buyer marks paid, status progression, duplicate/unauthorized attempts (expected fail).
-- **create_seller_receipt**: seller receipt matches buyer receipt, different nonces.
-- **cancel_invoice**: seller cancels pending invoice; non-seller and paid-cancel are expected to fail.
-- **verify_payment**: match / mismatch.
-- **End-to-end lifecycle**: create → verify → pay → seller receipt → verify payment.
+- **mark_as_paid**: buyer-only, duplicate/unauthorized attempts.
+- **create_seller_receipt**: parity with buyer receipt.
+- **cancel_invoice**: seller-only, and disallow cancel after paid.
+- **commitments / rules caches**: anchors present and consistent.
+- **audit authorization**: set_audit_authorization success/guards.
+- **End-to-end lifecycle**: create → verify → pay → receipt → verify payment.
 
 ## Layout
 ```
@@ -18,7 +19,7 @@ tests/
 ├── QUICK_REFERENCE.md         # Command cheatsheet
 ├── TESTING_GUIDE.md           # Step-by-step how-to
 ├── AUDIT_FLOW_TESTING.md      # UI + CLI audit package validation
-├── test_zk_invoice.leo        # 20 test cases
+├── test_zk_invoice_v2_2.leo   # Current suite
 ├── inputs/                    # Sample inputs for leo run
 └── validate_audit_package.mjs # Offline audit-package validator
 ```
@@ -27,29 +28,34 @@ tests/
 
 ### Option A: Leo CLI
 ```bash
-# all tests
-leo test
+# all tests for v2_2
+leo test -p test_zk_invoice_v2_2
 
 # single test
-leo test test_create_invoice_success
-leo test test_complete_workflow
+leo test test_create_invoice_success -p test_zk_invoice_v2_2
+leo test test_set_audit_authorization -p test_zk_invoice_v2_2
 ```
 
-### Option B: Script wrapper
+### Option B: Script wrapper (invokes leo test under the hood)
 ```bash
 ./run_tests.sh          # full suite
 ./run_tests.sh create_invoice
 ./run_tests.sh mark_as_paid
 ```
 
-### Option C: Manual spot checks
+### Option C: Manual spot checks (v2_2 signature)
 ```bash
-leo run create_invoice <buyer> 1000000u64 <due_ts> <invoice_hash> <nonce>
-leo run verify_invoice "{invoice_record}" <invoice_hash>
-leo run mark_as_paid "{buyer_invoice_record}" <payment_nonce>
-leo run create_seller_receipt <invoice_id> <payer> <payee> 1000000u64 <payment_nonce>
+leo run create_invoice <buyer>
+  <amount_u64> <tax_amount_u64> <due_ts_u32> <invoice_hash_field> <nonce_field>
+  <current_time_u32> <order_id_field> <currency_field> <items_hash_field> <memo_hash_field>
+  <line_items_sum_u64> <expected_total_u64> <tax_rate_bps_u64>
+
+leo run verify_invoice "{invoice_record}" <invoice_hash_field>
+leo run mark_as_paid "{buyer_invoice_record}" <payment_nonce_field> <paid_at_u32>
+leo run create_seller_receipt <invoice_id_field> <payer> <payee> <amount_u64> <payment_nonce_field>
 leo run cancel_invoice "{seller_invoice_record}"
 leo run verify_payment "{payment_record}" "{invoice_record}"
+leo run set_audit_authorization "{invoice_record}" <audit_key_hash_field> <scopes_bitmask_u64> <expires_at_u32> <current_time_u32>
 ```
 
 ## Test Data (defaults used in examples)
@@ -57,6 +63,7 @@ leo run verify_payment "{payment_record}" "{invoice_record}"
 SELLER: aleo1qqqq...3ljyzc
 BUYER : aleo1qqqq...k9svjc
 AMOUNT: 1000000u64
+TAX   : 100000u64  (10%)
 DUE   : 1735689600u32   # 2025-01-01 00:00:00 UTC
 HASH  : 123456789field
 NONCE : 99999field
@@ -67,8 +74,10 @@ STATUS: 0=PENDING, 1=PAID, 2=CANCELLED, 3=EXPIRED
 ## Expected Failures to Watch For
 - Seller == buyer on create → `assert_neq`.
 - Amount = 0 → `assert`.
+- Tax amount mismatches rules (R1/R3/R4) → `assert_eq`.
 - Mark-as-paid by non-buyer or repeat → `assert_eq`.
 - Cancel by non-seller or cancel paid → `assert_eq`.
+- set_audit_authorization by non-seller or expired → `assert_eq`.
 
 ## Tips
 - Records are UTXO-style: each use consumes the record; always use the freshest output.

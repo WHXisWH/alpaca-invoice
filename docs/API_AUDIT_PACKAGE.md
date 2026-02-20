@@ -1,63 +1,74 @@
-# Audit Package API (v2.2)
+# Audit Package API (Envelope v2.2.0)
 
-This document defines the audit package schema, scopes bitmask, and sample requests for zk_invoice_v2_2.aleo.
+Latest format produced by `AuditService.generate` and consumed by `/audit` validator and `tests/validate_audit_package.mjs`.
 
-## Schema (JSON)
-```json
+## Envelope schema
+
+```jsonc
 {
-  "version": "2.2",
-  "program_id": "zk_invoice_v2_2.aleo",
-  "invoice_id": "123field",
-  "invoice_hash": "456field",
-  "rules_hash": "789field",
-  "commitments_root": "321field",
-  "field_commitments": {
-    "amount": "field",
-    "tax_amount": "field",
-    "due_date": "field",
-    "buyer": "field",
-    "seller": "field",
-    "currency": "field",
-    "items_hash": "field",
-    "memo_hash": "field",
-    "order_id": "field"
+  "version": "2.2.0",
+  "audit_type": "selective_disclosure",
+  "network": "aleo_testnetbeta",
+  "contract": "zk_invoice_v2_2.aleo",
+  "context": {
+    "invoice_id": "<field>",
+    "audit_key_hash": "<field>",
+    "expires_at": 1700000000
   },
-  "audit_key_hash": "field",
-  "scopes_bitmask": "7",
-  "expires_at": 1700000000000,
-  "selected_fields": ["amount", "tax_amount", "buyer"],
-  "payload": {
-    "amount": "1000000",
-    "tax_amount": "100000",
-    "due_date": 1700000000,
-    "buyer": "aleo1...",
-    "seller": "aleo1...",
-    "currency": "USD",
-    "expected_total": "1100000",
-    "tax_rate_bps": 1000,
-    "line_items_sum": "1000000"
-  },
-  "signature": "optional-wallet-signature"
+  "encryption": {
+    "algorithm": "AES-256-GCM",
+    "iv": "<base64>",
+    "auth_tag": "<base64>",
+    "ciphertext": "<base64>"
+  }
 }
 ```
 
-## Scopes bitmask (1-based)
-- 1: amount  
-- 2: tax_amount  
-- 3: due_date  
-- 4: buyer  
-- 5: seller  
-- 6: currency  
-- 7: items_hash  
-- 8: memo_hash  
-- 9: order_id  
+The ciphertext decrypts (with the audit key) to a payload containing:
+- `invoiceId`, `invoiceHash`, `nonce`
+- `data` (selectively disclosed fields) + `hidden_masks`
+- `commitments` (per-field commitments + `root`)
+- `integrity` `{ cipherHash, signature }`
 
-Bitmask is `1 << (id-1)` OR’ed for selected fields.
+## Scopes bitmask (used by set_audit_authorization)
 
-## Sample requests
-- **Generate minimal package** (UI): select fields → POST off-chain to exporter or generate in-browser, then share JSON.
-- **Verify package**: client recomputes rules_hash, checks commitments_root, and calls on-chain asserts: `assert_rules_anchor`, `assert_commitment_anchor`, `assert_amount_anchor` (optional), `assert_ownership_anchor` (optional).
+| Bit | Field        |
+|-----|--------------|
+| 1   | amount       |
+| 2   | tax_amount   |
+| 3   | due_date     |
+| 4   | buyer        |
+| 5   | seller       |
+| 6   | currency     |
+| 7   | items_hash   |
+| 8   | memo_hash    |
+| 9   | order_id     |
+
+`scopes_bitmask` = OR of `1 << (bit-1)` for each disclosed field.
+
+## Generation rules (frontend)
+- Requires a connected wallet with `signMessage`.
+- If the local invoice has a `nonce`, full package is generated locally.
+- If the invoice was synced from chain **and lacks a nonce**, generation switches to chain-anchored mode and requires `commitment_root` (and ideally `field_commitments`) to exist on chain. Otherwise you’ll see:  
+  `Cannot generate chain-anchored audit package: no commitment_root on chain for this invoice_id.`
+- “Submit On-chain Authorization” calls `set_audit_authorization` with `audit_key_hash`, `scopes_bitmask`, and expiry. It requires the seller wallet and an **unspent** invoice record; spent records will make the wallet return “Unspent record not found”.
+
+## Verification phases (validator)
+1) Expiry, decrypt, cipher hash, signature presence  
+2) `invoice_hash` matches `invoice_registry`  
+3) `audit_authorization` exists; `audit_key_hash` & scopes match on-chain  
+4) Chain anchors present (invoice hash, commitment root, rules_result, field_commitments)  
+5) Recompute commitments & rules (R1–R5) and compare to chain caches
+
+## Offline validation
+
+```bash
+node tests/validate_audit_package.mjs envelope.json <audit_key_hex>
+```
+
+Outputs PASS/FAIL, decrypted payload, and chain verification summary (when reachable).
 
 ## Compatibility
-- Version pinned to `2.2`; include `program_id` and `version` in all payloads.
-- Legacy invoices (no commitments) should fall back to hash-only verification.
+- Version fixed at `2.2.0` for this codebase.
+- Contract pinned to `zk_invoice_v2_2.aleo` on testnetbeta.
+- Legacy packages (v2.0) are not emitted by current UI; validator remains backward-compatible with v2 envelopes when `chainVerifiable` is present.
