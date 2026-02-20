@@ -9,7 +9,8 @@ import { AuditService } from '@/services/AuditService/AuditServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
-import { fieldsToPermissions } from './auditHelpers';
+import { fieldsToPermissions, buildScopesBitmask } from './auditHelpers';
+import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 
 /**
  * Audit Package Generate Controller
@@ -31,6 +32,13 @@ export function useAuditPackageGenerate() {
   const [fields, setFields] = useState<string[]>(() => [...DEFAULT_FIELDS]);
   const [result, setResult] = useState<{ envelope: AuditPackageEnvelope; auditKey: string } | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  // Snapshot of the invoice and fields used for the last successful generation.
+  // Needed so submitAuthorization can use the exact same data even if the user edits the form afterward.
+  const [generatedInvoice, setGeneratedInvoice] = useState<Invoice | null>(null);
+  const [generatedFields, setGeneratedFields] = useState<string[]>([]);
+  const [submittingAuth, setSubmittingAuth] = useState(false);
+
+  const { executeSetAuditAuthorization } = useTransactionController();
 
   const walletService = useMemo(
     () => (wallet ? new WalletService(createWalletAdapter(wallet)) : null),
@@ -135,6 +143,10 @@ export function useAuditPackageGenerate() {
           opts.selectedFields && opts.selectedFields.length > 0 ? opts.selectedFields : DEFAULT_FIELDS;
         const permissions = fieldsToPermissions(selectedFields);
 
+        // Snapshot invoice + fields so submitAuthorization can use them even if form changes afterward.
+        setGeneratedInvoice(invoice);
+        setGeneratedFields(selectedFields);
+
         const genResult = await auditService.generate({
           invoice,
           expiresAt: opts.expiresAt,
@@ -159,8 +171,25 @@ export function useAuditPackageGenerate() {
     [auditService, getAllInvoices, handleError, masterKey]
   );
 
+  const submitAuthorization = useCallback(async () => {
+    if (!result || !generatedInvoice) return;
+    setSubmittingAuth(true);
+    try {
+      const auditKeyHash = result.envelope.context.audit_key_hash;
+      const expiresAt = result.envelope.context.expires_at; // Unix seconds
+      const scopesBitmask = buildScopesBitmask(generatedFields);
+      await executeSetAuditAuthorization(generatedInvoice, auditKeyHash, scopesBitmask, expiresAt);
+    } catch (err: any) {
+      handleError(err);
+    } finally {
+      setSubmittingAuth(false);
+    }
+  }, [result, generatedInvoice, generatedFields, executeSetAuditAuthorization, handleError]);
+
   const generateFromForm = useCallback(async () => {
     setResult(null);
+    setGeneratedInvoice(null);
+    setGeneratedFields([]);
     try {
       const pkg = await generate({
         invoiceId: invoiceId.trim() as AleoField,
@@ -201,6 +230,8 @@ export function useAuditPackageGenerate() {
     toggleField,
     downloadResult,
     copyAuditKey,
-    handleSubmit
+    handleSubmit,
+    submitAuthorization,
+    submittingAuth
   };
 }
