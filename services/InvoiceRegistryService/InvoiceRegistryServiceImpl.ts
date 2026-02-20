@@ -131,7 +131,7 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
     const key = `auth-${invoiceId}`;
     const cached = this.authCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
-    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'getter_auth_cache', invoiceId);
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, 'audit_authorization', invoiceId);
     if (!raw) {
       this.authCache.set(key, { ts: Date.now(), value: null });
       return null;
