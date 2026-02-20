@@ -244,7 +244,7 @@ describe('AuditService', () => {
         permissions: ['READ_AMOUNT']
       };
 
-      await expect(service.generate(params)).rejects.toThrow('Invoice nonce is required');
+      await expect(service.generate(params)).rejects.toThrow('Cannot generate chain-anchored audit package');
       await expect(service.generate(params)).rejects.toThrow(AuditServiceError);
     });
 

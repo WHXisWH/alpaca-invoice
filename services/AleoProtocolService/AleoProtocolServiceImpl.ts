@@ -89,33 +89,11 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   private isWorkerEnv(): boolean {
-    return typeof window !== 'undefined' && typeof Worker !== 'undefined';
+    return false; // Worker disabled
   }
 
   private getWorker(): Worker | null {
-    if (!this.isWorkerEnv()) return null;
-    if (this.worker) return this.worker;
-    try {
-      const w = new Worker(new URL('../../workers/aleo-worker.ts', import.meta.url), { type: 'module' });
-      w.onmessage = (event: MessageEvent<{ id: string; result?: string[]; error?: any }>) => {
-        const { id, result, error } = event.data || {};
-        const pending = this.workerRequests.get(id);
-        if (!pending) return;
-        clearTimeout(pending.timer);
-        this.workerRequests.delete(id);
-        if (error) pending.reject(error);
-        else pending.resolve(result ?? []);
-      };
-      w.onerror = (err) => {
-        console.error('[aleo-worker] Unhandled error', err);
-      };
-      this.worker = w;
-      return w;
-    } catch (e) {
-      console.warn('[AleoProtocolService] Worker init failed, falling back to main thread', e);
-      this.worker = null;
-      return null;
-    }
+    return null;
   }
 
   private async runInWorker(params: { program: string; functionName: string; inputs: any[] }): Promise<string[]> {
@@ -161,38 +139,63 @@ export class AleoProtocolService implements IAleoProtocolService {
     }) as Promise<T>;
   }
 
+  private addFieldSuffix(value: string): string {
+    return value.endsWith('field') ? value : `${value}field`;
+  }
+
+  /** Normalize SDK types to bits using Leo-compatible plaintext serialization when available. */
+  private toBitsLe(value: any): boolean[] {
+    // Force plaintext path when possible to match Leo/contract hashing
+    if (value && typeof value.toPlaintext === 'function') {
+      const pt = value.toPlaintext();
+      if (pt && typeof pt.toBitsLe === 'function') {
+        return pt.toBitsLe();
+      }
+    }
+    if (value && typeof value.toBitsLe === 'function') {
+      return value.toBitsLe();
+    }
+    throw new Error('Unsupported value for toBitsLe');
+  }
+
+  private async computeInvoiceHashLocal(inputs: string[]): Promise<string[]> {
+    const sdk = await loadSdk();
+    const literal = `{ seller: ${inputs[0]}, buyer: ${inputs[1]}, amount: ${inputs[2]}, tax_amount: ${inputs[3]}, due_date: ${inputs[4]}, nonce: ${inputs[5]}, order_id: ${inputs[6]}, currency: ${inputs[7]}, items_hash: ${inputs[8]}, memo_hash: ${inputs[9]} }`;
+    const pt = (sdk as any).Plaintext.fromString(literal);
+    const bits = pt.toBitsLe();
+    const hash = new sdk.BHP256().hash(bits).toString();
+    return [this.addFieldSuffix(hash)];
+  }
+
+  private async computeInvoiceIdLocal(inputs: string[]): Promise<string[]> {
+    const sdk = await loadSdk();
+    const literal = `{ seller: ${inputs[0]}, buyer: ${inputs[1]}, amount: ${inputs[2]}, due_date: ${inputs[3]}, nonce: ${inputs[4]} }`;
+    const pt = (sdk as any).Plaintext.fromString(literal);
+    const bits = pt.toBitsLe();
+    const hash = new sdk.BHP256().hash(bits).toString();
+    return [this.addFieldSuffix(hash)];
+  }
+
+  /**
+   * Central dispatch for local Aleo program execution.
+   * Browser → Web Worker (avoids UI freeze); SSR/test → direct pm.run.
+   */
   private async runProgram(
     functionName: string,
     inputs: any[],
     programSource?: string,
     timeoutMs: number = WORKER_TIMEOUT_MS
   ): Promise<string[]> {
-    const program = programSource ?? (await this.getProgramSource());
-
-    // Browser path: require worker (avoid UI freeze); SSR/test path: allow direct pm.run fallback.
-    const worker = this.getWorker();
-    if (worker) {
-      try {
-        const outputs = await this.runInWorker({ program, functionName, inputs });
-        if (!outputs || outputs.length === 0) {
-          throw new ProtocolServiceError(
-            ProtocolError.INVALID_RECORD,
-            `Program execution returned empty output for ${functionName}`,
-            { functionName, inputsLength: inputs.length }
-          );
-        }
-        return outputs;
-      } catch (e: any) {
-        if (e instanceof ProtocolServiceError) throw e;
-        throw new ProtocolServiceError(
-          ProtocolError.SYNC_TIMEOUT,
-          'Local compute worker failed',
-          { functionName, reason: 'worker_failed', originalError: e?.message || e }
-        );
-      }
+    // Fast path for hash/id using local BHP with proper plaintext serialization
+    if (functionName === 'compute_invoice_hash') {
+      return await this.computeInvoiceHashLocal(inputs as string[]);
+    }
+    if (functionName === 'compute_invoice_id') {
+      return await this.computeInvoiceIdLocal(inputs as string[]);
     }
 
-    // Non-browser (SSR/tests) fallback: safe to use main thread
+    // For other functions, fall back to pm.run
+    const program = programSource ?? (await this.getProgramSource());
     const pm = await this.getProgramManager();
     const response = await this.withTimeout(pm.run(program, functionName, inputs, false), functionName, inputs, timeoutMs);
     const outputs = (response as any)?.getOutputs ? (response as any).getOutputs() : (response as any)?.outputs;

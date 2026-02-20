@@ -530,9 +530,13 @@ export class WalletService {
         feePrivate: feeRecord !== undefined // If feeRecord is provided, use private fee
       };
 
+      console.log('[Wallet requestTransaction request]', transactionRequest);
+
       // Call the wallet adapter's requestTransaction method
       // Note: The wallet adapter will automatically select an appropriate Record to pay the fee based on the feePrivate flag
       const result = await this.wallet.requestTransaction(transactionRequest);
+
+      console.log('[Wallet requestTransaction result]', result);
 
       if (!result) {
         throw new WalletServiceError(
@@ -547,6 +551,9 @@ export class WalletService {
       if (error instanceof WalletServiceError) {
         throw error;
       }
+
+      // Log raw error for debugging wallet failures
+      console.error('[Wallet requestTransaction raw error]', error);
 
       // User rejection
       const errorMessage = error?.message?.toLowerCase() || '';
