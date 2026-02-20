@@ -1,0 +1,71 @@
+🦙 Alpaca Invoice - Wave 2 Update
+
+Updates in this Wave
+
+  - Added on-chain audit authorization UX: seller-only, blocks spent records (prevents wallet “Unspent record not found”)
+  - Audit package generation supports chain-anchored mode; fails fast when commitment_root is missing on chain
+  - Invoice detail anchors rendering hardened against BigInt JSON issues
+  - Docs/tests aligned to envelope v2.2.0, scopes bitmask, and chain-anchored requirements
+
+What We Designed 🎨
+
+We evolved our architecture to balance privacy with public verifiability:
+
+  - Hybrid Privacy + Public Verifiability: Kept sensitive data in private Records while adding minimal public anchors via Mappings for independent verification
+
+  - Async Transitions + Finalize: Implemented stateful updates for status and registry to ensure a single source of truth on-chain
+
+  - Deterministic IDs: Enforced consistent ID generation using on-chain hash logic across frontend and backend
+
+  - Chain-Verifiable Audit Model: Upgraded AuditPackages to link directly to on-chain anchors (hashes and status) for cryptographic trust
+
+  - On-Chain Authorization Gate: Seller-signed audit_key_hash + scopes_bitmask recorded on chain and used in Phase 3 verification
+
+  - ZK Compliance Proofs: Added proofs for tax compliance, amount range, and ownership without disclosing private values
+
+  - Walletless Verification: Designed a public entry point for consumers to verify invoice status using mapping-based anchors
+
+
+What We Built 🔧
+
+Smart Contract (zk_invoice_v2_2.aleo)
+  - Added Mappings: invoice_registry, invoice_status, and invoice_count for public transparency
+  - Async Flow: Migrated create_invoice(), mark_as_paid(), and cancel_invoice() to support finalize logic
+  - ZK Proof Transitions: prove_tax_compliance(), prove_amount_in_range(), and prove_invoice_ownership()
+  - Record Extensions: Added order_id, tax_amount, and corrected timestamp handling (created_at / paid_at)
+  - Audit Authorization: set_audit_authorization stores audit_key_hash + scopes_bitmask + expires_at + issuer (seller-only, requires unspent record)
+
+Frontend Application & Services
+  - V2.2 Migration: Full integration with the updated program and extended transaction parameters
+  - Mapping-First Polling: Optimized dashboard synchronization using mapping lookups and 30s caching
+  - Walletless Verify Page: New public route (/verify) for wallet-free invoice validation
+  - Audit Flow V2: UI for generating chain-verifiable audit packages (local or chain-anchored) and exporting audit snapshots; fast-fails when commitment_root is missing
+  - Audit Authorization UX: “Submit On-chain Authorization” uses seller wallet and blocks spent records
+  - ZK Proof Hooks: Integrated proof generation into the audit and verification workflows
+
+Infrastructure & Tooling
+  - Mapping Helpers: Standardized on-chain data retrieval for hash, status, and seller counts
+  - Comprehensive Testing: Leo suite `test_zk_invoice_v2_2.leo` plus refreshed audit flow docs/scripts
+  - Documentation Update: Envelope v2.2.0, scopes bitmask, chain-anchored requirements captured in README/docs/tests
+  - ESLint Integration: Enforced code quality standards across the entire repository
+
+
+What It Can Do Now ✅
+
+Feature                              Status
+Connect Aleo wallet                  ✅ Working
+Create invoice with public anchor    ✅ Working
+Mapping-first invoice polling        ✅ Working
+Walletless public verification       ✅ Working
+Pay / Cancel with state update       ✅ Working
+Generate chain-verifiable audit pkg  ✅ Working (chain-anchored path requires commitment_root)
+Prove tax / amount range (ZK)        ✅ Working
+Export audit snapshots               ✅ Working
+Submit audit authorization           ✅ Working (seller + unspent record)
+
+
+Live Demo 🚀
+
+Network: Aleo Testnet
+Program ID: zk_invoice_v2_2.aleo
+Deployment TX: at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78
