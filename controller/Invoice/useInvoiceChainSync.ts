@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInoviceStore';
+import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { AleoField, Invoice } from '@/lib/types';
@@ -111,6 +112,14 @@ export function useInvoiceChainSync(
         if (!masterKey) {
           console.log('💡 [ChainSync] Updated in memory only (no masterKey for persistence)');
         }
+      }
+
+      // Wave 3: 若为 PaymentRecord 且含 settlement_anchor，回写至 ReceiptStore 供审计 Step 2 使用
+      if (record && 'payment_id' in record && (record as AleoPaymentRecord).settlement_anchor) {
+        const anchor = String((record as AleoPaymentRecord).settlement_anchor).replace(/field\.(private|public)$/i, 'field');
+        useReceiptStore.getState().updateReceipt(updatedInvoice.id, {
+          settlementAnchor: anchor as AleoField
+        });
       }
 
       console.log('✅ [ChainSync] Invoice confirmed and synced to IndexedDB', {

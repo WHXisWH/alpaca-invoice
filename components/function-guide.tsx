@@ -26,16 +26,18 @@ export default function FunctionGuide() {
       role: 'Anyone'
     },
     {
-      name: 'mark_as_paid',
+      name: 'pay_invoice_public',
       icon: '💰',
-      desc: 'Mark as paid',
+      desc: 'Pay invoice (Credits / JCT public path)',
       params: [
         { name: 'invoice', desc: 'InvoiceRecord' },
-        { name: 'payment_nonce', desc: 'Payment identifier' }
+        { name: 'payment_nonce', desc: 'Payment identifier' },
+        { name: 'paid_at', desc: 'Payment timestamp (u32)' },
+        { name: 'tx_id_hash', desc: 'Hash of transfer tx id (field)' }
       ],
-      returns: 'PaymentRecord + updated InvoiceRecord',
+      returns: 'PaymentRecord + 2 InvoiceRecords (PAID) + Future',
       role: 'Buyer',
-      note: 'Transfer via credits.aleo/transfer_private first'
+      note: 'Credits transfer to seller in same tx or prior; currency_flag must be Credits'
     },
     {
       name: 'create_seller_receipt',

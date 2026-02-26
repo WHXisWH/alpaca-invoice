@@ -112,7 +112,7 @@ export default function LandingPage() {
       title: '2. Private Settlement',
       description:
         'Buyer settles using Aleo credits. The payment receipt is cryptographically linked to the invoice, updating status to PAID privately.',
-      tag: 'transition mark_as_paid',
+      tag: 'transition pay_invoice_public',
     },
     {
       icon: <ShieldCheck className="h-8 w-8 text-green-500" />,
@@ -585,7 +585,7 @@ export default function LandingPage() {
                 <InvoiceCard invoice={MOCK_INVOICE_PAY} role="BUYER" onPay={() => {}} />
               </div>
               <div className="mt-6 inline-block rounded-full border border-primary-800 bg-primary-900/50 px-5 py-2 font-mono text-xs text-accent-400">
-                transition mark_as_paid
+                transition pay_invoice_public
               </div>
             </motion.div>
 

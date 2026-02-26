@@ -1,4 +1,4 @@
-import { Microcredits } from '@/lib/types';
+import { AleoTransactionId, Microcredits } from '@/lib/types';
 import {
   IWalletService,
   WalletServiceError,
@@ -650,5 +650,52 @@ export class WalletService {
         { originalError: error }
       );
     }
+  }
+
+  /**
+   * Wave 3: 序列化提交两笔连续 TX（Approve + Pay）.
+   * 若钱包适配器支持 requestSequentialTransactions 则委托；否则串行调用 requestTransaction。
+   */
+  async requestSequentialTransactions(params: {
+    txList: Array<{
+      programId: string;
+      functionName: string;
+      inputs: string[];
+      fee: number;
+    }>;
+    publicKey: string;
+    chainId?: string;
+    feeRecord?: string;
+  }): Promise<AleoTransactionId[]> {
+    const { txList, publicKey, chainId, feeRecord } = params;
+    if (!publicKey) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Wallet not connected. Please connect first.'
+      );
+    }
+    if (!txList?.length || txList.length > 2) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'txList must contain 1 or 2 transactions'
+      );
+    }
+    if (this.wallet.requestSequentialTransactions) {
+      return this.wallet.requestSequentialTransactions(txList) as Promise<AleoTransactionId[]>;
+    }
+    const ids: AleoTransactionId[] = [];
+    for (const tx of txList) {
+      const id = await this.requestTransaction({
+        programId: tx.programId,
+        functionName: tx.functionName,
+        inputs: tx.inputs,
+        fee: tx.fee,
+        publicKey,
+        chainId,
+        feeRecord
+      });
+      ids.push(typeof id === 'string' ? (id as AleoTransactionId) : (id?.transactionId ?? id) as AleoTransactionId);
+    }
+    return ids;
   }
 }

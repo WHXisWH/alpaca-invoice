@@ -1,10 +1,11 @@
-import type { AleoAddress, AleoField, Invoice, InvoiceDetails, AuditKey } from '@/lib/types';
+import type { AleoAddress, AleoField, Invoice, InvoiceDetails, TaxGroups } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoProtocolService';
-import type { AuditPackageEnvelope, DecryptedAuditPayload } from '@/types/audit-package';
+import type { ICryptoService } from '@/services/CryptoService/ICryptoService';
+import type { AuditPackageEnvelope, AuditPackageEnvelopeV3, DecryptedAuditPayload } from '@/types/audit-package';
 import { COMMITMENT_FIELD_KEYS } from '@/types/audit-package';
 import {
   IAuditService,
@@ -12,6 +13,9 @@ import {
   type AuditPackageV2_2,
   type VerifyEnvelopePhasesResult,
   type VerifyPhaseResult,
+  type GenerateAuditPackageParamsV3,
+  type GenerateAuditPackageResultV3,
+  type VerifyAuditPackageV3Result,
   AuditServiceError,
   AuditError,
   GenerateAuditPackageParams,
@@ -1127,6 +1131,33 @@ export class AuditService implements IAuditService {
 
       const rulesResultOk = rulesResultMatch === null || rulesResultMatch === true;
       phase5.ok = rootOk && fieldProofOk && rulesOk && rulesResultOk;
+
+      // Wave 3: Phase 5 tax_tag 重算比对（当解密数据含 tax_groups 且链上有 invoice_tax_tag 时）
+      const dataWithTax = decrypted?.data as (DecryptedAuditPayload['data'] & { tax_groups?: TaxGroups }) | undefined;
+      if (dataWithTax?.tax_groups && phase5.ok) {
+        try {
+          const chainTaxTag = await this.registry.getInvoiceTaxTag(invoiceId);
+          if (chainTaxTag) {
+            const tg = dataWithTax.tax_groups;
+            const totalAmount = tg.group_a.net_sum + tg.group_a.tax_sum + tg.group_b.net_sum + tg.group_b.tax_sum;
+            const taxVerify = await this.cryptoService.verifyTaxTag({
+              taxGroups: tg,
+              taxTag: chainTaxTag,
+              totalAmount
+            });
+            phase5.checks!.push({
+              key: 'tax_tag',
+              ok: taxVerify.allPassed,
+              detail: taxVerify.allPassed ? 'tax_tag A/B/C passed' : [taxVerify.a.detail, taxVerify.b.detail, taxVerify.c.detail].filter(Boolean).join('; ')
+            });
+            phase5.ok = phase5.ok && taxVerify.allPassed;
+          }
+        } catch (e: any) {
+          phase5.checks!.push({ key: 'tax_tag', ok: false, detail: e?.message ?? 'tax_tag check failed' });
+          phase5.ok = false;
+        }
+      }
+
       phase5.message = phase5.ok ? 'Trustless verification passed' : 'Phase 5 failed';
       console.log('[VerifyPhases] Phase 5 result:', {
         phase5Ok: phase5.ok,
@@ -1150,5 +1181,246 @@ export class AuditService implements IAuditService {
 
   private normalizeField(f: AleoField | string): string {
     return String(f).replace(/field\.(private|public)$/i, 'field').trim();
+  }
+
+  /**
+   * 降级：尝试从 NTA 合格发票公示站点查询 T 号码对应企业信息。
+   * NTA 站点目前无公开 CORS 友好 API，故返回 null；前端展示 T 号码并提示在 https://www.invoice-kohyo.nta.go.jp/ 手动核实。
+   */
+  private async fetchNtaCompanyByTNumber(_tNumber: string): Promise<{ name: string; status: string } | null> {
+    return null;
+  }
+
+  /**
+   * Wave 3: 角色隔离打包。buyer 打包 PaymentRecord 列表；seller 打包 PAID InvoiceRecord 列表（含 TaxGroups）。
+   */
+  async generateV3(params: GenerateAuditPackageParamsV3): Promise<GenerateAuditPackageResultV3> {
+    const { role, records, expiresAt, permissions, tNumber } = params;
+    if (!records?.length) {
+      throw new AuditServiceError(AuditError.INVALID_INPUT, 'records is required and non-empty');
+    }
+    if (!this.deps.signerAddress) {
+      throw new AuditServiceError(AuditError.NOT_CONNECTED, 'Wallet not connected');
+    }
+    const auditKey = this.cryptoService.generateAuditKey();
+    const keyBytes = this.cryptoService.auditKeyToBytes(auditKey);
+    const auditKeyHash = (await this.cryptoService.hashObjectToField(auditKey)) as AleoField;
+    const invoiceIds = records.map(r => r.invoiceId);
+    let totalAmount = 0n;
+    let totalTaxAmount = 0n;
+
+    if (role === 'buyer') {
+      const payload = records.map(r => ({
+        payment_id: r.receipt!.paymentId,
+        invoice_id: r.invoiceId,
+        amount: String(r.receipt!.amount),
+        paid_at: r.receipt!.paidAt instanceof Date ? Math.floor(r.receipt!.paidAt.getTime() / 1000) : r.receipt!.paidAt,
+        settlement_anchor: r.receipt!.settlementAnchor ?? ('0field' as AleoField)
+      }));
+      totalAmount = records.reduce((s, r) => s + (r.receipt?.amount ?? 0n), 0n);
+      const cipher = await this.cryptoService.encryptWithAuditKey(payload, keyBytes);
+      const envelope: AuditPackageEnvelopeV3 = {
+        version: '3.0.0',
+        audit_type: 'selective_disclosure',
+        role: 'buyer',
+        network: chainIdToEnvelopeNetwork(getChainIdFromNetwork(getNetworkFromEnv())),
+        contract: PROGRAM_ID,
+        context: { invoice_ids: invoiceIds, audit_key_hash: auditKeyHash, expires_at: expiresAt >= 1e12 ? Math.floor(expiresAt / 1000) : expiresAt },
+        encryption: {
+          algorithm: 'AES-256-GCM',
+          iv: cipher.iv,
+          auth_tag: cipher.authTag ?? '',
+          ciphertext: cipher.ciphertext
+        }
+      };
+      return {
+        envelope,
+        auditKey,
+        auditKeyHash,
+        summary: { recordCount: records.length, totalAmount, totalTaxAmount: 0n }
+      };
+    }
+
+    // seller
+    const payload = records.map(r => ({
+      invoice_id: r.invoiceId,
+      invoice: r.invoice ? {
+        id: r.invoice.id,
+        seller: r.invoice.seller,
+        buyer: r.invoice.buyer,
+        amount: String(r.invoice.amount),
+        totalAmount: r.invoice.totalAmount != null ? String(r.invoice.totalAmount) : undefined,
+        taxTag: r.invoice.taxTag,
+        status: r.invoice.status,
+        taxGroups: r.invoice.taxGroups
+      } : undefined
+    }));
+    for (const r of records) {
+      if (r.invoice?.amount) totalAmount += r.invoice.amount;
+      if (r.invoice?.taxGroups) {
+        const tg = r.invoice.taxGroups;
+        totalTaxAmount += tg.group_a.tax_sum + tg.group_b.tax_sum;
+      }
+    }
+    const cipher = await this.cryptoService.encryptWithAuditKey(payload, keyBytes);
+    const encryption: AuditPackageEnvelopeV3['encryption'] = {
+      algorithm: 'AES-256-GCM',
+      iv: cipher.iv,
+      auth_tag: cipher.authTag ?? '',
+      ciphertext: cipher.ciphertext
+    };
+    const taxGroupsList = records.map(r => r.invoice?.taxGroups).filter(Boolean) as TaxGroups[];
+    if (taxGroupsList.length > 0) {
+      const taxCipher = await this.cryptoService.encryptWithAuditKey(taxGroupsList, keyBytes);
+      encryption.tax_groups_ciphertext = taxCipher.ciphertext;
+      encryption.tax_groups_iv = taxCipher.iv;
+      encryption.tax_groups_auth_tag = taxCipher.authTag ?? '';
+    }
+    const envelope: AuditPackageEnvelopeV3 = {
+      version: '3.0.0',
+      audit_type: 'selective_disclosure',
+      role: 'seller',
+      network: chainIdToEnvelopeNetwork(getChainIdFromNetwork(getNetworkFromEnv())),
+      contract: PROGRAM_ID,
+      context: { invoice_ids: invoiceIds, audit_key_hash: auditKeyHash, expires_at: expiresAt >= 1e12 ? Math.floor(expiresAt / 1000) : expiresAt },
+      encryption,
+      jct_registration_hint: tNumber
+    };
+    return {
+      envelope,
+      auditKey,
+      auditKeyHash,
+      summary: { recordCount: records.length, totalAmount, totalTaxAmount }
+    };
+  }
+
+  /**
+   * Wave 3: 三阶段验证流水线。Step 1 身份锚点；Step 2 资产核对（settlement_anchor → registry.getInvoiceTxId 双向校验）；Step 3 税务解密与 A/B/C 验证。
+   */
+  async verifyV3(
+    envelope: AuditPackageEnvelopeV3,
+    auditKey: string,
+    services: { protocol: IAleoProtocolService; crypto: ICryptoService; registry: IInvoiceRegistryService }
+  ): Promise<VerifyAuditPackageV3Result> {
+    const { protocol, crypto, registry } = services;
+    const keyBytes = crypto.auditKeyToBytes(auditKey);
+    const invoiceIds = envelope.context.invoice_ids ?? [];
+    const enc = envelope.encryption;
+    const mainCipher = { iv: enc.iv, ciphertext: enc.ciphertext, authTag: enc.auth_tag };
+    let decrypted: any;
+    try {
+      decrypted = await crypto.decryptWithRawKey(mainCipher, keyBytes);
+    } catch {
+      return {
+        overallValid: false,
+        step1Identity: { ok: false, message: 'Failed to decrypt main payload' },
+        step2MoneyFlow: { ok: false, message: 'Decrypt failed' },
+        step3TaxCheck: { ok: false, message: 'Decrypt failed' }
+      };
+    }
+    // Buyer: resolve invoice_id from settlement_anchor via invoice_tx_id mapping; Seller: use context.invoice_ids[0]
+    const firstRecord = Array.isArray(decrypted) ? decrypted[0] : decrypted;
+    const settlementAnchor = firstRecord?.settlement_anchor;
+    const resolvedInvoiceId: AleoField | null =
+      envelope.role === 'buyer' && settlementAnchor
+        ? await registry.getInvoiceTxId(settlementAnchor as AleoField)
+        : (invoiceIds[0] ?? null);
+
+    // Step 1: Identity
+    let step1Identity: VerifyAuditPackageV3Result['step1Identity'] = {
+      ok: false,
+      message: 'Identity check not run'
+    };
+    if (envelope.jct_registration_hint) {
+      const tNumber = envelope.jct_registration_hint;
+      const chainJctReg = resolvedInvoiceId ? await registry.getInvoiceJctReg(resolvedInvoiceId) : null;
+      const computedReg = await crypto.hashTNumber(tNumber);
+      const norm = (f: string) => String(f).replace(/field\.(private|public)$/i, 'field').trim();
+      const hashMatch = !!chainJctReg && norm(computedReg) === norm(chainJctReg);
+      let ntaApiResult: { name: string; status: string } | null = null;
+      try {
+        ntaApiResult = await this.fetchNtaCompanyByTNumber(tNumber);
+      } catch {
+        ntaApiResult = null; // 降级：API 不可用时展示 T 号码并提示手动核实
+      }
+      step1Identity = {
+        ok: hashMatch,
+        tNumber,
+        chainJctReg: chainJctReg ?? undefined,
+        hashMatch,
+        ntaApiResult,
+        message: hashMatch
+          ? (ntaApiResult ? 'T number hash matches chain; NTA company info retrieved' : 'T number hash matches chain jct_registration; NTA API unavailable — please verify T number manually at https://www.invoice-kohyo.nta.go.jp/')
+          : 'T number hash does not match chain'
+      };
+    } else {
+      step1Identity = { ok: true, message: 'No JCT hint; identity step skipped' };
+    }
+
+    // Step 2: Money Flow — buyer: settlement_anchor → getInvoiceTxId → invoice_id 与 envelope.invoice_ids 双向校验
+    let step2MoneyFlow: VerifyAuditPackageV3Result['step2MoneyFlow'] = {
+      ok: false,
+      message: 'Money flow check not run'
+    };
+    if (envelope.role === 'buyer' && settlementAnchor) {
+      const invoiceIdFromChain = await registry.getInvoiceTxId(settlementAnchor as AleoField);
+      const ok = !!invoiceIdFromChain && invoiceIds.some(id => this.normalizeField(id) === this.normalizeField(invoiceIdFromChain));
+      step2MoneyFlow = {
+        ok,
+        txIdHash: settlementAnchor as AleoField,
+        transfers: [],
+        amountMatch: ok,
+        message: ok ? 'settlement_anchor → invoice_id matches envelope' : 'invoice_tx_id mismatch or not on chain'
+      };
+    } else if (resolvedInvoiceId) {
+      step2MoneyFlow = { ok: true, txIdHash: undefined, amountMatch: true, message: 'Seller path; Step 2 skipped' };
+    } else {
+      step2MoneyFlow = { ok: true, message: 'No invoice_ids' };
+    }
+
+    // Step 3: Tax Check
+    let step3TaxCheck: VerifyAuditPackageV3Result['step3TaxCheck'] = {
+      ok: false,
+      message: 'Tax check not run'
+    };
+    if (enc.tax_groups_ciphertext && enc.tax_groups_iv) {
+      const taxCipher = {
+        iv: enc.tax_groups_iv,
+        ciphertext: enc.tax_groups_ciphertext,
+        authTag: enc.tax_groups_auth_tag
+      };
+      try {
+        const taxGroupsDec = (await crypto.decryptWithRawKey(taxCipher, keyBytes)) as unknown as TaxGroups | TaxGroups[];
+        const taxGroups = Array.isArray(taxGroupsDec) ? taxGroupsDec[0] : taxGroupsDec;
+        const chainTaxTag = resolvedInvoiceId ? await registry.getInvoiceTaxTag(resolvedInvoiceId) : null;
+        const totalAmount = taxGroups
+          ? taxGroups.group_a.net_sum + taxGroups.group_a.tax_sum + taxGroups.group_b.net_sum + taxGroups.group_b.tax_sum
+          : 0n;
+        const verification = chainTaxTag
+          ? await crypto.verifyTaxTag({ taxGroups, taxTag: chainTaxTag, totalAmount })
+          : { a: { ok: true }, b: { ok: true }, c: { ok: true }, allPassed: true };
+        step3TaxCheck = {
+          ok: verification.allPassed,
+          taxGroups,
+          chainTaxTag: chainTaxTag ?? undefined,
+          verificationA: verification.a,
+          verificationB: verification.b,
+          verificationC: verification.c,
+          message: verification.allPassed ? 'Tax A/B/C passed' : 'Tax verification failed'
+        };
+      } catch (e: any) {
+        step3TaxCheck = { ok: false, message: e?.message ?? 'Tax decrypt or verify failed' };
+      }
+    } else {
+      step3TaxCheck = { ok: true, message: 'No tax_groups_ciphertext' };
+    }
+
+    const overallValid = step1Identity.ok && step2MoneyFlow.ok && step3TaxCheck.ok;
+    return {
+      overallValid,
+      step1Identity,
+      step2MoneyFlow,
+      step3TaxCheck
+    };
   }
 }

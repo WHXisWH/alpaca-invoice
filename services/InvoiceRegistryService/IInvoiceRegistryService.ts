@@ -2,12 +2,25 @@ import type { AleoAddress, AleoField } from '@/lib/types';
 import type { InvoiceStatus } from '@/lib/types';
 
 /**
- * Business service specifically responsible for querying zk_invoice_v2_2.aleo contract state
+ * Business service for querying zk_invoice contract state (Wave 2.2 + Wave 3 mappings).
  */
 export interface IInvoiceRegistryService {
   // --- Basic Information Queries ---
   getInvoiceHash(invoiceId: AleoField): Promise<AleoField | null>;
   getInvoiceStatus(invoiceId: AleoField): Promise<InvoiceStatus | null>;
+
+  // --- Wave 3 Invoice Mappings (audit: Identity / Money Flow / Tax Check) ---
+  /** 查 invoice_tax_tag mapping (key: invoice_id → value: tax_tag)，供审计 Step 3 Tax Check */
+  getInvoiceTaxTag(invoiceId: AleoField): Promise<AleoField | null>;
+
+  /** 查 invoice_jct_reg mapping (key: invoice_id → value: jct_registration)，供审计 Step 1 Identity */
+  getInvoiceJctReg(invoiceId: AleoField): Promise<AleoField | null>;
+
+  /**
+   * 查 invoice_tx_id mapping (key: settlement_anchor → value: invoice_id)，供审计 Step 2 Money Flow 双向校验。
+   * ⚠️ key 为 PaymentRecord.settlement_anchor（tx_id_hash），非 invoice_id。
+   */
+  getInvoiceTxId(settlementAnchor: AleoField): Promise<AleoField | null>;
 
   // --- Wave 2.2 Audit Core Anchors ---
   /** Get the commitment root of an invoice for auditors to compare against locally recalculated root */

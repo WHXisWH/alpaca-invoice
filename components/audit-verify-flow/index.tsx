@@ -78,6 +78,8 @@ export interface AuditVerifyFlowProps {
   onPreview: (e?: React.FormEvent) => void;
   onVerify: (e: React.FormEvent) => void;
   onExportReport: () => void;
+  /** Export compliance report as printable PDF (opens print dialog) */
+  onExportPdfReport?: () => void;
 }
 
 export default function AuditVerifyFlow({
@@ -92,7 +94,8 @@ export default function AuditVerifyFlow({
   onFileUpload,
   onPreview,
   onVerify,
-  onExportReport
+  onExportReport,
+  onExportPdfReport
 }: AuditVerifyFlowProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [fileName, setFileName] = useState<string>('');
@@ -232,23 +235,36 @@ export default function AuditVerifyFlow({
               </span>
             </div>
             {result.overallValid && (
-              <button
-                type="button"
-                onClick={onExportReport}
-                className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-              >
-                Export report
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onExportReport}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export JSON
+                </button>
+                {onExportPdfReport && (
+                  <button
+                    type="button"
+                    onClick={onExportPdfReport}
+                    className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Export compliance report (PDF)
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">Verification phases</h3>
-            <PhaseCard title="Phase 1: Package integrity (Pre-check)" phase={result.phase1} />
-            <PhaseCard title="Phase 2: Invoice on chain" phase={result.phase2} />
-            <PhaseCard title="Phase 3: Audit authorization (get_audit_authorization)" phase={result.phase3} />
-            <PhaseCard title="Phase 4: Chain anchoring" phase={result.phase4} />
-            <PhaseCard title="Phase 5: Trustless verification" phase={result.phase5} />
+            <h3 className="text-sm font-semibold text-slate-700">Verification (3-step pipeline)</h3>
+            <PhaseCard title="Step 1: Identity anchor" phase={result.phase1} defaultExpanded={true} />
+            <PhaseCard title="Step 2: Money flow (asset verification)" phase={result.phase2} defaultExpanded={true} />
+            <div className="space-y-2">
+              <PhaseCard title="Step 3a: Audit authorization" phase={result.phase3} defaultExpanded={false} />
+              <PhaseCard title="Step 3b: Chain anchoring" phase={result.phase4} defaultExpanded={false} />
+              <PhaseCard title="Step 3c: Tax / trustless verification" phase={result.phase5} defaultExpanded={false} />
+            </div>
           </div>
 
           {result.decrypted && result.overallValid && (

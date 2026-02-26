@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import InvoiceCard from '@/components/invoice-card';
@@ -7,6 +8,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { InvoiceStatus } from '@/lib/types';
+import type { AuditKey } from '@/lib/types';
+import { listAuditKeys } from '@/lib/storage';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import {
   Send,
@@ -21,7 +24,14 @@ import {
   Wallet,
   Loader2,
   RefreshCw,
+  PieChart as PieChartIcon,
+  TrendingUp,
+  Key,
 } from 'lucide-react';
+
+function formatMicrocredits(n: bigint): string {
+  return (Number(n) / 1_000_000).toFixed(2);
+}
 
 export default function DashboardPage() {
   const {
@@ -33,7 +43,17 @@ export default function DashboardPage() {
     showWalletPrompt,
     isInvoiceProcessing,
     isInvoiceSyncing,
+    totalAccountPayable,
+    totalPaidThisMonth,
+    jctDeductibleAmount,
+    currencyDistribution,
+    taxTrend,
   } = useInvoices();
+
+  const [auditKeys, setAuditKeys] = useState<AuditKey[]>([]);
+  useEffect(() => {
+    listAuditKeys().then(setAuditKeys).catch(() => setAuditKeys([]));
+  }, []);
   
   // Subscribe to sendingInvoiceHashes in the store (real-time updates)
   const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
@@ -181,6 +201,131 @@ export default function DashboardPage() {
           <p className="mt-3 text-xs text-success-600">Paid invoices</p>
         </MotionItem>
       </MotionContainer>
+
+      {/* Wave 3 核心财务磁贴 */}
+      <MotionItem className="surface-card p-6">
+        <h2 className="mb-4 text-lg font-semibold text-primary-900">Financial Overview</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+            <p className="text-xs font-medium text-amber-800">Account Payable (AP)</p>
+            <p className="mt-1 text-xl font-bold text-amber-900">{formatMicrocredits(totalAccountPayable)}</p>
+            <p className="text-xs text-amber-700">PENDING incoming invoices total</p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+            <p className="text-xs font-medium text-emerald-800">Total Paid (this month)</p>
+            <p className="mt-1 text-xl font-bold text-emerald-900">{formatMicrocredits(totalPaidThisMonth)}</p>
+            <p className="text-xs text-emerald-700">Credits / USDCx settled</p>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+            <p className="text-xs font-medium text-blue-800">JCT Deductible</p>
+            <p className="mt-1 text-xl font-bold text-blue-900">{formatMicrocredits(jctDeductibleAmount)}</p>
+            <p className="text-xs text-blue-700">Input tax (tax_tag verified)</p>
+          </div>
+        </div>
+      </MotionItem>
+
+      {/* 资产比例饼图 + 税务趋势 */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <MotionItem className="surface-card p-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <PieChartIcon className="h-4 w-4" />
+            Payment mix (Credits vs USDCx)
+          </h3>
+          <div className="flex items-center gap-6">
+            <div className="relative h-32 w-32 flex-shrink-0">
+              <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
+                {(() => {
+                  const total = currencyDistribution.credits + currencyDistribution.usdcx;
+                  const creditsPct = total > 0n ? Number(currencyDistribution.credits) / Number(total) : 0.5;
+                  const dash = creditsPct * 100;
+                  return (
+                    <>
+                      <path
+                        d="M18 2.084 a 15.916 15.916 0 0 1 0 31.832 a 15.916 15.916 0 0 1 0 -31.832"
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth="3"
+                        strokeDasharray="100"
+                        strokeDashoffset={-dash}
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M18 2.084 a 15.916 15.916 0 0 1 0 31.832 a 15.916 15.916 0 0 1 0 -31.832"
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeWidth="3"
+                        strokeDasharray={`${dash} ${100 - dash}`}
+                        strokeLinecap="round"
+                      />
+                    </>
+                  );
+                })()}
+              </svg>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-blue-500" />
+                <span>Credits: {formatMicrocredits(currencyDistribution.credits)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-slate-300" />
+                <span>USDCx: {formatMicrocredits(currencyDistribution.usdcx)}</span>
+              </div>
+            </div>
+          </div>
+        </MotionItem>
+        <MotionItem className="surface-card p-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <TrendingUp className="h-4 w-4" />
+            Tax trend (6 months)
+          </h3>
+          <div className="space-y-2">
+            {taxTrend.map(({ month, inputTax, outputTax }) => (
+              <div key={month} className="flex items-center justify-between rounded border border-slate-100 bg-slate-50/50 px-3 py-2 text-xs">
+                <span className="font-medium text-slate-700">{month}</span>
+                <span className="text-slate-600">In: {formatMicrocredits(inputTax)}</span>
+                <span className="text-slate-600">Out: {formatMicrocredits(outputTax)}</span>
+              </div>
+            ))}
+          </div>
+        </MotionItem>
+      </div>
+
+      {/* 审计包监控：已发放 Audit Key 列表 + 失效倒计时 */}
+      <MotionItem className="surface-card p-6">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+          <Key className="h-4 w-4" />
+          Audit keys issued
+        </h3>
+        {auditKeys.length === 0 ? (
+          <p className="text-sm text-slate-500">No audit keys issued yet. Generate one from the Audit Center.</p>
+        ) : (
+          <ul className="space-y-2">
+            {auditKeys.slice(0, 10).map((ak) => {
+              const exp = ak.config.expiresAt < 1e12 ? ak.config.expiresAt * 1000 : ak.config.expiresAt;
+              const expiresAt = new Date(exp);
+              const now = Date.now();
+              const msLeft = expiresAt.getTime() - now;
+              const daysLeft = Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+              const expired = msLeft <= 0;
+              return (
+                <li
+                  key={ak.key}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                >
+                  <code className="truncate max-w-[200px] text-slate-700">{ak.key.slice(0, 16)}…</code>
+                  <span className={expired ? 'text-red-600 font-medium' : 'text-slate-600'}>
+                    {expired ? 'Expired' : `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {auditKeys.length > 10 && (
+          <p className="mt-2 text-xs text-slate-500">Showing 10 of {auditKeys.length}</p>
+        )}
+      </MotionItem>
 
       {/* Quick Actions */}
       <MotionItem className="surface-card p-6">

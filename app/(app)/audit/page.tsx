@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import AuditKeyGenerator from '@/components/audit-key-generator';
+import AuditCenterV3 from '@/components/audit-center-v3';
 import { ShieldCheck, FileSearch } from 'lucide-react';
 
 export default function AuditPage() {
@@ -53,7 +53,7 @@ export default function AuditPage() {
         </div>
       </Link>
 
-      <AuditKeyGenerator />
+      <AuditCenterV3 />
     </div>
   );
 }

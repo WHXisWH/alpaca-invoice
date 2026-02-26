@@ -8,7 +8,7 @@ import {
 import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
 import type { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
-import { PROGRAM_ID, CREDITS_PROGRAM_ID } from '@/lib/contract';
+import { PROGRAM_ID, CREDITS_PROGRAM_ID, USDCX_PROGRAM_ID } from '@/lib/contract';
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 let sdkPromise: Promise<typeof import('@provablehq/sdk')> | null = null;
@@ -20,6 +20,9 @@ const loadSdk = async () => {
 };
 
 const WORKER_TIMEOUT_MS = 120_000;
+
+/** Wave 3: pay_invoice_public returns (PaymentRecord, InvoiceRecord_buyer, InvoiceRecord_seller, Future) = 4 outputs; mark_as_paid removed */
+export const WAVE3_PAYMENT_OUTPUT_COUNT = 4;
 
 /**
  * AleoProtocolService implementation class
@@ -624,6 +627,17 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
+   * Return the expected number of outputs for a given transition (Wave 3).
+   * Use this when calling verifyRecordOnChain so output count verification matches the contract.
+   */
+  getExpectedOutputCountForFunction(functionName: string): number | undefined {
+    if (functionName === 'pay_invoice_public' || functionName === 'pay_invoice_usdcx') {
+      return WAVE3_PAYMENT_OUTPUT_COUNT;
+    }
+    return undefined;
+  }
+
+  /**
    * Verify whether a generated record has been successfully committed on-chain
    *
    * Verifies transaction confirmation by querying transaction details, and optionally
@@ -634,6 +648,8 @@ export class AleoProtocolService implements IAleoProtocolService {
    * 2. If programId is provided, verify the transaction belongs to that program
    * 3. If functionName is provided, verify the function name called by the transaction
    * 4. If expectedOutputsCount is provided, verify the number of output records produced by the transaction
+   *
+   * Wave 3: For pay_invoice_public / pay_invoice_usdcx use expectedOutputsCount: WAVE3_PAYMENT_OUTPUT_COUNT (4).
    */
   async verifyRecordOnChain(
     transactionId: AleoTransactionId,
@@ -751,5 +767,59 @@ export class AleoProtocolService implements IAleoProtocolService {
         { transactionId, originalError: error }
       );
     }
+  }
+
+  async getUsdcxAllowance(owner: AleoAddress, spender: AleoAddress): Promise<bigint> {
+    if (!USDCX_PROGRAM_ID) return 0n;
+    try {
+      // Key format depends on USDCx contract: often (owner, spender) composite; try composite key string
+      const key = `${owner},${spender}`;
+      const raw = await this.getProgramMappingValue(
+        USDCX_PROGRAM_ID,
+        'allowance',
+        key as AleoField
+      );
+      if (raw == null) return 0n;
+      const s = String(raw).replace(/^["']|["']$/g, '').replace(/u64$/i, '').trim();
+      return BigInt(s || 0);
+    } catch {
+      return 0n;
+    }
+  }
+
+  async getPublicTransfersByTxId(txId: AleoTransactionId): Promise<Array<{
+    from: AleoAddress;
+    to: AleoAddress;
+    amount: bigint;
+  }>> {
+    const client = await this.getNetworkClient();
+    const tx = await client.getTransaction(txId);
+    if (!tx) return [];
+    const out: Array< { from: AleoAddress; to: AleoAddress; amount: bigint }> = [];
+    const t = tx as any;
+    const transitions = t.transitions ?? t.execution?.transitions ?? [];
+    for (const tr of transitions) {
+      const outputs = tr.outputs ?? [];
+      for (const o of outputs) {
+        const str = typeof o === 'string' ? o : (o.value ?? o);
+        if (!str || typeof str !== 'string') continue;
+        // credits.aleo transfer_public: amount and optional address outputs
+        const m = str.match(/amount:(\d+)u64/);
+        if (m) {
+          const amount = BigInt(m[1]);
+          // Try to get from/to from transition inputs or id
+          const from = (tr.inputs?.[0] ?? tr.id?.inputs?.[0]) ?? '';
+          const to = (tr.inputs?.[1] ?? tr.id?.inputs?.[1]) ?? '';
+          if (from && to) {
+            out.push({
+              from: from as AleoAddress,
+              to: to as AleoAddress,
+              amount
+            });
+          }
+        }
+      }
+    }
+    return out;
   }
 }

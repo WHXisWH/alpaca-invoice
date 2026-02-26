@@ -1,6 +1,6 @@
 import type { AleoAddress, AleoField } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
-import { PROGRAM_ID } from '@/lib/contract';
+import { PROGRAM_ID, MAPPINGS } from '@/lib/contract';
 import type { IInvoiceRegistryService } from './IInvoiceRegistryService';
 
 /**
@@ -66,6 +66,9 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
   private readonly rulesCache = new Map<string, { ts: number; value: AleoField | null }>();
   private readonly authCache = new Map<string, { ts: number; value: any }>();
   private readonly counterCache = new Map<string, { ts: number; value: bigint | null }>();
+  private readonly taxTagCache = new Map<string, { ts: number; value: AleoField | null }>();
+  private readonly jctRegCache = new Map<string, { ts: number; value: AleoField | null }>();
+  private readonly txIdCache = new Map<string, { ts: number; value: AleoField | null }>();
 
   constructor(reader: IProgramMappingReader) {
     this.reader = reader;
@@ -81,6 +84,55 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
     }
     const val = raw.replace(/["']?/g, '') as AleoField;
     this.hashCache.set(invoiceId, { ts: Date.now(), hash: val });
+    return val;
+  }
+
+  async getInvoiceTaxTag(invoiceId: AleoField): Promise<AleoField | null> {
+    const key = `tax_tag-${invoiceId}`;
+    const cached = this.taxTagCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, MAPPINGS.invoice_tax_tag, invoiceId);
+    if (raw == null) {
+      this.taxTagCache.set(key, { ts: Date.now(), value: null });
+      return null;
+    }
+    const v = String(raw).replace(/^["']|["']$/g, '').trim();
+    const val = (v === '0field' || v === '') ? null : (v.endsWith('field') ? v : `${v}field`) as AleoField;
+    this.taxTagCache.set(key, { ts: Date.now(), value: val });
+    return val;
+  }
+
+  async getInvoiceJctReg(invoiceId: AleoField): Promise<AleoField | null> {
+    const key = `jct_reg-${invoiceId}`;
+    const cached = this.jctRegCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, MAPPINGS.invoice_jct_reg, invoiceId);
+    if (raw == null) {
+      this.jctRegCache.set(key, { ts: Date.now(), value: null });
+      return null;
+    }
+    const v = String(raw).replace(/^["']|["']$/g, '').trim();
+    const val = (v === '0field' || v === '') ? null : (v.endsWith('field') ? v : `${v}field`) as AleoField;
+    this.jctRegCache.set(key, { ts: Date.now(), value: val });
+    return val;
+  }
+
+  /**
+   * invoice_tx_id mapping: key = settlement_anchor (tx_id_hash), value = invoice_id.
+   * 供审计 Step 2 用 settlement_anchor 回溯得到 invoice_id。
+   */
+  async getInvoiceTxId(settlementAnchor: AleoField): Promise<AleoField | null> {
+    const key = `tx_id-${settlementAnchor}`;
+    const cached = this.txIdCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
+    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, MAPPINGS.invoice_tx_id, settlementAnchor);
+    if (raw == null) {
+      this.txIdCache.set(key, { ts: Date.now(), value: null });
+      return null;
+    }
+    const v = String(raw).replace(/^["']|["']$/g, '').trim();
+    const val = (v === '0field' || v === '') ? null : (v.endsWith('field') ? v : `${v}field`) as AleoField;
+    this.txIdCache.set(key, { ts: Date.now(), value: val });
     return val;
   }
 

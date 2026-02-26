@@ -1,6 +1,33 @@
 import type { AleoAddress, AleoField } from '@/lib/types';
 
 /**
+ * Wave 3 审计包 Envelope（v3.0）
+ * 扩展自 AuditPackageEnvelope（v2.2.0），增加角色 + tax 字段
+ */
+export interface AuditPackageEnvelopeV3 {
+  version: '3.0.0';
+  audit_type: 'selective_disclosure';
+  role: 'buyer' | 'seller';
+  network: string;
+  contract: string;
+  context: {
+    invoice_ids: AleoField[];
+    audit_key_hash: AleoField;
+    expires_at: number;
+  };
+  encryption: {
+    algorithm: 'AES-256-GCM';
+    iv: string;
+    auth_tag: string;
+    ciphertext: string;
+    tax_groups_ciphertext?: string;
+    tax_groups_iv?: string;
+    tax_groups_auth_tag?: string;
+  };
+  jct_registration_hint?: string;
+}
+
+/**
  * Minimal disclosure audit package for zk_invoice_v2_2.aleo
  * This is an off-chain bundle that references on-chain anchors (rules_result, commitments root, audit authorization).
  */

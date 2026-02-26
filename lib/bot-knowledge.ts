@@ -33,7 +33,7 @@ Alpaca Invoice enables businesses to create, send, pay, and audit invoices with 
 ### 2. Pay Invoices (Two-Step Private Settlement)
 - Buyers view received invoices, verify the details, then click "Pay".
 - **Step 1:** Private credit transfer via \`credits.aleo/transfer_private\`.
-- **Step 2:** Mark invoice as paid via \`zk_invoice_v2_2.aleo/mark_as_paid\`.
+- **Step 2:** Pay invoice via \`zk_invoice_v3_0.aleo/pay_invoice_public\` (Credits path; transfer + state update).
 - Both parties receive cryptographic proof of settlement (PaymentRecord).
 
 ### 3. Cancel Invoices

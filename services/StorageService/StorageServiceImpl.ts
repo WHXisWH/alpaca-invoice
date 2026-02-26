@@ -4,7 +4,7 @@ import { createServiceError } from '@/lib/service-errors';
 const StorageServiceError = createServiceError<StorageError>('StorageService');
 
 const DB_NAME = 'zk_invoice_db';
-const DB_VERSION = 3;  // Upgraded version number to support generic storage
+const DB_VERSION = 4;  // Wave 3: Invoice schema + taxTag, jctRegistration, totalAmount, currencyFlag, taxGroups, tNumber
 
 /**
  * Serialize data (handles bigint and Date)
