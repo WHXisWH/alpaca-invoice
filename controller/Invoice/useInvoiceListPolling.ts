@@ -4,6 +4,8 @@ import { Invoice, AleoField } from '@/lib/types';
 import { PollingService } from '@/services/PollingService/PollingServiceImpl';
 import { InvoiceScanResult } from '@/services/PollingService/adapters/InvoiceStatusValidatorAdapter';
 import { useInvoicePollingCore } from './useInvoicePollingCore';
+import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
+import type { AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 
 /**
  * Hook: 列表页批量轮询逻辑（重构版）
@@ -76,11 +78,13 @@ export function useInvoiceListPolling(
 
     // ✅ 使用核心逻辑创建 PollingService
     const pollingService = createPollingService(invoiceHash, invoice, {
-      onSuccess: async (updatedInvoice) => {
-        // 通过回调通知调用方
+      onSuccess: async (updatedInvoice, record) => {
+        // Wave 3: PaymentRecord 含 settlement_anchor 时回写 ReceiptStore，供审计 Step 2 使用
+        if (record && 'payment_id' in record && (record as AleoPaymentRecord).settlement_anchor) {
+          const anchor = String((record as AleoPaymentRecord).settlement_anchor).replace(/field\.(private|public)$/i, 'field');
+          useReceiptStore.getState().updateReceipt(updatedInvoice.id, { settlementAnchor: anchor as AleoField });
+        }
         onPollingComplete(invoiceHash, updatedInvoice);
-        
-        // 停止并移除轮询服务
         pollingServicesRef.current.delete(invoiceHash);
         if (pollingServicesRef.current.size === 0) {
           setIsPolling(false);

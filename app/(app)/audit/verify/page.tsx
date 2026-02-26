@@ -59,6 +59,7 @@ export default function AuditVerifyPage() {
         onPreview={controller.handlePreview}
         onVerify={controller.handleVerify}
         onExportReport={controller.handleExportReport}
+        onExportPdfReport={controller.handleExportPdfReport}
       />
     </div>
   );

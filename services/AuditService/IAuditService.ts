@@ -1,7 +1,9 @@
 import { createServiceError } from '@/lib/service-errors';
-import type { AleoAddress, AleoField, EncryptedPayload, Invoice } from '@/lib/types';
-import type { AuditPackageEnvelope } from '@/types/audit-package';
+import type { AleoAddress, AleoField, EncryptedPayload, Invoice, PaymentReceipt, TaxGroups } from '@/lib/types';
+import type { AuditPackageEnvelope, AuditPackageEnvelopeV3 } from '@/types/audit-package';
 import type { IInvoiceRegistryService } from '@/services/InvoiceRegistryService/IInvoiceRegistryService';
+import type { IAleoProtocolService } from '@/services/AleoProtocolService/IAleoProtocolService';
+import type { ICryptoService } from '@/services/CryptoService/ICryptoService';
 
 /**
  * Audit package schema (versioned for forward compatibility)
@@ -246,6 +248,16 @@ export interface IAuditService {
       };
     }
   ): Promise<VerifyEnvelopePhasesResult>;
+
+  /** Wave 3 角色隔离打包：buyer 打包 PaymentRecord，seller 打包 PAID InvoiceRecord（含 TaxGroups） */
+  generateV3(params: GenerateAuditPackageParamsV3): Promise<GenerateAuditPackageResultV3>;
+
+  /** Wave 3 三阶段验证：Identity → Money Flow → Tax Check。Step 2 使用 registry.getInvoiceTxId(settlement_anchor) 双向校验。 */
+  verifyV3(
+    envelope: AuditPackageEnvelopeV3,
+    auditKey: string,
+    services: { protocol: IAleoProtocolService; crypto: ICryptoService; registry: IInvoiceRegistryService }
+  ): Promise<VerifyAuditPackageV3Result>;
 }
 
 /** Result of each verification phase for UI display. */
@@ -263,4 +275,58 @@ export interface VerifyEnvelopePhasesResult {
   phase4: VerifyPhaseResult;
   phase5: VerifyPhaseResult;
   decrypted?: any;
+}
+
+/** Wave 3 角色感知的审计包生成参数 */
+export interface GenerateAuditPackageParamsV3 {
+  role: 'buyer' | 'seller';
+  records: Array<{
+    invoiceId: AleoField;
+    invoice?: Invoice;
+    receipt?: PaymentReceipt;
+  }>;
+  expiresAt: number;
+  permissions: string[];
+  tNumber?: string;
+}
+
+/** Wave 3 审计包生成结果 */
+export interface GenerateAuditPackageResultV3 {
+  envelope: AuditPackageEnvelopeV3;
+  auditKey: string;
+  auditKeyHash: AleoField;
+  summary: {
+    recordCount: number;
+    totalAmount: bigint;
+    totalTaxAmount: bigint;
+  };
+}
+
+/** Wave 3 三阶段验证结果 */
+export interface VerifyAuditPackageV3Result {
+  overallValid: boolean;
+  step1Identity: {
+    ok: boolean;
+    tNumber?: string;
+    chainJctReg?: AleoField;
+    hashMatch?: boolean;
+    ntaApiResult?: { name: string; status: string } | null;
+    message: string;
+  };
+  step2MoneyFlow: {
+    ok: boolean;
+    txIdHash?: AleoField;
+    transfers?: Array<{ from: AleoAddress; to: AleoAddress; amount: bigint }>;
+    amountMatch?: boolean;
+    message: string;
+  };
+  step3TaxCheck: {
+    ok: boolean;
+    taxGroups?: TaxGroups;
+    chainTaxTag?: AleoField;
+    verificationA?: { ok: boolean; detail?: string };
+    verificationB?: { ok: boolean; detail?: string };
+    verificationC?: { ok: boolean; detail?: string };
+    message: string;
+  };
 }

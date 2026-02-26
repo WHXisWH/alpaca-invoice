@@ -6,12 +6,12 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
-import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice } from '@/lib/types';
+import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice, CurrencyFlag } from '@/lib/types';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
-import { PROGRAM_ID } from '@/lib/contract';
+import { PROGRAM_ID, ZERO_FIELD } from '@/lib/contract';
 import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
@@ -136,10 +136,12 @@ export function useTransactionController(): ITxController {
           `NONCE-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(16))).join('')}`
         );
 
-        // Derive supporting fields from details (all in microcredits)
-        const taxRateBps = cryptoService.calculateTaxBps(params.details.taxRate ?? 0);
-        const taxAmountMicro = (params.amount * taxRateBps) / 10000n;
+        // Derive supporting fields from details (all in microcredits). JCT: use details.taxAmount (per-line sum).
+        const taxAmountMicro = params.details.taxAmount != null
+          ? BigInt(Math.floor(params.details.taxAmount * 1_000_000))
+          : (params.amount * BigInt(cryptoService.calculateTaxBps(params.details.taxRate ?? 0))) / 10000n;
         const expectedTotal = params.amount + taxAmountMicro;
+        const taxRateBps = params.amount > 0n ? Number((taxAmountMicro * 10000n) / params.amount) : 0;
         const lineItemsSum = params.details.lineItems.reduce<bigint>((acc, item) => {
           const amt = item.amount ?? Math.round((item.quantity ?? 0) * (item.unitPrice ?? 0));
           return acc + BigInt(Math.round(amt * 1_000_000));
@@ -187,15 +189,25 @@ export function useTransactionController(): ITxController {
 
         updateProgress(25, '✓ Transaction parameters prepared');
 
+        // Wave 3 JCT-only: params.taxGroups, params.tNumber, params.currencyFlag are required
+        const currencyFlagU8 = params.currencyFlag;
+        updateProgress(26, 'Computing tax_tag and jct_registration...');
+        const taxTagField = await cryptoService.hashTaxGroups(params.taxGroups);
+        const jctRegField = await cryptoService.hashTNumber(params.tNumber);
+        const totalAmountU64 =
+          params.taxGroups.group_a.net_sum +
+          params.taxGroups.group_a.tax_sum +
+          params.taxGroups.group_b.net_sum +
+          params.taxGroups.group_b.tax_sum;
+        const taxGroupsStr = cryptoService.serializeTaxGroupsForContract(params.taxGroups);
+        const jctStruct = `{tax_groups: ${taxGroupsStr}, tax_tag: ${taxTagField}, total_amount: ${totalAmountU64}u64, jct_registration: ${jctRegField}, currency_flag: ${currencyFlagU8}u8}`;
+
         // ==================== Phase 2: Submit transaction request (async task submission) ====================
 
         startTx('REQUESTING');
         updateProgress(30, 'REQUESTING - Submitting transaction request...');
 
-        // Request transaction via wallet service (wallet generates proof and prepares broadcast in the background)
-        // Get chainId from environment variable, consistent with useWalletController
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
-        // Pre-compute invoice_id locally via compute_invoice_id (for record parity)
         let computedInvoiceId: AleoField | null = null;
         try {
           computedInvoiceId = await protocolService.computeInvoiceIdOffline({
@@ -210,7 +222,6 @@ export function useTransactionController(): ITxController {
           console.warn('computeInvoiceIdOffline failed, will fall back to hash as ID', e);
         }
 
-        // Long-running proving step indicator (wallet proving may take minutes on testnet)
         let provingTimer: ReturnType<typeof setInterval> | null = null;
         const provingStartedAt = Date.now();
         provingTimer = setInterval(() => {
@@ -237,10 +248,11 @@ export function useTransactionController(): ITxController {
               currencyField,
               itemsHashField,
               memoHashField,
-            `${lineItemsSum}u64`,
-            `${expectedTotal}u64`,
-            `${taxRateBps}u64`
-          ],
+              `${lineItemsSum}u64`,
+              `${expectedTotal}u64`,
+              `${taxRateBps}u64`,
+              jctStruct
+            ],
             publicKey: publicKey,
             programId: PROGRAM_ID,
             fee: 1000000,
@@ -340,7 +352,7 @@ export function useTransactionController(): ITxController {
 
         // Update Invoice Store (using the new persistence method, which automatically saves full invoice to IndexedDB)
         if (invoiceStore?.addInvoice) {
-          await invoiceStore.addInvoice({
+          const invoicePayload: any = {
             id: invoiceId,
             seller: publicKey,
             buyer: buyerAddress,
@@ -348,17 +360,24 @@ export function useTransactionController(): ITxController {
             invoiceHash: invoiceHash,
             dueDate: params.dueDate,
             createdAt: new Date(),
-            status: 0, // PENDING
+            status: 0,
             nonce: nonceField,
             auditKey: params.audit?.auditKey,
             details: params.details,
-            metadata: { // Add metadata, set action to 'create'
+            metadata: {
               confirmationStatus: 'SENDING',
               lastUpdated: new Date(),
               dataSource: 'local',
               action: 'create'
             }
-          }, {
+          };
+          invoicePayload.taxTag = taxTagField;
+          invoicePayload.jctRegistration = jctRegField;
+          invoicePayload.totalAmount = totalAmountU64;
+          invoicePayload.currencyFlag = currencyFlagU8;
+          invoicePayload.taxGroups = params.taxGroups;
+          invoicePayload.tNumber = params.tNumber;
+          await invoiceStore.addInvoice(invoicePayload, {
             masterKey: currentMasterKey,
             persistFull: true  // Persist full invoice information (including basic info)
           });
@@ -386,12 +405,12 @@ export function useTransactionController(): ITxController {
   );
 
   /**
-   * Execute invoice payment (mark_as_paid)
+   * Execute invoice payment.
+   * Wave 3: Routes by currency_flag — Credits: pay_invoice_public; USDCx: check allowance, approve if needed, then pay_invoice_usdcx.
    */
   const executePay = useCallback(
     async (invoice: Invoice): Promise<AleoTransactionId> => {
       try {
-        // Check wallet connection
         if (!publicKey) {
           throw new WalletServiceError(
             WalletError.UNAUTHORIZED,
@@ -406,22 +425,21 @@ export function useTransactionController(): ITxController {
           );
         }
 
+        const currencyFlag = invoice.currencyFlag ?? CurrencyFlag.CREDITS;
+        const payAmount = invoice.totalAmount ?? invoice.amount;
+
         startTx('REQUESTING');
         updateProgress(10, 'Fetching invoice record from chain...');
 
-        // Scan chain to get invoice record
         const { rawRecord } = await scanInvoiceRecord(invoice.invoiceHash, invoice.id);
 
         if (!rawRecord) {
           throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
         }
 
-        // Use raw record object (wallet handles encryption and signing)
         const invoiceRecord = rawRecord;
-
         updateProgress(30, 'Invoice record found. Preparing payment...');
 
-        // 2. Generate payment_nonce
         const paymentNonce = await cryptoService.computeInvoiceHash({
           invoiceNumber: `PAYMENT-${Date.now()}-${Math.random()}`,
           lineItems: [],
@@ -433,18 +451,89 @@ export function useTransactionController(): ITxController {
         });
 
         const paidAt = `${Math.floor(Date.now() / 1000)}u32`;
+        const txIdHash = await cryptoService.computeInvoiceHash({
+          invoiceNumber: `TX-${paymentNonce}-${paidAt}`,
+          lineItems: [],
+          subtotal: 0,
+          taxRate: 0,
+          taxAmount: 0,
+          total: 0,
+          currency: 'CREDITS'
+        });
+
+        const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+
+        if (currencyFlag === CurrencyFlag.USDCX) {
+          updateProgress(35, 'Checking USDCx allowance...');
+          const allowance = await protocolService.getUsdcxAllowance(
+            invoice.buyer as AleoAddress,
+            PROGRAM_ID as AleoAddress
+          );
+          if (allowance < payAmount) {
+            updateProgress(40, 'Submitting Approve transaction...');
+            const { USDCX_PROGRAM_ID: usdcxId } = await import('@/lib/contract');
+            if (usdcxId) {
+              await walletService.requestTransaction({
+                functionName: 'approve',
+                inputs: [PROGRAM_ID, `${payAmount.toString()}u64`],
+                publicKey: publicKey,
+                programId: usdcxId,
+                fee: 1000000,
+                chainId: chainId
+              });
+            }
+            updateProgress(45, 'Approve submitted. Submitting payment...');
+          }
+          updateProgress(50, 'Submitting pay_invoice_usdcx...');
+          const requestId = await walletService.requestTransaction({
+            functionName: 'pay_invoice_usdcx',
+            inputs: [invoiceRecord, paymentNonce, paidAt, txIdHash],
+            publicKey: publicKey,
+            programId: PROGRAM_ID,
+            fee: 1000000,
+            chainId: chainId
+          });
+          if (!requestId) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'USDCx payment transaction failed - no response from wallet'
+            );
+          }
+          try {
+            receiptStore.addReceipt({
+              paymentId: requestId as AleoField,
+              invoiceId: invoice.id,
+              payer: invoice.buyer,
+              payee: invoice.seller,
+              amount: payAmount,
+              paidAt: new Date(Number(paidAt.replace(/u32$/, '')) * 1000),
+              txId: requestId as AleoTransactionId
+            });
+          } catch (err) {
+            console.warn('⚠️ [executePay] Failed to add receipt locally:', err);
+          }
+          if (invoiceStore?.updateInvoice && masterKey) {
+            try {
+              await invoiceStore.updateInvoice(invoice.id, {
+                metadata: {
+                  confirmationStatus: 'SENDING',
+                  dataSource: 'local',
+                  action: 'pay'
+                }
+              } as any, { masterKey, persistFull: true });
+            } catch (e) {
+              console.warn('executePay update metadata failed', e);
+            }
+          }
+          updateProgress(100, '✓ Payment completed!');
+          completeTx();
+          return requestId as AleoTransactionId;
+        }
 
         updateProgress(50, 'Submitting payment transaction...');
-
-        // 3. Call mark_as_paid transition
-        const chainId = getChainIdFromNetwork(getNetworkFromEnv());
         const requestId = await walletService.requestTransaction({
-          functionName: 'mark_as_paid',
-          inputs: [
-            invoiceRecord,
-            paymentNonce,
-            paidAt
-          ],
+          functionName: 'pay_invoice_public',
+          inputs: [invoiceRecord, paymentNonce, paidAt, txIdHash],
           publicKey: publicKey,
           programId: PROGRAM_ID,
           fee: 1000000,
@@ -458,16 +547,15 @@ export function useTransactionController(): ITxController {
           );
         }
 
-        // Record receipt locally for UI
         try {
           receiptStore.addReceipt({
-            paymentId: requestId,
+            paymentId: requestId as AleoField,
             invoiceId: invoice.id,
             payer: invoice.buyer,
             payee: invoice.seller,
-            amount: invoice.amount,
+            amount: payAmount,
             paidAt: new Date(Number(paidAt.replace(/u32$/, '')) * 1000),
-            txId: requestId
+            txId: requestId as AleoTransactionId
           });
         } catch (err) {
           console.warn('⚠️ [executePay] Failed to add receipt locally:', err);
@@ -505,7 +593,7 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, walletService, scanInvoiceRecord, cryptoService, startTx, updateProgress, completeTx]
+    [publicKey, walletService, protocolService, scanInvoiceRecord, cryptoService, startTx, updateProgress, completeTx, invoiceStore, masterKey, receiptStore]
   );
 
   /**

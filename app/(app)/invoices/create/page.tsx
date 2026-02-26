@@ -34,7 +34,7 @@ export default function CreateInvoicePage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-primary-200 bg-white p-6 shadow-sm md:p-8">
+      <div className="rounded-xl border border-primary-200 bg-white p-3 shadow-sm">
         <InvoiceForm />
       </div>
     </div>

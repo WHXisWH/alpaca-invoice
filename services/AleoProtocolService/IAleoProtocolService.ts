@@ -1,5 +1,9 @@
 import {
-  AleoAddress, AleoField, AleoTransactionId, InvoiceStatus, Microcredits
+  AleoAddress,
+  AleoField,
+  AleoTransactionId,
+  InvoiceStatus,
+  Microcredits
 } from '@/lib/types';
 import { createServiceError } from '@/lib/service-errors';
 
@@ -142,13 +146,29 @@ export interface IAleoProtocolService {
   ): Promise<Microcredits>;
 
   /**
+   * Return the expected number of outputs for a transition (Wave 3).
+   * pay_invoice_public and pay_invoice_usdcx each return 4 outputs: PaymentRecord, InvoiceRecord (buyer), InvoiceRecord (seller), Future.
+   */
+  getExpectedOutputCountForFunction(functionName: string): number | undefined;
+
+  /**
+   * Wave 3: Query USDCx allowance (owner -> spender). Used to decide if Approve TX is needed before pay.
+   */
+  getUsdcxAllowance(owner: AleoAddress, spender: AleoAddress): Promise<bigint>;
+
+  /**
+   * Wave 3: Fetch public balance transfers for a TX (for Money Flow verification).
+   */
+  getPublicTransfersByTxId(txId: AleoTransactionId): Promise<Array<{ from: AleoAddress; to: AleoAddress; amount: bigint }>>;
+
+  /**
    * Verify whether a generated record has been successfully committed on-chain
    * Verifies transaction confirmation by querying transaction details, and optionally verifies that the transaction contains the expected records
    * @param transactionId Transaction ID
    * @param options Optional verification options
-   * @param options.programId Program ID (e.g., "zk_invoice_v2_2.aleo"), used to verify the transaction belongs to this program
+   * @param options.programId Program ID (e.g., "zk_invoice_v3_0.aleo"), used to verify the transaction belongs to this program
    * @param options.functionName Function name (e.g., "create_invoice"), used to verify the function called by the transaction
-   * @param options.expectedOutputsCount Expected number of output records, used to verify the transaction produced the expected records
+   * @param options.expectedOutputsCount Expected number of output records; for pay_invoice_public / pay_invoice_usdcx use getExpectedOutputCountForFunction (4)
    * @returns Verification result object, including success status, transaction details, etc.
    * @throws {ProtocolServiceError} May throw NODE_CONNECTION_FAILED, TRANSACTION_REJECTED
    */

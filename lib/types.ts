@@ -10,11 +10,48 @@ export enum InvoiceStatus {
   EXPIRED = 3
 }
 
+/** 发票结算货币类型（对应合约 currency_flag: u8） */
+export enum CurrencyFlag {
+  CREDITS = 0,
+  USDCX = 1
+}
+
+/**
+ * 单个税率分组（对应合约 TaxGroup struct）
+ * rate_bps: 税率基点，10% = 1000，8% = 800，0% = 0
+ */
+export interface TaxGroup {
+  rate_bps: number;
+  net_sum: bigint;
+  tax_sum: bigint;
+}
+
+/**
+ * 两档税率组合（对应合约 TaxGroups struct）
+ * group_a: 10% 标准税率，group_b: 8% 轻课税税率
+ */
+export interface TaxGroups {
+  group_a: TaxGroup;
+  group_b: TaxGroup;
+}
+
 export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
   amount: number;
+}
+
+/** 前端表单中单个商品行（Wave 3 JCT，含税率） */
+export interface LineItemV3 {
+  description: string;
+  quantity: number;
+  unitPrice: number;   // 含税单价（JPY）
+  taxRate: 0 | 8 | 10; // 选择税率（%）
+  /** 系统自动计算，UI 锁定只读 */
+  taxAmount?: number;
+  /** 税前金额 = unitPrice * quantity / (1 + taxRate/100) */
+  amount?: number;
 }
 
 export interface InvoiceDetails {
@@ -52,6 +89,20 @@ export interface Invoice {
     dataSource: 'local' | 'chain';
     action?: 'create' | 'cancel' | 'pay';
   };
+
+  // Wave 3 JCT
+  /** BHP256(TaxGroups) — 链上 tax_tag field */
+  taxTag?: AleoField;
+  /** BHP256(T_number as u64) — 链上 jct_registration field */
+  jctRegistration?: AleoField;
+  /** 发票总支付额 = net_sum + tax_sum（所有税率组之和） */
+  totalAmount?: Microcredits;
+  /** 结算货币 (0=Credits, 1=USDCx) */
+  currencyFlag?: CurrencyFlag;
+  /** JCT 模式下原始税率分组（用于本地 PDF 渲染，不上链） */
+  taxGroups?: TaxGroups;
+  /** JCT 登记号明文（13 位数字字符串） */
+  tNumber?: string;
 }
 
 export interface EncryptedPayload {
@@ -119,6 +170,13 @@ export interface CreateInvoiceParams {
     scopesBitmask: bigint;
     expiresAt: number; // Unix seconds
   };
+  // Wave 3 JCT (JCT-only: all required)
+  taxGroups: TaxGroups;
+  tNumber: string;
+  currencyFlag: CurrencyFlag;
+  /** Optional: if not provided, controller computes from taxGroups / tNumber */
+  taxTag?: AleoField;
+  jctRegistration?: AleoField;
 }
 
 export interface CreateInvoiceResult {
@@ -146,6 +204,10 @@ export interface PaymentReceipt {
   payee: AleoAddress;
   amount: Microcredits;
   paidAt: Date;
+  /** Wave 3: 链上 tx_id（Money Flow 审计） */
+  txId?: AleoTransactionId;
+  /** Wave 3: PaymentRecord.settlement_anchor（tx_id_hash），供审计 Step 2 回溯 invoice_tx_id mapping */
+  settlementAnchor?: AleoField;
 }
 
 export interface AuditKeyConfig {

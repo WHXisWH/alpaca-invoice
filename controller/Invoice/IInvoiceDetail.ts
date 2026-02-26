@@ -1,6 +1,7 @@
-import { Invoice, AleoField } from '@/lib/types';
+import { Invoice, AleoField, Microcredits } from '@/lib/types';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { StatusConfig } from '@/lib/invoice';
+import type { TaxGroups } from '@/lib/types';
 
 /**
  * 用户在发票中的角色
@@ -55,7 +56,19 @@ export interface IInvoiceDetail {
   
   /** 手动同步发票状态（从链上获取最新 record） */
   handleSyncStatus: () => Promise<void>;
-  
-  // ✅ 移除：startPolling/stopPolling 由全局 AutoPoller 统一管理
+
+  // Wave 3 派生字段
+  /** 是否为 JCT 发票（tax_tag !== '0field'） */
+  isJctInvoice: boolean;
+  /** 是否为 USDCx 发票（currencyFlag === 1） */
+  isUsdcxInvoice: boolean;
+  /** 链上 tax_tag / 税率分组（详情页展示） */
+  taxTag: AleoField | null;
+  /** 链上 jct_registration */
+  jctRegistration: AleoField | null;
+  /** 发票总金额（含税） */
+  totalAmount: Microcredits | null;
+  /** 税率分组（用于详情页税务明细） */
+  taxGroups: TaxGroups | null;
 }
 

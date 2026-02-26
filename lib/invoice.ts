@@ -1,4 +1,4 @@
-import { Invoice, InvoiceStatus, AleoField } from './types';
+import { Invoice, InvoiceStatus, AleoField, CurrencyFlag } from './types';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { cleanAleoNumber } from './utils';
 import InvoiceCard from '@/components/invoice-card';
@@ -122,7 +122,7 @@ export function buildInvoiceFromRecord(
   const cleanCreatedAt = cleanAleoNumber(record.created_at);
   const cleanStatus = cleanAleoNumber(record.status);
 
-  return {
+  const inv: Invoice = {
     id: cleanInvoiceId,
     invoiceHash: invoiceHash,
     seller: record.seller as any,
@@ -140,6 +140,20 @@ export function buildInvoiceFromRecord(
     memoHash: record.memo_hash ? cleanAleoField(record.memo_hash) as AleoField : undefined,
     details: undefined // On-chain data does not include details
   };
+  // Wave 3: map tax_tag, jct_registration, total_amount, currency_flag
+  if (record.tax_tag != null && record.tax_tag !== '0field') {
+    inv.taxTag = cleanAleoField(record.tax_tag) as AleoField;
+  }
+  if (record.jct_registration != null && record.jct_registration !== '0field') {
+    inv.jctRegistration = cleanAleoField(record.jct_registration) as AleoField;
+  }
+  if (record.total_amount != null) {
+    inv.totalAmount = BigInt(cleanAleoNumber(record.total_amount)) as any;
+  }
+  if (record.currency_flag != null) {
+    inv.currencyFlag = record.currency_flag as CurrencyFlag;
+  }
+  return inv;
 }
 
 /**
@@ -158,15 +172,19 @@ export function updateInvoiceFromPaymentRecord(
 
   return {
     id: cleanInvoiceId,
-    invoiceHash: invoice.invoiceHash, // Keep original hash
+    invoiceHash: invoice.invoiceHash,
     seller: paymentRecord.payee as any,
     buyer: paymentRecord.payer as any,
     amount: BigInt(cleanAmount) as any,
+    totalAmount: invoice.totalAmount ?? BigInt(cleanAmount) as any,
     dueDate: invoice.dueDate,
     createdAt: invoice.createdAt,
-    status: 1 as any, // PaymentRecord indicates paid
-    nonce: invoice.nonce,       // Preserve local-only field
-    auditKey: invoice.auditKey  // Preserve local-only field
+    status: 1 as any,
+    nonce: invoice.nonce,
+    auditKey: invoice.auditKey,
+    taxTag: invoice.taxTag,
+    jctRegistration: invoice.jctRegistration,
+    currencyFlag: invoice.currencyFlag
   };
 }
 
@@ -188,9 +206,9 @@ export function updateInvoiceFromInvoiceRecord(
   const cleanCreatedAt = cleanAleoNumber(invoiceRecord.created_at);
   const cleanStatus = cleanAleoNumber(invoiceRecord.status);
 
-  return {
+  const partial: Partial<Invoice> = {
     id: cleanInvoiceId,
-    invoiceHash: invoice.invoiceHash, // Keep original hash
+    invoiceHash: invoice.invoiceHash,
     seller: invoiceRecord.seller as any,
     buyer: invoiceRecord.buyer as any,
     amount: BigInt(cleanAmount) as any,
@@ -204,9 +222,22 @@ export function updateInvoiceFromInvoiceRecord(
     currency: invoiceRecord.currency ? cleanAleoField(invoiceRecord.currency) as AleoField : invoice.currency,
     itemsHash: invoiceRecord.items_hash ? cleanAleoField(invoiceRecord.items_hash) as AleoField : invoice.itemsHash,
     memoHash: invoiceRecord.memo_hash ? cleanAleoField(invoiceRecord.memo_hash) as AleoField : invoice.memoHash,
-    nonce: invoice.nonce,       // Preserve local-only field
-    auditKey: invoice.auditKey  // Preserve local-only field
+    nonce: invoice.nonce,
+    auditKey: invoice.auditKey
   };
+  if (invoiceRecord.tax_tag != null && invoiceRecord.tax_tag !== '0field') {
+    partial.taxTag = cleanAleoField(invoiceRecord.tax_tag) as AleoField;
+  }
+  if (invoiceRecord.jct_registration != null && invoiceRecord.jct_registration !== '0field') {
+    partial.jctRegistration = cleanAleoField(invoiceRecord.jct_registration) as AleoField;
+  }
+  if (invoiceRecord.total_amount != null) {
+    partial.totalAmount = BigInt(cleanAleoNumber(invoiceRecord.total_amount)) as any;
+  }
+  if (invoiceRecord.currency_flag != null) {
+    partial.currencyFlag = invoiceRecord.currency_flag as CurrencyFlag;
+  }
+  return partial;
 }
 
 /**

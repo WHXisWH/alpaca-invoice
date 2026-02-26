@@ -1,5 +1,5 @@
-import { AleoField, Invoice } from "@/lib/types";
-import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
+import { Invoice } from "@/lib/types";
+import type { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 
 /**
  * 发票状态配置
@@ -90,4 +90,16 @@ export interface IInvoices {
 
   /** 检查发票是否正在同步（轮询中） */
   isInvoiceSyncing: (invoice: Invoice) => boolean;
+
+  // --- Wave 3 派生聚合数据（Dashboard）---
+  /** PENDING 进项发票总额 (Account Payable) */
+  totalAccountPayable: bigint;
+  /** 本月 PAID 发票总支付额 (Total Paid) */
+  totalPaidThisMonth: bigint;
+  /** tax_tag ≠ 0field 的已付发票可抵扣进项税额 (JCT Deductible) */
+  jctDeductibleAmount: bigint;
+  /** Credits vs USDCx 支付配比（资产饼图） */
+  currencyDistribution: { credits: bigint; usdcx: bigint };
+  /** 过去 6 个月进项/销项税额趋势 */
+  taxTrend: Array<{ month: string; inputTax: bigint; outputTax: bigint }>;
 }

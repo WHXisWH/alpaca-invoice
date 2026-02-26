@@ -6,8 +6,9 @@ import { useInvoiceActions } from './useInvoiceActions';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { getStatusConfig } from '@/lib/invoice';
 import { IInvoiceDetail } from './IInvoiceDetail';
-import { AleoField, InvoiceStatus } from '@/lib/types';
+import { AleoField, InvoiceStatus, CurrencyFlag } from '@/lib/types';
 import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
+import { ZERO_FIELD } from '@/lib/contract';
 
 /**
  * useInvoiceDetail Hook
@@ -66,12 +67,20 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     handleCancel
   } = useInvoiceActions(invoice);
 
+  const isJctInvoice = Boolean(
+    invoice?.taxTag != null && invoice.taxTag !== ZERO_FIELD
+  );
+  const isUsdcxInvoice = invoice?.currencyFlag === CurrencyFlag.USDCX;
+  const taxTag = invoice?.taxTag ?? null;
+  const jctRegistration = invoice?.jctRegistration ?? null;
+  const totalAmount = invoice?.totalAmount ?? invoice?.amount ?? null;
+  const taxGroups = invoice?.taxGroups ?? null;
+
   return {
     invoice,
     isLoadingInvoice,
     currentStatus: confirmationStatus,
-    isSyncing,  // Derived from global sendingInvoiceHashes
-    // isConfirmed: only true when confirmationStatus === 'CONFIRMED'
+    isSyncing,
     isConfirmed: confirmationStatus === 'CONFIRMED',
     userRole,
     statusConfig,
@@ -79,6 +88,12 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     isSyncingStatus,
     handlePay,
     handleCancel,
-    handleSyncStatus
+    handleSyncStatus,
+    isJctInvoice,
+    isUsdcxInvoice,
+    taxTag,
+    jctRegistration,
+    totalAmount,
+    taxGroups
   };
 }

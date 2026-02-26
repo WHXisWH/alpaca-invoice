@@ -5,7 +5,8 @@ import {
   EncryptedPayload,
   LineItem,
   ContractInvoiceHashParams,
-  InvoiceHashChainContext
+  InvoiceHashChainContext,
+  TaxGroups
 } from '@/lib/types';
 
 /** * Crypto error enum */
@@ -35,6 +36,11 @@ export interface AleoInvoiceRecord {
   items_hash: string;      // Hash/commitment of line items
   memo_hash: string;       // Optional memo hash (0field if unused)
   _nonce?: string;         // Record nonce (optional)
+  // Wave 3 optional (v3 InvoiceRecord)
+  tax_tag?: string;        // field; BHP256(TaxGroups); 0field = non-JCT
+  jct_registration?: string; // field; BHP256(T_number as u64)
+  total_amount?: string;   // u64
+  currency_flag?: number;  // u8: 0=Credits, 1=USDCx
 }
 
 /**
@@ -49,6 +55,8 @@ export interface AleoPaymentRecord {
   amount: string;          // Payment amount (microcredits)
   paid_at: number;         // Payment time (Unix timestamp)
   _nonce?: string;         // Record nonce (optional)
+  /** Wave 3: 结算锚点 = 合约 tx_id_hash（public），供审计 Step 2 回溯 invoice_tx_id mapping */
+  settlement_anchor?: string;  // field
 }
 
 /**
@@ -298,4 +306,36 @@ export interface ICryptoService {
     taxRateBps: bigint;
     invoiceHash: AleoField;
   }): Promise<{ rulesHash: AleoField; r1: boolean; r2: boolean; r3: boolean; r4: boolean; r5: boolean }>;
+
+  /**
+   * Wave 3: 在前端计算 BHP256::hash_to_field(TaxGroups)，结果作为合约的 tax_tag 输入
+   */
+  hashTaxGroups(groups: TaxGroups): Promise<AleoField>;
+
+  /**
+   * Wave 3: 将 13 位 T 号码字符串转为 u64 并计算 BHP256::hash_to_field，结果作为合约的 jct_registration 输入
+   */
+  hashTNumber(tNumber: string): Promise<AleoField>;
+
+  /**
+   * Wave 3: 将 TaxGroups 序列化为合约兼容的 Leo struct 字符串
+   */
+  serializeTaxGroupsForContract(groups: TaxGroups): string;
+
+  /**
+   * Wave 3: 本地执行 tax_tag 三项验证（A/B/C），与合约电路对齐
+   * A: group.net_sum * group.rate_bps / 10000 == group.tax_sum
+   * B: BHP256(TaxGroups) == tax_tag
+   * C: sum(net_sum + tax_sum) == total_amount
+   */
+  verifyTaxTag(params: {
+    taxGroups: TaxGroups;
+    taxTag: AleoField;
+    totalAmount: bigint;
+  }): Promise<{
+    a: { ok: boolean; detail?: string };
+    b: { ok: boolean; detail?: string };
+    c: { ok: boolean; detail?: string };
+    allPassed: boolean;
+  }>;
 }

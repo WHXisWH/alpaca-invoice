@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft } from 'lucide-react';
 import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
+import PaymentProgress from '@/components/payment-progress';
+import { CurrencyFlag } from '@/lib/types';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
@@ -400,6 +402,19 @@ export default function InvoiceDetailPage() {
           </div>
         )}
 
+        {/* Payment progress (Phase 1/2/3) when paying */}
+        {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && isProcessing && (
+          <div className="mt-4">
+            <PaymentProgress
+              currencyFlag={invoice.currencyFlag ?? CurrencyFlag.CREDITS}
+              approvalStatus="idle"
+              phase={2}
+              confirmationDepth={0}
+              isComplete={false}
+            />
+          </div>
+        )}
+
         {/* Action Buttons - Role-based */}
         {invoice.status === InvoiceStatus.PENDING && (
           <div className="flex gap-2 mt-4 pt-4 border-t border-amber-100">
@@ -409,7 +424,9 @@ export default function InvoiceDetailPage() {
                 disabled={isProcessing || !isConfirmed}
                 className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isProcessing ? 'Processing...' : '💳 Pay Invoice'}
+                {isProcessing
+                  ? 'Processing...'
+                  : (invoice.currencyFlag === CurrencyFlag.USDCX ? 'Approve & Pay' : '💳 Pay Invoice')}
               </button>
             )}
             {userRole === 'seller' && (

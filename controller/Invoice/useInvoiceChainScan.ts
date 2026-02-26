@@ -6,6 +6,9 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { AleoField, Invoice } from '@/lib/types';
+
+/** Chain-scanned Wave 3 InvoiceRecord (includes tax_tag, jct_registration, total_amount, currency_flag) */
+export type AleoInvoiceRecordV3 = AleoInvoiceRecord;
 import { parseSingleRecord } from '@/lib/recordParser';
 import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId, buildInvoiceFromRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
@@ -59,7 +62,7 @@ export function useInvoiceChainScan() {
     try {
       console.log('🔍 [scanAllInvoiceRecords] Scanning chain for all invoice records...');
       const response = await walletService.requestRecords(PROGRAM_ID);
-      const records: any[] = response.records || [];
+      const records: any[] = response?.records ?? [];
       console.log(`📋 [scanAllInvoiceRecords] Found ${records.length} records`);
 
       for (const record of records) {
@@ -149,7 +152,7 @@ export function useInvoiceChainScan() {
     try {
       console.log('🔍 [scanAllPaymentRecords] Scanning chain for all payment records...');
       const response = await walletService.requestRecords(PROGRAM_ID);
-      const records: any[] = response.records || [];
+      const records: any[] = response?.records ?? [];
       console.log(`📋 [scanAllPaymentRecords] Found ${records.length} records`);
 
       for (const record of records) {
@@ -198,7 +201,7 @@ export function useInvoiceChainScan() {
     try {
       console.log('🔍 [scanInvoiceRecord] Scanning for invoice:', invoiceHash);
       const response = await walletService.requestRecords(PROGRAM_ID);
-      const records: any[] = response.records || [];
+      const records: any[] = response?.records ?? [];
       console.log(`📋 [scanInvoiceRecord] Found ${records.length} records`);
 
       let latestInvoiceRecord: AleoInvoiceRecord | null = null;

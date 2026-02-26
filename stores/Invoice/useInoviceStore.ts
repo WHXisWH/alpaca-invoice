@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
-import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus } from '@/lib/types';
+import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus, CurrencyFlag, TaxGroups } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 
@@ -27,7 +27,8 @@ const INVOICE_TABLE = 'invoices';
 
 /**
  * Invoice storage data structure (format stored in IndexedDB)
- * Directly uses Invoice's basic fields without nesting in basicInfo
+ * Directly uses Invoice's basic fields without nesting in basicInfo.
+ * Wave 3: includes taxTag, jctRegistration, totalAmount, currencyFlag, taxGroups, tNumber.
  */
 interface InvoiceStorageData {
   // Invoice basic fields
@@ -47,6 +48,13 @@ interface InvoiceStorageData {
   itemsHash?: AleoField;
   memoHash?: AleoField;
   orderId?: AleoField;
+  // Wave 3 JCT
+  taxTag?: AleoField;
+  jctRegistration?: AleoField;
+  totalAmount?: bigint;
+  currencyFlag?: CurrencyFlag;
+  taxGroups?: TaxGroups;
+  tNumber?: string;
   // Encrypted details
   encryptedDetails: EncryptedPayload | null;
   // Metadata
@@ -83,7 +91,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           ? await getCryptoService().encryptPayload(invoice.details, masterKey)
           : null;
 
-        // Build storage data (directly using Invoice's basic fields + chain fields)
+        // Build storage data (directly using Invoice's basic fields + chain fields + Wave 3 JCT)
         const storageData: InvoiceStorageData = {
           id: invoice.id,
           invoiceHash: invoice.invoiceHash,
@@ -100,6 +108,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           itemsHash: invoice.itemsHash,
           memoHash: invoice.memoHash,
           orderId: invoice.orderId,
+          taxTag: invoice.taxTag,
+          jctRegistration: invoice.jctRegistration,
+          totalAmount: invoice.totalAmount,
+          currencyFlag: invoice.currencyFlag,
+          taxGroups: invoice.taxGroups,
+          tNumber: invoice.tNumber,
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: 'SENDING',
@@ -242,6 +256,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           ...(updatedInvoice.itemsHash !== undefined && { itemsHash: updatedInvoice.itemsHash }),
           ...(updatedInvoice.memoHash !== undefined && { memoHash: updatedInvoice.memoHash }),
           ...(updatedInvoice.orderId !== undefined && { orderId: updatedInvoice.orderId }),
+          ...(updatedInvoice.taxTag !== undefined && { taxTag: updatedInvoice.taxTag }),
+          ...(updatedInvoice.jctRegistration !== undefined && { jctRegistration: updatedInvoice.jctRegistration }),
+          ...(updatedInvoice.totalAmount !== undefined && { totalAmount: updatedInvoice.totalAmount }),
+          ...(updatedInvoice.currencyFlag !== undefined && { currencyFlag: updatedInvoice.currencyFlag }),
+          ...(updatedInvoice.taxGroups !== undefined && { taxGroups: updatedInvoice.taxGroups }),
+          ...(updatedInvoice.tNumber !== undefined && { tNumber: updatedInvoice.tNumber }),
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: finalMetadata.confirmationStatus,
@@ -372,7 +392,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         ? await getCryptoService().encryptPayload(updatedInvoiceFull.details, masterKey)
         : oldRecordData.encryptedDetails;
 
-      // 4. Build storage data
+      // 4. Build storage data (including Wave 3 JCT fields)
       const storageData: InvoiceStorageData = {
         id: newId,
         invoiceHash: updatedInvoiceFull.invoiceHash,
@@ -389,6 +409,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         itemsHash: updatedInvoiceFull.itemsHash ?? oldRecordData.itemsHash,
         memoHash: updatedInvoiceFull.memoHash ?? oldRecordData.memoHash,
         orderId: updatedInvoiceFull.orderId ?? oldRecordData.orderId,
+        taxTag: updatedInvoiceFull.taxTag ?? oldRecordData.taxTag,
+        jctRegistration: updatedInvoiceFull.jctRegistration ?? oldRecordData.jctRegistration,
+        totalAmount: updatedInvoiceFull.totalAmount ?? oldRecordData.totalAmount,
+        currencyFlag: updatedInvoiceFull.currencyFlag ?? oldRecordData.currencyFlag,
+        taxGroups: updatedInvoiceFull.taxGroups ?? oldRecordData.taxGroups,
+        tNumber: updatedInvoiceFull.tNumber ?? oldRecordData.tNumber,
         encryptedDetails: encryptedDetails,
         metadata: {
           confirmationStatus: finalMetadata.confirmationStatus,
@@ -490,7 +516,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (directly using stored fields, including metadata and chain fields)
+          // Build complete invoice object (including Wave 3 JCT fields)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -507,8 +533,14 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             itemsHash: dbRecord.itemsHash,
             memoHash: dbRecord.memoHash,
             orderId: dbRecord.orderId,
+            taxTag: dbRecord.taxTag,
+            jctRegistration: dbRecord.jctRegistration,
+            totalAmount: dbRecord.totalAmount,
+            currencyFlag: dbRecord.currencyFlag,
+            taxGroups: dbRecord.taxGroups,
+            tNumber: dbRecord.tNumber,
             details: details,
-            metadata: dbRecord.metadata  // Include metadata
+            metadata: dbRecord.metadata
           };
 
           // Update memory state
@@ -553,7 +585,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (directly using stored fields, including metadata and chain fields)
+          // Build complete invoice object (including Wave 3 JCT fields)
           const invoice: Invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -570,8 +602,14 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             itemsHash: dbRecord.itemsHash,
             memoHash: dbRecord.memoHash,
             orderId: dbRecord.orderId,
+            taxTag: dbRecord.taxTag,
+            jctRegistration: dbRecord.jctRegistration,
+            totalAmount: dbRecord.totalAmount,
+            currencyFlag: dbRecord.currencyFlag,
+            taxGroups: dbRecord.taxGroups,
+            tNumber: dbRecord.tNumber,
             details: details,
-            metadata: dbRecord.metadata  // Include metadata
+            metadata: dbRecord.metadata
           };
 
           invoices.push(invoice);
@@ -594,8 +632,14 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             itemsHash: dbRecord.itemsHash,
             memoHash: dbRecord.memoHash,
             orderId: dbRecord.orderId,
+            taxTag: dbRecord.taxTag,
+            jctRegistration: dbRecord.jctRegistration,
+            totalAmount: dbRecord.totalAmount,
+            currencyFlag: dbRecord.currencyFlag,
+            taxGroups: dbRecord.taxGroups,
+            tNumber: dbRecord.tNumber,
             details: undefined,
-            metadata: dbRecord.metadata  // Include metadata
+            metadata: dbRecord.metadata
           };
           invoices.push(invoice);
         }
@@ -676,7 +720,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               dataSource: 'local' as const
             };
 
-            // Build storage data (directly using Invoice's basic fields + chain fields; nonce/auditKey optional for chain-synced invoices)
+            // Build storage data (including Wave 3 JCT fields)
             const storageData: InvoiceStorageData = {
               id: invoice.id,
               invoiceHash: invoice.invoiceHash,
@@ -693,8 +737,14 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               itemsHash: invoice.itemsHash,
               memoHash: invoice.memoHash,
               orderId: invoice.orderId,
+              taxTag: invoice.taxTag,
+              jctRegistration: invoice.jctRegistration,
+              totalAmount: invoice.totalAmount,
+              currencyFlag: invoice.currencyFlag,
+              taxGroups: invoice.taxGroups,
+              tNumber: invoice.tNumber,
               encryptedDetails: encryptedDetails,
-              metadata: invoiceMetadata // Use the provided metadata
+              metadata: invoiceMetadata
             };
 
             dataList.push({
@@ -770,7 +820,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             ? await getCryptoService().decryptPayload(dbRecord.encryptedDetails, masterKey)
             : undefined;
 
-          // Build complete invoice object (including metadata and chain fields)
+          // Build complete invoice object (including Wave 3 JCT fields)
           invoice = {
             id: dbRecord.id,
             invoiceHash: dbRecord.invoiceHash,
@@ -787,6 +837,12 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             itemsHash: dbRecord.itemsHash,
             memoHash: dbRecord.memoHash,
             orderId: dbRecord.orderId,
+            taxTag: dbRecord.taxTag,
+            jctRegistration: dbRecord.jctRegistration,
+            totalAmount: dbRecord.totalAmount,
+            currencyFlag: dbRecord.currencyFlag,
+            taxGroups: dbRecord.taxGroups,
+            tNumber: dbRecord.tNumber,
             details: details,
             metadata: dbRecord.metadata
           };

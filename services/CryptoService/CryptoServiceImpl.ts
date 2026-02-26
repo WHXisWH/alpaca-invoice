@@ -4,12 +4,19 @@ import {
   EncryptedPayload,
   LineItem,
   ContractInvoiceHashParams,
-  InvoiceHashChainContext
+  InvoiceHashChainContext,
+  TaxGroups
 } from '@/lib/types';
 import { ICryptoService, CryptoError, AleoInvoiceRecord } from './ICryptoService';
 import { createServiceError } from '@/lib/service-errors';
 import { Buffer } from 'buffer';
 const RULE_TAGS = ['r1', 'r2', 'r3', 'r4', 'r5'] as const;
+
+let sdkPromise: Promise<typeof import('@provablehq/sdk')> | null = null;
+const loadSdk = async () => {
+  if (!sdkPromise) sdkPromise = import('@provablehq/sdk');
+  return sdkPromise;
+};
 
 /**
  * Aleo Field modulus (prime p)
@@ -875,6 +882,118 @@ export class CryptoService implements ICryptoService {
         { originalError: error }
       );
     }
+  }
+
+  /**
+   * Wave 3: 将 TaxGroups 序列化为合约兼容的 Leo struct 字符串
+   */
+  serializeTaxGroupsForContract(groups: TaxGroups): string {
+    const ga = groups.group_a;
+    const gb = groups.group_b;
+    return `{group_a: {rate_bps: ${ga.rate_bps}u32, net_sum: ${ga.net_sum}u64, tax_sum: ${ga.tax_sum}u64}, group_b: {rate_bps: ${gb.rate_bps}u32, net_sum: ${gb.net_sum}u64, tax_sum: ${gb.tax_sum}u64}}`;
+  }
+
+  /**
+   * Wave 3: BHP256::hash_to_field(TaxGroups) 用于 tax_tag
+   */
+  async hashTaxGroups(groups: TaxGroups): Promise<AleoField> {
+    try {
+      const sdk = await loadSdk();
+      const literal = this.serializeTaxGroupsForContract(groups);
+      const pt = (sdk as any).Plaintext.fromString(literal);
+      const bits = pt.toBitsLe();
+      const hash = new sdk.BHP256().hash(bits).toString();
+      return (hash.endsWith('field') ? hash : `${hash}field`) as AleoField;
+    } catch (error: any) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to compute hashTaxGroups (BHP256)',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Wave 3: 13 位 T 号码 → u64 → BHP256::hash_to_field 用于 jct_registration
+   */
+  async hashTNumber(tNumber: string): Promise<AleoField> {
+    const trimmed = String(tNumber).trim();
+    if (!/^\d{13}$/.test(trimmed)) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'tNumber must be exactly 13 digits',
+        { tNumber: trimmed }
+      );
+    }
+    const u64Val = BigInt(trimmed);
+    if (u64Val > BigInt('18446744073709551615')) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'tNumber exceeds u64 range',
+        { tNumber: trimmed }
+      );
+    }
+    try {
+      const sdk = await loadSdk();
+      const literal = `${u64Val}u64`;
+      const pt = (sdk as any).Plaintext.fromString(literal);
+      const bits = pt.toBitsLe();
+      const hash = new sdk.BHP256().hash(bits).toString();
+      return (hash.endsWith('field') ? hash : `${hash}field`) as AleoField;
+    } catch (error: any) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to compute hashTNumber (BHP256)',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Wave 3: 本地 tax_tag 三项验证（A/B/C）
+   */
+  async verifyTaxTag(params: {
+    taxGroups: TaxGroups;
+    taxTag: AleoField;
+    totalAmount: bigint;
+  }): Promise<{
+    a: { ok: boolean; detail?: string };
+    b: { ok: boolean; detail?: string };
+    c: { ok: boolean; detail?: string };
+    allPassed: boolean;
+  }> {
+    const { taxGroups, taxTag, totalAmount } = params;
+    const aChecks: string[] = [];
+    for (const [name, g] of [['group_a', taxGroups.group_a], ['group_b', taxGroups.group_b]] as const) {
+      const expected = (g.net_sum * BigInt(g.rate_bps)) / 10000n;
+      const ok = g.tax_sum === expected;
+      if (!ok) aChecks.push(`${name}: expected tax_sum=${expected}, got ${g.tax_sum}`);
+    }
+    const a = { ok: aChecks.length === 0, detail: aChecks.length ? aChecks.join('; ') : undefined };
+
+    const computedTag = await this.hashTaxGroups(taxGroups);
+    const b = {
+      ok: this.normalizeField(computedTag) === this.normalizeField(taxTag),
+      detail: undefined as string | undefined
+    };
+    if (!b.ok) b.detail = 'BHP256(TaxGroups) does not match tax_tag';
+
+    const sum =
+      taxGroups.group_a.net_sum +
+      taxGroups.group_a.tax_sum +
+      taxGroups.group_b.net_sum +
+      taxGroups.group_b.tax_sum;
+    const c = {
+      ok: sum === totalAmount,
+      detail: sum === totalAmount ? undefined : `sum(net_sum+tax_sum)=${sum} !== total_amount=${totalAmount}`
+    };
+
+    return {
+      a,
+      b,
+      c,
+      allPassed: a.ok && b.ok && c.ok
+    };
   }
 
   /**

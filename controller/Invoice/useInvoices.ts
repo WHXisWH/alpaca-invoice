@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
+import { AleoField, Invoice, InvoiceStatus, CurrencyFlag } from '@/lib/types';
 import { IInvoices, InvoiceWithRole } from './IInvoices';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { updateInvoiceFromPaymentRecord, updateInvoiceFromInvoiceRecord, buildInvoiceFromRecord, cleanAleoField } from '@/lib/invoice';
@@ -357,6 +357,76 @@ export function useInvoices(): IInvoices {
     return !isLoading && invoices.length >= 0;
   }, [isLoading, invoices.length]);
 
+  // Wave 3 派生聚合数据（Dashboard）
+  const totalAccountPayable = useMemo(() => {
+    return receivedInvoices
+      .filter((item) => item.invoice.status === InvoiceStatus.PENDING)
+      .reduce((sum, item) => sum + (item.invoice.totalAmount ?? item.invoice.amount), 0n);
+  }, [receivedInvoices]);
+
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth();
+
+  const totalPaidThisMonth = useMemo(() => {
+    return complete
+      .filter((item) => {
+        const d = item.invoice.metadata?.lastUpdated ?? item.invoice.createdAt;
+        return d.getFullYear() === thisYear && d.getMonth() === thisMonth;
+      })
+      .reduce((sum, item) => sum + (item.invoice.totalAmount ?? item.invoice.amount), 0n);
+  }, [complete, thisYear, thisMonth]);
+
+  const jctDeductibleAmount = useMemo(() => {
+    return complete
+      .filter((item) => {
+        const tag = item.invoice.taxTag;
+        return tag != null && tag !== '0field' && tag !== '';
+      })
+      .reduce((sum, item) => sum + (item.invoice.taxAmount ?? 0n), 0n);
+  }, [complete]);
+
+  const currencyDistribution = useMemo(() => {
+    let credits = 0n;
+    let usdcx = 0n;
+    complete.forEach((item) => {
+      const amt = item.invoice.totalAmount ?? item.invoice.amount;
+      if (item.invoice.currencyFlag === CurrencyFlag.USDCX) usdcx += amt;
+      else credits += amt;
+    });
+    return { credits, usdcx };
+  }, [complete]);
+
+  const taxTrend = useMemo(() => {
+    const months: Array<{ month: string; inputTax: bigint; outputTax: bigint }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(thisYear, thisMonth - i, 1);
+      const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      let inputTax = 0n;
+      let outputTax = 0n;
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      receivedInvoices
+        .filter((item) => item.invoice.status === InvoiceStatus.PAID)
+        .forEach((item) => {
+          const date = item.invoice.metadata?.lastUpdated ?? item.invoice.createdAt;
+          if (date.getFullYear() === y && date.getMonth() === m) {
+            inputTax += item.invoice.taxAmount ?? 0n;
+          }
+        });
+      sentInvoices
+        .filter((item) => item.invoice.status === InvoiceStatus.PAID)
+        .forEach((item) => {
+          const date = item.invoice.metadata?.lastUpdated ?? item.invoice.createdAt;
+          if (date.getFullYear() === y && date.getMonth() === m) {
+            outputTax += item.invoice.taxAmount ?? 0n;
+          }
+        });
+      months.push({ month: monthStr, inputTax, outputTax });
+    }
+    return months;
+  }, [receivedInvoices, sentInvoices, thisYear, thisMonth]);
+
   return {
     // Data
     filteredInvoices,
@@ -380,6 +450,11 @@ export function useInvoices(): IInvoices {
     handlePay,
     handleCancel,
     isInvoiceProcessing,
-    isInvoiceSyncing
+    isInvoiceSyncing,
+    totalAccountPayable,
+    totalPaidThisMonth,
+    jctDeductibleAmount,
+    currencyDistribution,
+    taxTrend
   };
 }

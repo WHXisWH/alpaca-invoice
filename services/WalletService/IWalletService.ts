@@ -1,3 +1,4 @@
+import type { AleoTransactionId } from '@/lib/types';
 import { createServiceError } from '@/lib/service-errors';
 
 /**
@@ -102,4 +103,19 @@ export interface IWalletService {
    * @returns Transaction status string
    */
   transactionStatus?(transactionId: string): Promise<string>;
+
+  /**
+   * Wave 3: 序列化提交两笔连续 TX（Approve + Pay）.
+   * 若钱包适配器支持批量签名可一次弹窗；否则串行触发两次 requestTransaction。
+   * @param txList 按顺序执行的 TX 参数数组（最多 2 个）
+   * @returns 按顺序返回各 TX 的 transactionId
+   */
+  requestSequentialTransactions?(
+    txList: Array<{
+      programId: string;
+      functionName: string;
+      inputs: string[];
+      fee: number;
+    }>
+  ): Promise<AleoTransactionId[]>;
 }

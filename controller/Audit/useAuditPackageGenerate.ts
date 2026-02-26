@@ -4,13 +4,16 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import type { AleoAddress, AleoField, Invoice } from '@/lib/types';
-import type { AuditPackageEnvelope } from '@/types/audit-package';
+import type { AuditPackageEnvelope, AuditPackageEnvelopeV3 } from '@/types/audit-package';
+import type { GenerateAuditPackageResultV3 } from '@/services/AuditService/IAuditService';
 import { AuditService } from '@/services/AuditService/AuditServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { DEFAULT_FIELDS, AUDIT_FIELDS_LIST, getDefaultAuditExpiresAt } from './auditConstants';
 import { fieldsToPermissions, buildScopesBitmask } from './auditHelpers';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
+import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
+import { InvoiceStatus } from '@/lib/types';
 
 /**
  * Audit Package Generate Controller
@@ -38,7 +41,13 @@ export function useAuditPackageGenerate() {
   const [generatedFields, setGeneratedFields] = useState<string[]>([]);
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
+  // Wave 3: role-based multi-record
+  const [role, setRoleState] = useState<'buyer' | 'seller' | null>(null);
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
+  const [v3Result, setV3Result] = useState<GenerateAuditPackageResultV3 | null>(null);
+  const [tNumberHint, setTNumberHint] = useState('');
   const { executeSetAuditAuthorization } = useTransactionController();
+  const { scanAllPaymentRecords, scanAllInvoiceRecords } = useInvoiceChainScan();
 
   const walletService = useMemo(
     () => (wallet ? new WalletService(createWalletAdapter(wallet)) : null),
@@ -65,11 +74,12 @@ export function useAuditPackageGenerate() {
   );
 
   const copyAuditKey = useCallback(() => {
-    if (!result?.auditKey) return;
-    navigator.clipboard.writeText(result.auditKey);
+    const key = v3Result?.auditKey ?? result?.auditKey;
+    if (!key) return;
+    navigator.clipboard.writeText(key);
     setKeyCopied(true);
     setTimeout(() => setKeyCopied(false), 2000);
-  }, [result?.auditKey]);
+  }, [result?.auditKey, v3Result?.auditKey]);
 
   const downloadPackage = useCallback(
     (envelope: AuditPackageEnvelope, id: string) => {
@@ -113,9 +123,176 @@ export function useAuditPackageGenerate() {
   }, []);
 
   const downloadResult = useCallback(() => {
+    if (v3Result) {
+      const blob = new Blob([JSON.stringify(v3Result.envelope, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-package-v3-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
     if (!result) return;
     downloadPackage(result.envelope, result.envelope.context.invoice_id);
-  }, [result, downloadPackage]);
+  }, [result, v3Result, downloadPackage]);
+
+  const setRole = useCallback((r: 'buyer' | 'seller') => {
+    setRoleState(r);
+    setSelectedRecordIds(new Set());
+    setV3Result(null);
+  }, []);
+
+  const loadAvailableRecords = useCallback(async (r: 'buyer' | 'seller') => {
+    const list = await getAllInvoices({ refreshMemory: true });
+    if (r === 'buyer') {
+      const paymentMap = await scanAllPaymentRecords();
+      return list
+        .filter((inv) => paymentMap.has(inv.id))
+        .map((inv) => {
+          const rec = paymentMap.get(inv.id)!;
+          const amt = String(rec.amount).replace(/u64$/i, '');
+          return {
+            id: inv.id,
+            amount: BigInt(amt || 0),
+            paidAt: new Date(typeof rec.paid_at === 'number' ? rec.paid_at * 1000 : Number(rec.paid_at) * 1000),
+            status: undefined as InvoiceStatus | undefined
+          };
+        });
+    }
+    return list
+      .filter((inv) => inv.status === InvoiceStatus.PAID)
+      .map((inv) => ({
+        id: inv.id,
+        amount: inv.totalAmount ?? inv.amount,
+        paidAt: undefined as Date | undefined,
+        status: inv.status
+      }));
+  }, [getAllInvoices, scanAllPaymentRecords]);
+
+  const [availableRecordsList, setAvailableRecordsList] = useState<Array<{ id: AleoField; amount: bigint; paidAt?: Date; status?: InvoiceStatus }>>([]);
+  useEffect(() => {
+    if (!role) {
+      setAvailableRecordsList([]);
+      return;
+    }
+    loadAvailableRecords(role).then(setAvailableRecordsList);
+  }, [role, loadAvailableRecords]);
+
+  const availableRecords = useMemo(
+    () =>
+      availableRecordsList.map((r) => ({
+        ...r,
+        selected: selectedRecordIds.has(r.id)
+      })),
+    [availableRecordsList, selectedRecordIds]
+  );
+
+  const toggleRecord = useCallback((id: AleoField) => {
+    setSelectedRecordIds((prev) => {
+      const next = new Set(prev);
+      const k = String(id);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelectedRecordIds(new Set(availableRecordsList.map((r) => r.id as string)));
+  }, [availableRecordsList]);
+
+  const deselectAll = useCallback(() => setSelectedRecordIds(new Set()), []);
+
+  const selectionSummary = useMemo(() => {
+    let totalAmount = 0n;
+    let totalTax = 0n;
+    const selected = availableRecordsList.filter((r) => selectedRecordIds.has(r.id));
+    for (const r of selected) {
+      totalAmount += r.amount;
+      if (role === 'seller') {
+        const list = useInvoiceStore.getState().invoices;
+        const full = list.find((i: Invoice) => i.id === r.id);
+        if (full?.taxGroups) {
+          totalTax += full.taxGroups.group_a.tax_sum + full.taxGroups.group_b.tax_sum;
+        }
+      }
+    }
+    return { count: selected.length, totalAmount, totalTax };
+  }, [availableRecordsList, selectedRecordIds, role]);
+
+  const expiresAtUnix = useMemo(
+    () => (typeof expiresAt === 'string' ? new Date(expiresAt).getTime() / 1000 : Math.floor(Number(expiresAt) / 1000)),
+    [expiresAt]
+  );
+
+  const setExpiresAtUnix = useCallback((ts: number) => {
+    setExpiresAt(new Date(ts * 1000).toISOString().split('T')[0]);
+  }, []);
+
+  const generateV3FromSelection = useCallback(async () => {
+    if (!role || selectedRecordIds.size === 0 || !auditService) return;
+    setLoading(true);
+    setV3Result(null);
+    try {
+      const list = await getAllInvoices({ masterKey: masterKey ?? undefined, refreshMemory: false });
+      const receipts = role === 'buyer' ? await scanAllPaymentRecords() : new Map<string, any>();
+      const records = Array.from(selectedRecordIds).map((invoiceIdStr) => {
+        const invoiceId = invoiceIdStr as AleoField;
+        const invoice = list.find((i) => i.id === invoiceId || i.invoiceHash === invoiceId);
+        const receipt = receipts.get(invoiceIdStr);
+        return {
+          invoiceId,
+          invoice: role === 'seller' ? invoice : undefined,
+          receipt: role === 'buyer' && receipt ? {
+            paymentId: (String(receipt.payment_id || '').replace(/field\.(private|public)$/i, 'field') || '0field') as AleoField,
+            invoiceId,
+            payer: receipt.payer as AleoAddress,
+            payee: receipt.payee as AleoAddress,
+            amount: BigInt(String(receipt.amount).replace(/u64$/i, '')),
+            paidAt: new Date(typeof receipt.paid_at === 'number' ? receipt.paid_at * 1000 : Number(receipt.paid_at) * 1000),
+            settlementAnchor: receipt.settlement_anchor
+              ? (String(receipt.settlement_anchor).replace(/field\.(private|public)$/i, 'field') as AleoField)
+              : undefined
+          } : undefined
+        };
+      });
+      const res = await auditService.generateV3({
+        role,
+        records,
+        expiresAt: expiresAtUnix,
+        permissions: fieldsToPermissions(fields),
+        tNumber: role === 'seller' && tNumberHint ? tNumberHint : undefined
+      });
+      setV3Result(res);
+    } catch (err: any) {
+      handleError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, selectedRecordIds, auditService, getAllInvoices, masterKey, scanAllPaymentRecords, expiresAtUnix, fields, tNumberHint, handleError]);
+
+  const submitOnChainAuthorization = useCallback(async () => {
+    if (!v3Result) return;
+    setSubmittingAuth(true);
+    try {
+      const firstInvoice = useInvoiceStore.getState().invoices.find((i: Invoice) =>
+        v3Result.envelope.context.invoice_ids.includes(i.id)
+      );
+      if (firstInvoice) {
+        await executeSetAuditAuthorization(
+          firstInvoice,
+          v3Result.envelope.context.audit_key_hash,
+          buildScopesBitmask(generatedFields.length ? generatedFields : DEFAULT_FIELDS),
+          v3Result.envelope.context.expires_at
+        );
+      }
+    } catch (err: any) {
+      handleError(err);
+    } finally {
+      setSubmittingAuth(false);
+    }
+  }, [v3Result, executeSetAuditAuthorization, generatedFields, handleError]);
 
   const generate = useCallback(
     async (opts: {
@@ -232,6 +409,20 @@ export function useAuditPackageGenerate() {
     copyAuditKey,
     handleSubmit,
     submitAuthorization,
-    submittingAuth
+    submittingAuth,
+    role,
+    setRole,
+    availableRecords,
+    loadAvailableRecords,
+    toggleRecord,
+    selectAll,
+    deselectAll,
+    selectionSummary,
+    expiresAtUnix,
+    setExpiresAtUnix,
+    generateV3FromSelection,
+    resultV3: v3Result,
+    submitOnChainAuthorization,
+    setTNumberHint
   };
 }
