@@ -1,6 +1,6 @@
-# zk_invoice_v2_2.aleo Test Suite
+# zk_invoice Test Suite
 
-Leo tests targeting the current program `zk_invoice_v2_2.aleo` (Wave2). Legacy v2 artifacts are kept for history only.
+- **v3**：`test_zk_invoice_v3_0.leo` 针对 `zk_invoice_v3_0.aleo`（Wave 3）。当前 Leo 3.4 下 `leo test` 可能因解释器问题无法跑通，可用 **`tests/inputs/v3/run_manual.sh`** 在项目根做一键手动验证。
 
 ## What’s Covered
 - **create_invoice**: happy path, min/max amount, buyer/seller guards, nonce uniqueness.
@@ -15,47 +15,29 @@ Leo tests targeting the current program `zk_invoice_v2_2.aleo` (Wave2). Legacy v
 ## Layout
 ```
 tests/
-├── README.md                  # You are here
-├── QUICK_REFERENCE.md         # Command cheatsheet
-├── TESTING_GUIDE.md           # Step-by-step how-to
-├── AUDIT_FLOW_TESTING.md      # UI + CLI audit package validation
-├── test_zk_invoice_v2_2.leo   # Current suite
-├── inputs/                    # Sample inputs for leo run
-└── validate_audit_package.mjs # Offline audit-package validator
+├── README.md                    # You are here
+├── test_zk_invoice_v3_0.leo     # v3 测试套件（当前 leo test 可能无法跑通，保留作用例文档）
+├── inputs/v3/
+│   ├── README.md                # v3 手动验证说明与命令行示例
+│   └── run_manual.sh            # 一键跑 create/cancel/pay 等（推荐）
+├── QUICK_REFERENCE.md
+├── TESTING_GUIDE.md
+├── AUDIT_FLOW_TESTING.md
+└── validate_audit_package.mjs
 ```
 
 ## How to Run
 
-### Option A: Leo CLI
+### 推荐：v3 一键手动验证
 ```bash
-# all tests for v2_2
-leo test -p test_zk_invoice_v2_2
-
-# single test
-leo test test_create_invoice_success -p test_zk_invoice_v2_2
-leo test test_set_audit_authorization -p test_zk_invoice_v2_2
+# 在项目根执行
+./tests/inputs/v3/run_manual.sh
 ```
+详见 `tests/inputs/v3/README.md`。
 
-### Option B: Script wrapper (invokes leo test under the hood)
+### 可选：Leo 测试（若当前 Leo 版本支持）
 ```bash
-./run_tests.sh          # full suite
-./run_tests.sh create_invoice
-./run_tests.sh mark_as_paid
-```
-
-### Option C: Manual spot checks (v2_2 signature)
-```bash
-leo run create_invoice <buyer>
-  <amount_u64> <tax_amount_u64> <due_ts_u32> <invoice_hash_field> <nonce_field>
-  <current_time_u32> <order_id_field> <currency_field> <items_hash_field> <memo_hash_field>
-  <line_items_sum_u64> <expected_total_u64> <tax_rate_bps_u64>
-
-leo run verify_invoice "{invoice_record}" <invoice_hash_field>
-leo run mark_as_paid "{buyer_invoice_record}" <payment_nonce_field> <paid_at_u32>
-leo run create_seller_receipt <invoice_id_field> <payer> <payee> <amount_u64> <payment_nonce_field>
-leo run cancel_invoice "{seller_invoice_record}"
-leo run verify_payment "{payment_record}" "{invoice_record}"
-leo run set_audit_authorization "{invoice_record}" <audit_key_hash_field> <scopes_bitmask_u64> <expires_at_u32> <current_time_u32>
+leo test -p test_zk_invoice_v3_0
 ```
 
 ## Test Data (defaults used in examples)
