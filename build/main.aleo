@@ -475,6 +475,44 @@ function compute_tax_tag_export:
 function get_caller:
     output self.caller as address.private;
 
+function make_jct_non_jct:
+    input r0 as u64.private;
+    input r1 as u8.private;
+    cast 0u64 0u64 0u64 into r2 as TaxGroup;
+    cast r2 r2 into r3 as TaxGroups;
+    cast r3 0field r0 0field r1 into r4 as CreateInvoiceJct;
+    output r4 as CreateInvoiceJct.private;
+
+function make_jct_jct:
+    input r0 as u64.private;
+    input r1 as u64.private;
+    input r2 as u64.private;
+    input r3 as u64.private;
+    input r4 as u64.private;
+    input r5 as u64.private;
+    input r6 as field.private;
+    input r7 as u64.private;
+    input r8 as field.private;
+    input r9 as u8.private;
+    cast r0 r1 r2 into r10 as TaxGroup;
+    cast r3 r4 r5 into r11 as TaxGroup;
+    cast r10 r11 into r12 as TaxGroups;
+    cast r12 r6 r7 r8 r9 into r13 as CreateInvoiceJct;
+    output r13 as CreateInvoiceJct.private;
+
+function compute_tax_tag_for_test:
+    input r0 as u64.private;
+    input r1 as u64.private;
+    input r2 as u64.private;
+    input r3 as u64.private;
+    input r4 as u64.private;
+    input r5 as u64.private;
+    cast r0 r1 r2 into r6 as TaxGroup;
+    cast r3 r4 r5 into r7 as TaxGroup;
+    cast r6 r7 into r8 as TaxGroups;
+    call compute_tax_tag r8 into r9;
+    output r9 as field.private;
+
 function get_invoice_tax_tag:
     input r0 as field.private;
     async get_invoice_tax_tag r0 into r1;

@@ -702,6 +702,45 @@ program zk_invoice_v3_0.aleo {
         return self.caller;
     }
 
+    // Test helpers: 供 tests/test_zk_invoice_v3_0.leo 构造 CreateInvoiceJct（外部程序不能直接创建本程序 struct）
+    transition make_jct_non_jct(total_amount: u64, currency_flag: u8) -> CreateInvoiceJct {
+        let zero: TaxGroup = TaxGroup { rate_bps: 0u64, net_sum: 0u64, tax_sum: 0u64 };
+        return CreateInvoiceJct {
+            tax_groups: TaxGroups { group_a: zero, group_b: zero },
+            tax_tag: 0field,
+            total_amount: total_amount,
+            jct_registration: 0field,
+            currency_flag: currency_flag
+        };
+    }
+    transition make_jct_jct(
+        ga_rate_bps: u64,
+        ga_net_sum: u64,
+        ga_tax_sum: u64,
+        gb_rate_bps: u64,
+        gb_net_sum: u64,
+        gb_tax_sum: u64,
+        tax_tag: field,
+        total_amount: u64,
+        jct_reg: field,
+        currency_flag: u8
+    ) -> CreateInvoiceJct {
+        let ga: TaxGroup = TaxGroup { rate_bps: ga_rate_bps, net_sum: ga_net_sum, tax_sum: ga_tax_sum };
+        let gb: TaxGroup = TaxGroup { rate_bps: gb_rate_bps, net_sum: gb_net_sum, tax_sum: gb_tax_sum };
+        return CreateInvoiceJct {
+            tax_groups: TaxGroups { group_a: ga, group_b: gb },
+            tax_tag: tax_tag,
+            total_amount: total_amount,
+            jct_registration: jct_reg,
+            currency_flag: currency_flag
+        };
+    }
+    transition compute_tax_tag_for_test(ga_rate_bps: u64, ga_net_sum: u64, ga_tax_sum: u64, gb_rate_bps: u64, gb_net_sum: u64, gb_tax_sum: u64) -> field {
+        let ga: TaxGroup = TaxGroup { rate_bps: ga_rate_bps, net_sum: ga_net_sum, tax_sum: ga_tax_sum };
+        let gb: TaxGroup = TaxGroup { rate_bps: gb_rate_bps, net_sum: gb_net_sum, tax_sum: gb_tax_sum };
+        return compute_tax_tag(TaxGroups { group_a: ga, group_b: gb });
+    }
+
     // ========= Getters for Wave 3 mappings (read via finalize caches) =========
     async transition get_invoice_tax_tag(invoice_id: field) -> Future {
         return finalize_get_invoice_tax_tag(invoice_id);
