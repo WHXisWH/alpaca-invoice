@@ -1,11 +1,11 @@
 // zk_invoice_v3_0.aleo — Wave 3: JCT compliance, tax_tag, atomic settlement (Credits + USDCx)
 //
-// 依赖：program.json 声明 credits.aleo、usdcx_stablecoin.aleo (location: "network").
+// 依赖：program.json 声明 credits.aleo、usdcx_test_alpaca_v1.aleo (local for build; network after deploy).
 // - pay_invoice_public: credits.aleo/transfer_public_as_signer，返回 Future 在 async function 中 await 后 finalize.
-// - pay_invoice_usdcx: usdcx_stablecoin.aleo/transfer_from_public(owner, recipient, amount)；Approve 由前端独立 TX 完成.
+// - pay_invoice_usdcx: usdcx_test_alpaca_v1.aleo/transfer_from_public(owner, recipient, amount)；Approve 由前端独立 TX 完成。
 
 import credits.aleo;
-import usdcx_stablecoin.aleo;
+import usdcx_test_alpaca_v1.aleo;
 
 program zk_invoice_v3_0.aleo {
 
@@ -517,7 +517,7 @@ program zk_invoice_v3_0.aleo {
         assert(paid_at <= invoice.due_date);
         assert(invoice.total_amount > 0u64);
 
-        let transfer_future: Future = usdcx_stablecoin.aleo/transfer_from_public(invoice.buyer, invoice.seller, invoice.total_amount);
+        let transfer_future: Future = usdcx_test_alpaca_v1.aleo/transfer_from_public(invoice.buyer, invoice.seller, invoice.total_amount);
 
         let payment_id: field = BHP256::hash_to_field(invoice.invoice_id);
 

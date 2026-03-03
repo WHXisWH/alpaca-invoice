@@ -1,5 +1,5 @@
 import credits.aleo;
-import usdcx_stablecoin.aleo;
+import usdcx_test_alpaca_v1.aleo;
 program zk_invoice_v3_0.aleo;
 
 record InvoiceRecord:
@@ -385,7 +385,7 @@ function pay_invoice_usdcx:
     assert.eq r4 true;
     gt r0.total_amount 0u64 into r5;
     assert.eq r5 true;
-    call usdcx_stablecoin.aleo/transfer_from_public r0.buyer r0.seller r0.total_amount into r6;
+    call usdcx_test_alpaca_v1.aleo/transfer_from_public r0.buyer r0.seller r0.total_amount into r6;
     hash.bhp256 r0.invoice_id into r7 as field;
     cast self.caller r7 r0.invoice_id self.caller r0.seller r0.total_amount r2 r3 into r8 as PaymentRecord.record;
     cast self.caller r0.invoice_id r0.seller r0.buyer r0.amount r0.tax_amount r0.invoice_hash r0.due_date r0.created_at 1u8 r0.order_id r0.currency r0.items_hash r0.memo_hash r0.tax_tag r0.jct_registration r0.total_amount r0.currency_flag into r9 as InvoiceRecord.record;
@@ -399,7 +399,7 @@ function pay_invoice_usdcx:
 finalize pay_invoice_usdcx:
     input r0 as field.public;
     input r1 as field.public;
-    input r2 as usdcx_stablecoin.aleo/transfer_from_public.future;
+    input r2 as usdcx_test_alpaca_v1.aleo/transfer_from_public.future;
     await r2;
     set 1u8 into invoice_status[r0];
     set r0 into invoice_tx_id[r1];
