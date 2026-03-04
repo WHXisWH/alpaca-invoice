@@ -68,7 +68,7 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
   private readonly counterCache = new Map<string, { ts: number; value: bigint | null }>();
   private readonly taxTagCache = new Map<string, { ts: number; value: AleoField | null }>();
   private readonly jctRegCache = new Map<string, { ts: number; value: AleoField | null }>();
-  private readonly txIdCache = new Map<string, { ts: number; value: AleoField | null }>();
+  private readonly paymentCommitmentCache = new Map<string, { ts: number; value: AleoField | null }>();
 
   constructor(reader: IProgramMappingReader) {
     this.reader = reader;
@@ -118,21 +118,25 @@ export class InvoiceRegistryServiceImpl implements IInvoiceRegistryService {
   }
 
   /**
-   * invoice_tx_id mapping: key = settlement_anchor (tx_id_hash), value = invoice_id.
-   * 供审计 Step 2 用 settlement_anchor 回溯得到 invoice_id。
+   * payment_commitments mapping: key = settlement_anchor (commitment hash), value = invoice_id.
+   * Used in audit Step 2 to resolve invoice_id from settlement_anchor.
    */
-  async getInvoiceTxId(settlementAnchor: AleoField): Promise<AleoField | null> {
-    const key = `tx_id-${settlementAnchor}`;
-    const cached = this.txIdCache.get(key);
+  async getPaymentCommitment(settlementAnchor: AleoField): Promise<AleoField | null> {
+    const key = `payment_commit-${settlementAnchor}`;
+    const cached = this.paymentCommitmentCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.value;
-    const raw = await this.reader.getProgramMappingValue(PROGRAM_ID, MAPPINGS.invoice_tx_id, settlementAnchor);
+    const raw = await this.reader.getProgramMappingValue(
+      PROGRAM_ID,
+      MAPPINGS.payment_commitments,
+      settlementAnchor
+    );
     if (raw == null) {
-      this.txIdCache.set(key, { ts: Date.now(), value: null });
+      this.paymentCommitmentCache.set(key, { ts: Date.now(), value: null });
       return null;
     }
     const v = String(raw).replace(/^["']|["']$/g, '').trim();
     const val = (v === '0field' || v === '') ? null : (v.endsWith('field') ? v : `${v}field`) as AleoField;
-    this.txIdCache.set(key, { ts: Date.now(), value: val });
+    this.paymentCommitmentCache.set(key, { ts: Date.now(), value: val });
     return val;
   }
 

@@ -1,4 +1,4 @@
-# Test Quick Reference (zk_invoice_v2_2.aleo)
+# Test Quick Reference (zk_invoice_v3_1.aleo)
 
 One-page cheat sheet for the current Wave2 contract.
 

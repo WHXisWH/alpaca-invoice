@@ -1,9 +1,14 @@
 'use client';
 
-import { WalletProvider } from '@demox-labs/aleo-wallet-adapter-react';
-import { WalletModalProvider } from '@demox-labs/aleo-wallet-adapter-reactui';
-import { LeoWalletAdapter } from '@demox-labs/aleo-wallet-adapter-leo';
-import { DecryptPermission } from '@demox-labs/aleo-wallet-adapter-base';
+import { AleoWalletProvider } from '@provablehq/aleo-wallet-adaptor-react';
+import { WalletModalProvider } from '@provablehq/aleo-wallet-adaptor-react-ui';
+import { LeoWalletAdapter } from '@provablehq/aleo-wallet-adaptor-leo';
+import { PuzzleWalletAdapter } from '@provablehq/aleo-wallet-adaptor-puzzle';
+// Patched to add timeout + logging; avoids无限 connecting when extension不回应
+import ShieldWalletAdapterPatched from '@/lib/wallet/ShieldWalletAdapterPatched';
+import { FoxWalletAdapter } from '@provablehq/aleo-wallet-adaptor-fox';
+import { DecryptPermission } from '@provablehq/aleo-wallet-adaptor-core';
+import { Network } from '@provablehq/aleo-types';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { getNetworkFromEnv } from '@/lib/network';
@@ -21,26 +26,32 @@ type Props = {
  * When the user switches networks in the wallet extension, a disconnect event is triggered
  */
 export default function Providers({ children }: Props) {
+  const network = useMemo<Network>(() => getNetworkFromEnv(), []);
+  const programs = useMemo(() => [CREDITS_PROGRAM_ID, PROGRAM_ID, LEGACY_PROGRAM_ID], []);
+
   const wallets = useMemo(
     () => [
-      new LeoWalletAdapter({
-        appName: 'ZK Invoice'
-      })
+      new ShieldWalletAdapterPatched({ appName: 'ZK Invoice', network, programs }),
+      new PuzzleWalletAdapter({ appName: 'ZK Invoice' }),
+      new LeoWalletAdapter({ appName: 'ZK Invoice' }),
+      new FoxWalletAdapter({ appName: 'ZK Invoice' })
     ],
-    []
+    [network, programs]
   );
-
-  const network = useMemo(() => getNetworkFromEnv(), []);
   
   return (
-    <WalletProvider
+    <AleoWalletProvider
       wallets={wallets}
       decryptPermission={DecryptPermission.OnChainHistory}
       network={network}
-      programs={[CREDITS_PROGRAM_ID, PROGRAM_ID, LEGACY_PROGRAM_ID]}
-      autoConnect
+      programs={programs}
+      autoConnect={false}
+      localStorageKey="zk-invoice-wallet"
+      onError={(err) => {
+        console.error('❌ [AleoWalletProvider] error', err);
+      }}
     >
       <WalletModalProvider>{children}</WalletModalProvider>
-    </WalletProvider>
+    </AleoWalletProvider>
   );
 }

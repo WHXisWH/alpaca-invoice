@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
+import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
 import {
   getOnboardingState,
   resetOnboarding,

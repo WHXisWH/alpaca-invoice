@@ -32,7 +32,7 @@ const steps = [
     icon: CreditCard,
     title: '3. Pay an Invoice',
     description:
-      'Open a received invoice from the "Invoices" page. Review details and click "Pay". Payment is a two-step process: first transfers credits via credits.aleo/transfer_private, then marks the invoice as paid on zk_invoice_v2_2.aleo, generating a PaymentRecord for both parties.',
+      'Open a received invoice from the "Invoices" page. Review details and click "Pay". Payment is a single-step private payment via zk_invoice_v3_1.aleo/pay_invoice_credits_private (credits transfer + invoice state + settlement commitment), generating a PaymentRecord for both parties.',
   },
   {
     icon: ShieldCheck,
@@ -59,7 +59,7 @@ const faqs = [
     icon: Globe,
     question: 'Which network does this run on?',
     answer:
-      'Aleo Testnet only. Current program: zk_invoice_v2_2.aleo (tx at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78). Testnet credits have no real monetary value.',
+      'Aleo Testnet only. Current program: zk_invoice_v3_1.aleo (tx at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp). Testnet credits have no real monetary value.',
   },
   {
     icon: Monitor,

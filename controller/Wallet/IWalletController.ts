@@ -6,11 +6,10 @@ export interface IWalletController {
   address: AleoAddress | null;
   publicBalance: string;  // Converted from Microcredits to readable string (e.g. "10.50")
   privateBalance: string; // Same as above
-  isConnecting: boolean;
   networkChanged: boolean; // Indicates whether wallet has disconnected (possibly due to network switch)
 
   // --- Business methods ---
-  /** Logic: Call WalletService.connect -> on success trigger syncBalances */
+  /** Logic: Trigger wallet modal (WalletMultiButton handles actual connect) */
   handleConnect(): Promise<void>;
 
   /** Logic: Clear all local Stores -> Call WalletService.disconnect */

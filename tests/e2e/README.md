@@ -1,6 +1,6 @@
 # E2E Test Plan (manual)
 
-Scope: zk_invoice_v2_2.aleo (testnet)
+Scope: zk_invoice_v3_1.aleo (testnet)
 
 ## Happy Path
 1) Create invoice (seller)
@@ -27,5 +27,5 @@ Scope: zk_invoice_v2_2.aleo (testnet)
    - Tamper commitments_root, expect assertCommitment failure.
 
 ## Notes
-- Use deployed program `zk_invoice_v2_2.aleo` testnet.
+- Use deployed program `zk_invoice_v3_1.aleo` testnet.
 - Requires two wallet addresses for buyer/seller; can reuse same wallet for partial tests where role check allows.

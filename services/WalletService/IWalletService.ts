@@ -31,7 +31,7 @@ export interface RequestTransactionParams {
   inputs: string[];
   /** Wallet public key address */
   publicKey: string;
-  /** Program ID (defaults to "zk_invoice_v2_2.aleo") */
+  /** Program ID (defaults to "zk_invoice_v3_1.aleo") */
   programId?: string;
   /** Optional fee Record (if not provided, wallet will auto-select) */
   feeRecord?: string;
@@ -105,10 +105,10 @@ export interface IWalletService {
   transactionStatus?(transactionId: string): Promise<string>;
 
   /**
-   * Wave 3: 序列化提交两笔连续 TX（Approve + Pay）.
-   * 若钱包适配器支持批量签名可一次弹窗；否则串行触发两次 requestTransaction。
-   * @param txList 按顺序执行的 TX 参数数组（最多 2 个）
-   * @returns 按顺序返回各 TX 的 transactionId
+   * Wave 3: submit two sequential TXs (Approve + Pay).
+   * If the adapter supports batch signing, one popup is enough; otherwise two requestTransaction calls are triggered sequentially.
+   * @param txList TX parameter array executed in order (max 2)
+   * @returns transactionId for each TX in the same order
    */
   requestSequentialTransactions?(
     txList: Array<{

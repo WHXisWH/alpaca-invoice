@@ -2,13 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from '../WalletServiceImpl';
 import { AleoAddress } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
-import type { WalletContextState } from '@demox-labs/aleo-wallet-adapter-react';
+import type { WalletContextState } from '@provablehq/aleo-wallet-adaptor-react';
 
 /**
  * WalletService Unit Tests
  *
  * Important notes:
- * 1. Mock objects are based on the real WalletContextState type (from @demox-labs/aleo-wallet-adapter-react)
+ * 1. Mock objects are based on the real WalletContextState type (from @provablehq/aleo-wallet-adaptor-react)
  * 2. This is consistent with the useWallet() return type used in useWalletController
  * 3. Some extension methods (e.g., requestViewKey, network) use (as any) because they may be wallet plugin extensions
  * 4. Such mocks are closer to real usage scenarios, improving test accuracy
@@ -22,19 +22,22 @@ describe('WalletService', () => {
     // Create a mock wallet instance based on the real WalletContextState type
     // This stays consistent with the type returned by the useWallet() hook
     mockWallet = {
-      publicKey: null,
+      address: null,
       connected: false,
       connecting: false,
       disconnecting: false,
+      reconnecting: false,
       wallet: null,
       wallets: [],
       autoConnect: false,
-      select: vi.fn(),
+      network: null,
+      selectWallet: vi.fn(),
       connect: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),
-      signMessage: vi.fn().mockResolvedValue('mock_signature_123456789'),
-      requestRecords: vi.fn().mockResolvedValue({ records: [] }),
-      requestRecordPlaintexts: vi.fn().mockResolvedValue({ records: [] }),
+      signMessage: vi.fn().mockResolvedValue(new TextEncoder().encode('mock_signature_123456789')),
+      requestRecords: vi.fn().mockResolvedValue([]),
+      executeTransaction: vi.fn(),
+      transactionStatus: vi.fn()
     };
 
     walletService = new WalletService(mockWallet as any);

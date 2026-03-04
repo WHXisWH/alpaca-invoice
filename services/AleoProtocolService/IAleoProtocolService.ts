@@ -44,7 +44,7 @@ export interface IAleoProtocolService {
 
   /**
    * Get all encrypted Records for a specified address under a specific program
-   * @param programId Program identifier (e.g., "zk_invoice_v2_2.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v3_1.aleo")
    * @param address User address
    * @param startHeight Starting scan height
    * @returns Array of raw ciphertext strings
@@ -59,7 +59,7 @@ export interface IAleoProtocolService {
   /**
    * Query on-chain program Mapping values (generic method)
    * Can query any Mapping of any program
-   * @param programId Program identifier (e.g., "zk_invoice_v2_2.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v3_1.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
    * @param key Mapping key (Field type)
    * @returns Mapping value (string format), or null if it does not exist
@@ -79,6 +79,16 @@ export interface IAleoProtocolService {
     buyer: AleoAddress;
     amount: Microcredits;
     dueDate: number;
+    nonce: AleoField;
+  }): Promise<AleoField>;
+
+  /**
+   * Wave 3: Compute settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce}) locally.
+   * Mirrors the contract's pay_invoice_credits_private commitment computation.
+   */
+  computeSettlementAnchorOffline(params: {
+    invoiceId: AleoField;
+    amount: Microcredits;
     nonce: AleoField;
   }): Promise<AleoField>;
 
@@ -133,7 +143,7 @@ export interface IAleoProtocolService {
   /**
    * Estimate execution fee (Microcredits)
    * Estimates by building an Authorization and using the SDK's estimateFeeForAuthorization
-   * @param programName Program name (e.g., "zk_invoice_v2_2.aleo")
+   * @param programName Program name (e.g., "zk_invoice_v3_1.aleo")
    * @param functionName Function name (e.g., "create_invoice")
    * @param inputs Array of function input parameters
    * @returns Estimated execution fee (Microcredits), with 20% buffer added
@@ -146,8 +156,8 @@ export interface IAleoProtocolService {
   ): Promise<Microcredits>;
 
   /**
-   * Return the expected number of outputs for a transition (Wave 3).
-   * pay_invoice_public and pay_invoice_usdcx each return 4 outputs: PaymentRecord, InvoiceRecord (buyer), InvoiceRecord (seller), Future.
+   * Return the expected number of outputs for a transition (Wave 3.1).
+   * pay_invoice_credits_private returns 6 outputs; pay_invoice_usdcx returns 7 outputs.
    */
   getExpectedOutputCountForFunction(functionName: string): number | undefined;
 
@@ -166,9 +176,9 @@ export interface IAleoProtocolService {
    * Verifies transaction confirmation by querying transaction details, and optionally verifies that the transaction contains the expected records
    * @param transactionId Transaction ID
    * @param options Optional verification options
-   * @param options.programId Program ID (e.g., "zk_invoice_v3_0.aleo"), used to verify the transaction belongs to this program
+   * @param options.programId Program ID (e.g., "zk_invoice_v3_1.aleo"), used to verify the transaction belongs to this program
    * @param options.functionName Function name (e.g., "create_invoice"), used to verify the function called by the transaction
-   * @param options.expectedOutputsCount Expected number of output records; for pay_invoice_public / pay_invoice_usdcx use getExpectedOutputCountForFunction (4)
+   * @param options.expectedOutputsCount Expected number of output records; for pay_invoice_credits_private use getExpectedOutputCountForFunction (6); pay_invoice_usdcx use 7
    * @returns Verification result object, including success status, transaction details, etc.
    * @throws {ProtocolServiceError} May throw NODE_CONNECTION_FAILED, TRANSACTION_REJECTED
    */

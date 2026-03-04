@@ -1,9 +1,9 @@
-# Gas / Fee Reference for zk_invoice_v2_2.aleo (testnet)
+# Gas / Fee Reference for zk_invoice_v3_1.aleo (testnet)
 
 Source: Leo deploy summary on 2026-02-12 to testnet.
 
-- Program ID: `zk_invoice_v2_2.aleo`
-- Deployment tx: `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`
+- Program ID: `zk_invoice_v3_1.aleo`
+- Deployment tx: `at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp`
 
 | Component              | Credits |
 |------------------------|---------|

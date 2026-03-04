@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
-import { LeoWalletAdapter } from '@demox-labs/aleo-wallet-adapter-leo';
+import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
+import { BaseAleoWalletAdapter } from '@provablehq/aleo-wallet-adaptor-core';
 import { IWalletController } from './IWalletController';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
@@ -26,7 +26,6 @@ import type { AleoAddress } from '@/lib/types';
  */
 export function useWalletController(): IWalletController {
   const wallet = useWallet();
-  const [isConnecting, setIsConnecting] = useState(false);
   const [networkChanged, setNetworkChanged] = useState(false);
   const [aleoProtocolService, setAleoProtocolService] = useState<AleoProtocolService | null>(null);
 
@@ -68,18 +67,59 @@ export function useWalletController(): IWalletController {
   }, []); // Only execute once on component mount
 
   /**
-   * Convert Microcredits (bigint) to a readable string
+   * Convert microcredits (bigint) to a readable string
    */
   const formatBalance = (microcredits: bigint): string => {
     const credits = Number(microcredits) / 1_000_000;
     return credits.toFixed(6);
   };
 
+  // Debug logging for wallet state (helps detect stuck "connecting")
+  useEffect(() => {
+    console.log('🔍 wallet state', {
+      name: wallet?.wallet?.adapter?.name,
+      readyState: wallet?.wallet?.readyState,
+      connected: wallet?.connected,
+      connecting: wallet?.connecting,
+      address: wallet?.address,
+      network: wallet?.wallet?.adapter?.network
+    });
+  }, [wallet?.wallet, wallet?.connected, wallet?.connecting, wallet?.address]);
+
+  // Log Shield/Fox/Leo availability once on client mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const { shield, leoWallet } = (window as any) || {};
+    console.log('🔍 wallet globals', {
+      hasShield: !!shield,
+      hasLeo: !!leoWallet,
+      ua: navigator.userAgent
+    });
+  }, []);
+
+  // Warn if连接长时间未完成，便于现场排查
+  useEffect(() => {
+    if (!wallet?.connecting) return;
+
+    const warnTimer = setTimeout(() => {
+      console.warn('⏱️ wallet still connecting after 8s', {
+        name: wallet?.wallet?.adapter?.name,
+        readyState: wallet?.wallet?.readyState,
+        network: wallet?.wallet?.adapter?.network,
+        address: wallet?.address,
+        hasWindowShield: typeof window !== 'undefined' ? !!(window as any)?.shield : 'ssr'
+      });
+    }, 8000);
+
+    return () => clearTimeout(warnTimer);
+  }, [wallet?.connecting, wallet?.wallet]);
+
+
   /**
-   * Sync balances (fetch public and private balances in parallel)
+   * Sync balances (public + private) in parallel
    */
   const syncBalances = useCallback(async () => {
-    if (!walletService || !publicKey || !aleoProtocolService) return;
+    if (!walletService || !wallet?.connected || !publicKey || !aleoProtocolService) return;
 
     try {
       // Fetch both balance types in parallel
@@ -98,39 +138,16 @@ export function useWalletController(): IWalletController {
    * Handle wallet connection
    */
   const handleConnect = useCallback(async () => {
-    if (!walletService) {
-      handleError(new WalletServiceError(
-        WalletError.NOT_INSTALLED,
-        'Wallet service not initialized'
-      ));
-      return;
-    }
-
-    setIsConnecting(true);
-    setNetworkChanged(false); // Reset network change flag
-
-    try {
-      // 1. Call Service layer to connect wallet
-      // Leo Wallet automatically detects and prompts user to switch to the network configured in WalletProvider
-      await walletService.connect();
-      // Address and connection state are updated by useEffect monitoring wallet state
-      console.log('✅ Wallet connect() called, waiting for wallet state update...');
-    } catch (error: any) {
-      // Use unified error handling
-      handleError(error);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [walletService, handleError]);
+    // WalletMultiButton opens the modal and triggers connect inside the adapter.
+    // Avoid auto-connect here to prevent browsers from blocking the extension popup.
+    console.log('🔍 handleConnect: WalletMultiButton will manage selection & connect');
+  }, []);
 
   /**
    * Handle logout
    */
   const handleLogout = useCallback(async () => {
     if (!walletService) return;
-
-    // Reset connection state
-    setIsConnecting(false);
 
     try {
       // 1. Clear Store
@@ -146,19 +163,17 @@ export function useWalletController(): IWalletController {
   }, [walletService, clearUser]);
 
   /**
-   * Listen for wallet events
-   * When user switches network in the wallet plugin, the wallet disconnects
+   * Listen for wallet events; switching network triggers a disconnect
    */
   useEffect(() => {
     if (!wallet?.wallet?.adapter) return;
 
-    const adapter = wallet.wallet.adapter as LeoWalletAdapter;
+    const adapter = wallet.wallet.adapter as BaseAleoWalletAdapter;
 
     // Listen for disconnect event
     const handleDisconnect = () => {
       console.warn('⚠️ Wallet disconnected - User may have switched network in wallet');
       setNetworkChanged(true);
-      setIsConnecting(false); // Reset connection state
       clearUser();
     };
 
@@ -178,11 +193,10 @@ export function useWalletController(): IWalletController {
   }, [wallet, clearUser]);
 
   /**
-   * Monitor wallet state changes and sync to userStore
-   * After wallet connects successfully, automatically update store and sync balances
+   * Monitor wallet state changes and sync to the UserStore
    */
   useEffect(() => {
-    const walletPublicKey = wallet?.publicKey || null;
+    const walletPublicKey = wallet?.address || null;
     const walletConnected = wallet?.connected || false;
 
     // If wallet state differs from store, update store
@@ -197,10 +211,10 @@ export function useWalletController(): IWalletController {
         console.log('✅ Wallet disconnected, store cleared');
       }
     }
-  }, [wallet?.publicKey, wallet?.connected, publicKey, connected, setAccount, clearUser, syncBalances]);
+  }, [wallet?.address, wallet?.connected, publicKey, connected, setAccount, clearUser, syncBalances]);
 
   useEffect(() => {
-    // After account connection succeeds, sync balances (sync once on page load)
+    // After account connection succeeds, sync balances (once on load / on reconnect)
     if (publicKey && connected) {
       syncBalances()
     }
@@ -211,7 +225,6 @@ export function useWalletController(): IWalletController {
     address: publicKey,
     publicBalance: formatBalance(publicBalance),
     privateBalance: formatBalance(privateBalance),
-    isConnecting,
     networkChanged,
 
     // Methods

@@ -206,7 +206,7 @@ export interface PaymentReceipt {
   paidAt: Date;
   /** Wave 3: 链上 tx_id（Money Flow 审计） */
   txId?: AleoTransactionId;
-  /** Wave 3: PaymentRecord.settlement_anchor（tx_id_hash），供审计 Step 2 回溯 invoice_tx_id mapping */
+  /** Wave 3: PaymentRecord.settlement_anchor（commitment hash），用于审计 Step 2 通过 payment_commitments 映射回溯 invoice_id */
   settlementAnchor?: AleoField;
 }
 

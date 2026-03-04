@@ -2,12 +2,12 @@
 
 Privacy-preserving B2B invoice system on Aleo. Private Records plus public anchors (hash, commitments, rules_result, audit auth/counter) enable selective, chain-verifiable audits.
 
-**Current contract:** `zk_invoice_v2_2.aleo` (testnet) — tx `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`
+**Current contract:** `zk_invoice_v3_1.aleo` (testnet) — tx `at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp`
 
 ## Features
 
 - **Privacy-First**: Transaction amounts and party details encrypted on-chain
-- **Two-Step Payment**: Secure payment flow via credits.aleo + zk_invoice_v2.aleo
+- **Private Payment**: Single-step `pay_invoice_credits_private` (credits.aleo transfer + invoice state + settlement commitment)
 - **Dual Records**: Both seller and buyer receive independent invoice records
 - **Audit Support**: Off-chain selective disclosure via wallet-signed audit packages (permissioned + expiring), on-chain audit authorization (set_audit_authorization), and shareable audit keys
 - **Chain Anchors**: Commitments/rules caches on-chain enable chain-anchored packages when the local invoice nonce is missing (requires commitment_root to exist on chain)
@@ -37,7 +37,9 @@ Optional utilities:
 Create `.env` file:
 
 ```env
-NEXT_PUBLIC_ALEO_NETWORK=testnetbeta
+NEXT_PUBLIC_ALEO_NETWORK=testnet
+NEXT_PUBLIC_PROGRAM_ID=zk_invoice_v3_1.aleo
+NEXT_PUBLIC_LEGACY_PROGRAM_ID=zk_invoice_v3_0.aleo
 NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ```
 
@@ -60,7 +62,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 ┌─────────────────────────────────────────────────────────────┐
 │                   Aleo Blockchain (Testnet)                  │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                 zk_invoice_v2_2.aleo                  │  │
+│  │                 zk_invoice_v3_1.aleo                  │  │
 │  │  create_invoice | mark_as_paid | cancel_invoice       │  │
 │  │  set_audit_authorization | assert_* anchors           │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -76,7 +78,8 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 | Function | Role | Description |
 |----------|------|-------------|
 | `create_invoice` | Seller | Create invoice (async finalize writes hash/commitments/rules_result caches) |
-| `mark_as_paid` | Buyer | Mark invoice as paid (async) |
+| `pay_invoice_credits_private` | Buyer | Private credits transfer + invoice state update + settlement commitment |
+| `pay_invoice_usdcx` | Buyer | Stablecoin payment path (enabled once USDCx program ID is provided) |
 | `cancel_invoice` | Seller | Cancel pending invoice (async) |
 | `set_audit_authorization` | Seller | Set audit_key_hash + scopes + expiry |
 | `assert_rules_anchor` | Anyone | Assert cached rules_result |
@@ -121,7 +124,7 @@ NEXT_PUBLIC_ALEO_ADDRESS=your_aleo_address
 
 The project has two layers of tests:
 
-**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v2_2.aleo` with mappings/async/ZK proofs (rules, amount, ownership, commitments, audit auth/counter). Main suite: `tests/test_zk_invoice_v2_2.leo`.
+**Smart Contract (Leo)** — Wave2 contract `zk_invoice_v3_1.aleo` with mappings/async/ZK proofs (rules, amount, ownership, commitments, audit auth/counter). Main suite: `tests/test_zk_invoice_v2_2.leo`.
 
 **Service Unit Tests (Vitest)** — Unit tests for core services including WalletService, CryptoService, AleoProtocolService, StorageService, InvoiceStatusValidator, PollingService, and InvoiceStore. Run with `npx vitest`.
 
@@ -137,9 +140,9 @@ The project has two layers of tests:
 
 ## Deployment
 
-- **Program ID**: `zk_invoice_v2_2.aleo` (legacy IDs only for history reads)
+- **Program ID**: `zk_invoice_v3_1.aleo` (legacy IDs only for history reads)
 - **Network**: Aleo Testnet Beta
-- **Deployment TX**: `at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78`
+- **Deployment TX**: `at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp`
 
 ## Documentation
 

@@ -252,7 +252,7 @@ export interface IAuditService {
   /** Wave 3 角色隔离打包：buyer 打包 PaymentRecord，seller 打包 PAID InvoiceRecord（含 TaxGroups） */
   generateV3(params: GenerateAuditPackageParamsV3): Promise<GenerateAuditPackageResultV3>;
 
-  /** Wave 3 三阶段验证：Identity → Money Flow → Tax Check。Step 2 使用 registry.getInvoiceTxId(settlement_anchor) 双向校验。 */
+  /** Wave 3 三阶段验证：Identity → Money Flow → Tax Check。Step 2 使用 registry.getPaymentCommitment(settlement_anchor) 双向校验。 */
   verifyV3(
     envelope: AuditPackageEnvelopeV3,
     auditKey: string,

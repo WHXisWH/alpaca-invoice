@@ -1,6 +1,6 @@
 /**
  * Commitment utilities using Aleo BHP hash (via @provablehq/sdk).
- * Matches zk_invoice_v2_2.aleo contract:
+ * Matches zk_invoice_v3_1.aleo contract:
  * - commit_field(val, salt, tag) = BHP256::hash_to_field(FieldCommitInput { val, salt, tag })
  * - commitment_root = BHP256::hash_to_field(commitments)
  */

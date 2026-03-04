@@ -28,7 +28,7 @@ export interface AuditPackageEnvelopeV3 {
 }
 
 /**
- * Minimal disclosure audit package for zk_invoice_v2_2.aleo
+ * Minimal disclosure audit package for zk_invoice_v3_1.aleo
  * This is an off-chain bundle that references on-chain anchors (rules_result, commitments root, audit authorization).
  */
 export interface AuditPackageV22 {

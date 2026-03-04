@@ -9,7 +9,7 @@ Latest format produced by `AuditService.generate` and consumed by `/audit` valid
   "version": "2.2.0",
   "audit_type": "selective_disclosure",
   "network": "aleo_testnetbeta",
-  "contract": "zk_invoice_v2_2.aleo",
+  "contract": "zk_invoice_v3_1.aleo",
   "context": {
     "invoice_id": "<field>",
     "audit_key_hash": "<field>",
@@ -70,5 +70,5 @@ Outputs PASS/FAIL, decrypted payload, and chain verification summary (when reach
 
 ## Compatibility
 - Version fixed at `2.2.0` for this codebase.
-- Contract pinned to `zk_invoice_v2_2.aleo` on testnetbeta.
+- Contract pinned to `zk_invoice_v3_1.aleo` on testnetbeta.
 - Legacy packages (v2.0) are not emitted by current UI; validator remains backward-compatible with v2 envelopes when `chainVerifiable` is present.

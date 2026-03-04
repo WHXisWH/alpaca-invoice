@@ -2,17 +2,16 @@
 
 import { useWalletController } from '@/controller/Wallet/useWalletController';
 import { getNetworkFromEnv, getNetworkDisplayName } from '@/lib/network';
-import { Wallet, LogOut, Loader2 } from 'lucide-react';
+import { Wallet, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { WalletMultiButton } from '@provablehq/aleo-wallet-adaptor-react-ui';
 
 export default function WalletConnectButtonV2() {
   const {
     address,
     publicBalance,
     privateBalance,
-    isConnecting,
     networkChanged,
-    handleConnect,
     handleLogout,
   } = useWalletController();
 
@@ -38,29 +37,16 @@ export default function WalletConnectButtonV2() {
           <span className="rounded-full bg-accent-100/80 px-2.5 py-1 text-xs font-medium text-accent-700 ring-1 ring-accent-200/50">
             {networkName}
           </span>
-          <button
-            onClick={handleConnect}
-            disabled={isConnecting}
+          <WalletMultiButton
             className={cn(
               'inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2',
               'bg-accent-500 text-sm font-semibold text-white',
               'shadow-sm transition-all',
-              'hover:bg-accent-600 hover:shadow-md',
-              'disabled:cursor-not-allowed disabled:opacity-50'
+              'hover:bg-accent-600 hover:shadow-md'
             )}
-          >
-            {isConnecting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <Wallet className="h-4 w-4" />
-                Connect Wallet
-              </>
-            )}
-          </button>
+            startIcon={<Wallet className="h-4 w-4" />}
+            onClick={() => console.log('[UI] WalletMultiButton v2 click')}
+          />
         </div>
       </div>
     );

@@ -31,7 +31,7 @@ Alpaca Invoice is a privacy-preserving B2B invoice system built on the Aleo bloc
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Aleo Blockchain                                  │
 │   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │                 zk_invoice_v2_2.aleo Program                    │   │
+│   │                 zk_invoice_v3_1.aleo Program                    │   │
 │   │  Transitions: create_invoice, mark_as_paid, cancel_invoice,     │   │
 │   │               set_audit_authorization, assert_* anchors         │   │
 │   │  + ZK proofs (tax/range/ownership), mappings, async finalize     │   │
@@ -213,7 +213,7 @@ credits.aleo/transfer_private
 Step 3: Mark as Paid
         │
         ▼
-zk_invoice_v2_2.aleo/mark_as_paid
+zk_invoice_v3_1.aleo/mark_as_paid
         │
         ├─ Input: InvoiceRecord
         ├─ Input: payment_nonce
@@ -253,7 +253,7 @@ Bundle AuditPackage envelope JSON
         └─── [Optional] Submit On-chain Authorization
                 │
                 ▼
-        zk_invoice_v2_2.aleo/set_audit_authorization
+        zk_invoice_v3_1.aleo/set_audit_authorization
           - Input: InvoiceRecord (must be unspent)
           - Input: audit_key_hash, scopes_bitmask, expires_at
                 │
@@ -545,7 +545,7 @@ User Interface
 ## 8. Deployment
 
 ### Contract
-- **Program ID**: `zk_invoice_v2_2.aleo` (legacy ids kept only for historical reads)
+- **Program ID**: `zk_invoice_v3_1.aleo` (legacy ids kept only for historical reads)
 - **Network**: Aleo Testnet
 - **Deployment TX**: `at19wjr8krkxg33ykjmhunrufzrmk53n2r6qew9ynznu9mzldvmg5xqyayedc`
 

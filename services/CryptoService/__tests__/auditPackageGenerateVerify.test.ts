@@ -19,9 +19,9 @@ describe('CryptoService audit package helpers (unit)', () => {
       expiresAt: 123,
       selectedFields: ['amount', 'buyer'],
       payload: { amount: 10 },
-      programId: 'zk_invoice_v2_2.aleo'
+      programId: 'zk_invoice_v3_1.aleo'
     });
-    expect(pkg.program_id).toBe('zk_invoice_v2_2.aleo');
+    expect(pkg.program_id).toBe('zk_invoice_v3_1.aleo');
     expect(pkg.scopes_bitmask).toBe('3');
     expect(pkg.field_commitments.amount).toBe('4field');
   });

@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
+import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';

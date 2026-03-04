@@ -26,7 +26,7 @@ export default function FunctionGuide() {
       role: 'Anyone'
     },
     {
-      name: 'pay_invoice_public',
+      name: 'pay_invoice_credits_private',
       icon: '💰',
       desc: 'Pay invoice (Credits / JCT public path)',
       params: [

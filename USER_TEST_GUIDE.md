@@ -1,10 +1,10 @@
-# User Testing Guide (Frontend, Testnet, zk_invoice_v2_2.aleo)
+# User Testing Guide (Frontend, Testnet, zk_invoice_v3_1.aleo)
 
-Goal: Validate end-to-end flows as a user on Aleo testnet with the deployed program `zk_invoice_v2_2.aleo` (tx at13cmxw90rn5xux4gj7xejyz7jlc5yc7ugkjl8hv7rdgqp4l7uwcfq87ps78).
+Goal: Validate end-to-end flows as a user on Aleo testnet with the deployed program `zk_invoice_v3_1.aleo` (tx at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp).
 
 ## Prerequisites
 - Two Aleo accounts (Seller, Buyer) in Leo Wallet or Puzzle Wallet on testnet.
-- `.env` already points to `NEXT_PUBLIC_PROGRAM_ID=zk_invoice_v2_2.aleo`.
+- `.env` already points to `NEXT_PUBLIC_PROGRAM_ID=zk_invoice_v3_1.aleo`.
 - Run app locally (`npm run dev`) or on your deployed testnet frontend.
  - For audit package generation from chain-synced invoices (no local nonce), the invoice must already have `commitment_root` on chain; otherwise generation will fail fast with “no commitment_root on chain”.
 

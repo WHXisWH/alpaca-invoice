@@ -1,104 +1,73 @@
-import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
+import { Network } from '@provablehq/aleo-types';
 
 /**
  * Aleo network normalization
- * Resolves inconsistent network naming across different sources (environment variables, wallet extensions, RPC nodes):
- * - Environment variables typically use shorthand: "mainnet", "testnet"
- * - Wallet adapter uses: "mainnetbeta", "testnet3", "testnetbeta"
- * - RPC Chain ID requires: "mainnet", "testnet3", "testnetbeta"
+ * Resolves inconsistent network naming across different sources (environment variables, wallet extensions, RPC nodes)
  */
-
-/**
- * Core conversion logic: map any possible string input to a standard WalletAdapterNetwork enum
- */
-export function normalizeNetwork(input: string | undefined | null): WalletAdapterNetwork {
+export function normalizeNetwork(input: string | Network | undefined | null): Network {
   const net = (input || '').toLowerCase().trim();
 
   switch (net) {
-    // Normalize to MainnetBeta
     case 'mainnet':
-    case 'mainnetbeta':
-    case WalletAdapterNetwork.MainnetBeta:
-      return WalletAdapterNetwork.MainnetBeta;
-
-    // Normalize to Testnet (legacy Testnet3)
+    case Network.MAINNET:
+      return Network.MAINNET;
+    case 'canary':
+    case Network.CANARY:
+      return Network.CANARY;
     case 'testnet':
     case 'testnet3':
-    case WalletAdapterNetwork.Testnet:
-      return WalletAdapterNetwork.Testnet;
-
-    // Normalize to Testnet Beta (current mainstream)
     case 'testnetbeta':
-    case WalletAdapterNetwork.TestnetBeta:
-      return WalletAdapterNetwork.TestnetBeta;
-
-    default:
-      // If unrecognized, default to environment variable configuration; if env var is also absent, return TestnetBeta
+    case Network.TESTNET:
+      return Network.TESTNET;
+    default: {
       const envNet = process.env.NEXT_PUBLIC_ALEO_NETWORK;
-      return envNet ? normalizeNetwork(envNet) : WalletAdapterNetwork.TestnetBeta;
+      return envNet ? normalizeNetwork(envNet) : Network.TESTNET;
+    }
   }
 }
 
-/**
- * Initialize default network configuration from environment variables
- */
-export function getNetworkFromEnv(): WalletAdapterNetwork {
+export function getNetworkFromEnv(): Network {
   return normalizeNetwork(process.env.NEXT_PUBLIC_ALEO_NETWORK);
 }
 
-/**
- * Get network display name
- * Used for UI Header or status display
- */
-export function getNetworkDisplayName(network: string | WalletAdapterNetwork): string {
+export function getNetworkDisplayName(network: string | Network): string {
   const normalized = normalizeNetwork(network.toString());
-
   switch (normalized) {
-    case WalletAdapterNetwork.MainnetBeta:
+    case Network.MAINNET:
       return 'Mainnet';
-    case WalletAdapterNetwork.Testnet:
-      return 'Testnet 3';
-    case WalletAdapterNetwork.TestnetBeta:
-      return 'Testnet Beta';
+    case Network.CANARY:
+      return 'Canary';
+    case Network.TESTNET:
+      return 'Testnet';
     default:
       return 'Unknown';
   }
 }
 
-/**
- * Get CSS class names for the network badge (Tailwind)
- */
-export function getNetworkBadgeClass(network: string | WalletAdapterNetwork): string {
+export function getNetworkBadgeClass(network: string | Network): string {
   const normalized = normalizeNetwork(network.toString());
-
   switch (normalized) {
-    case WalletAdapterNetwork.MainnetBeta:
+    case Network.MAINNET:
       return 'bg-green-100 text-green-700 border-green-200';
-    case WalletAdapterNetwork.Testnet:
-      return 'bg-gray-100 text-gray-700 border-gray-200';
-    case WalletAdapterNetwork.TestnetBeta:
+    case Network.CANARY:
+      return 'bg-amber-100 text-amber-700 border-amber-200';
+    case Network.TESTNET:
       return 'bg-amber-100 text-amber-700 border-amber-200';
     default:
       return 'bg-red-50 text-red-700 border-red-100';
   }
 }
 
-/**
- * Convert network identifier to Chain ID string
- * Used when submitting Transactions to the wallet or querying RPC nodes
- */
-export function getChainIdFromNetwork(network: string | WalletAdapterNetwork): string {
+export function getChainIdFromNetwork(network: string | Network): string {
   const normalized = normalizeNetwork(network.toString());
-
   switch (normalized) {
-    case WalletAdapterNetwork.MainnetBeta:
-      // Important: Aleo official RPC nodes recognize "mainnet" rather than "mainnetbeta"
+    case Network.MAINNET:
       return 'mainnet';
-    case WalletAdapterNetwork.Testnet:
-      return 'testnet3';
-    case WalletAdapterNetwork.TestnetBeta:
-      return 'testnetbeta';
+    case Network.CANARY:
+      return 'canary';
+    case Network.TESTNET:
+      return 'testnet';
     default:
-      return 'testnetbeta';
+      return 'testnet';
   }
 }

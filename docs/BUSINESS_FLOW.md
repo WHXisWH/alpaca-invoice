@@ -47,7 +47,7 @@ This document describes the complete business logic flows for the ZK-Invoice sys
        ▼
 ┌─────────────────────┐
 │ Call create_invoice │
-│  on zk_invoice_v2_2.aleo │
+│  on zk_invoice_v3_1.aleo │
 └──────┬──────────────┘
        │
        │ 5. ZK Proof Generation
@@ -257,7 +257,7 @@ This document describes the complete business logic flows for the ZK-Invoice sys
 ┌─────────────────────────────────────┐
 │ STEP 2: Mark as Paid                │
 │                                     │
-│ Call zk_invoice_v2_2.aleo/mark_as_paid:  │
+│ Call zk_invoice_v3_1.aleo/mark_as_paid:  │
 │ - Input: InvoiceRecord              │
 │ - Input: payment_nonce              │
 └──────┬──────────────────────────────┘

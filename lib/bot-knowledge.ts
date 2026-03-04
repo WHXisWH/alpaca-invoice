@@ -30,10 +30,9 @@ Alpaca Invoice enables businesses to create, send, pay, and audit invoices with 
 - The blockchain returns two private InvoiceRecords — one for the seller, one for the buyer.
 - Optional: set audit authorization at creation time (choose which fields to disclose, set expiry and audit key).
 
-### 2. Pay Invoices (Two-Step Private Settlement)
+### 2. Pay Invoices (Single-Step Private Settlement)
 - Buyers view received invoices, verify the details, then click "Pay".
-- **Step 1:** Private credit transfer via \`credits.aleo/transfer_private\`.
-- **Step 2:** Pay invoice via \`zk_invoice_v3_0.aleo/pay_invoice_public\` (Credits path; transfer + state update).
+- Credits transfer + invoice status update happen together in `zk_invoice_v3_1.aleo/pay_invoice_credits_private`, which also writes the settlement commitment to `payment_commitments`.
 - Both parties receive cryptographic proof of settlement (PaymentRecord).
 
 ### 3. Cancel Invoices
@@ -110,7 +109,7 @@ Aleo is a Layer-1 blockchain that uses zero-knowledge proofs (ZK proofs) to enab
 
 - **Zero-Knowledge Proofs (ZKPs):** Cryptographic method that lets one party prove a statement is true without revealing the underlying data. For example, proving an invoice amount is within a range without exposing the exact number.
 - **Records (UTXO model):** Aleo uses a record-based model similar to Bitcoin's UTXO. Each record is owned by an address and can only be consumed by the owner. InvoiceRecords and PaymentRecords are private by default.
-- **Leo Language:** The smart contract language for Aleo. Alpaca Invoice's contract is written in Leo and deployed as \`zk_invoice_v2_2.aleo\`.
+- **Leo Language:** The smart contract language for Aleo. Alpaca Invoice's contract is written in Leo and deployed as \`zk_invoice_v3_1.aleo\`.
 - **Credits:** Aleo's native currency. 1 credit = 1,000,000 microcredits. Used for paying invoices and transaction fees.
 - **Testnet:** The platform currently runs on Aleo Testnet. Tokens are test credits with no real value.
 - **Supported Wallets:** Leo Wallet and Puzzle Wallet (browser extensions).
@@ -143,7 +142,7 @@ Aleo is a Layer-1 blockchain that uses zero-knowledge proofs (ZK proofs) to enab
 A: All invoice details are encrypted client-side with AES-GCM before being stored. On-chain records use Aleo's native privacy (ZK proofs). Only the sender and receiver can see invoice details.
 
 **Q: Which network does this run on?**
-A: Aleo Testnet (program: zk_invoice_v2_2.aleo). This is a test environment; credits have no real monetary value.
+A: Aleo Testnet (program: zk_invoice_v3_1.aleo). This is a test environment; credits have no real monetary value.
 
 **Q: Which browsers are supported?**
 A: Modern browsers with wallet extension support. Chrome and Brave are recommended.

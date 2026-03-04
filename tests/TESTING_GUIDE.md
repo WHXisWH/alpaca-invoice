@@ -1,4 +1,4 @@
-# zk_invoice_v2_2.aleo Testing Guide (Step-by-Step)
+# zk_invoice_v3_1.aleo Testing Guide (Step-by-Step)
 
 This guide walks through preparation, core tests, negatives, and workflow checks for the current Leo contract (Wave2).
 

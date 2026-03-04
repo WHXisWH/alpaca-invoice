@@ -5,7 +5,7 @@ import {
   InvoiceStatus,
   Microcredits
 } from '@/lib/types';
-import { WalletAdapterNetwork } from '@demox-labs/aleo-wallet-adapter-base';
+import { Network } from '@provablehq/aleo-types';
 import { IAleoProtocolService, ProtocolServiceError, ProtocolError } from './IAleoProtocolService';
 import type { AleoNetworkClient, ProgramManager } from '@provablehq/sdk';
 import { PROGRAM_ID, CREDITS_PROGRAM_ID, USDCX_PROGRAM_ID } from '@/lib/contract';
@@ -21,8 +21,9 @@ const loadSdk = async () => {
 
 const WORKER_TIMEOUT_MS = 120_000;
 
-/** Wave 3: pay_invoice_public returns (PaymentRecord, InvoiceRecord_buyer, InvoiceRecord_seller, Future) = 4 outputs; mark_as_paid removed */
-export const WAVE3_PAYMENT_OUTPUT_COUNT = 4;
+/** Wave 3.1 outputs */
+export const WAVE3_CREDITS_OUTPUT_COUNT = 6; // pay_invoice_credits_private returns 6 outputs
+export const WAVE3_USDCX_OUTPUT_COUNT = 7;   // pay_invoice_usdcx returns 7 outputs
 
 /**
  * AleoProtocolService implementation class
@@ -34,7 +35,7 @@ export const WAVE3_PAYMENT_OUTPUT_COUNT = 4;
 export class AleoProtocolService implements IAleoProtocolService {
   private networkClient: AleoNetworkClient | null = null;
   private programManager: ProgramManager | null = null;
-  private network: WalletAdapterNetwork;
+  private network: Network;
   private baseUrl: string;
   private programSourceCache: string | null = null;
   private readonly registry = createInvoiceRegistryService(this as any);
@@ -48,7 +49,7 @@ export class AleoProtocolService implements IAleoProtocolService {
     }
   >();
 
-  constructor(network: WalletAdapterNetwork = WalletAdapterNetwork.TestnetBeta) {
+  constructor(network: Network = Network.TESTNET) {
     this.network = network;
     this.baseUrl = this.getBaseUrlForNetwork(network);
   }
@@ -179,6 +180,16 @@ export class AleoProtocolService implements IAleoProtocolService {
     return [this.addFieldSuffix(hash)];
   }
 
+  // Wave 3: PaymentCommitData { invoice_id: field, amount: u64, nonce: field }
+  private async computeSettlementAnchorLocal(inputs: string[]): Promise<string[]> {
+    const sdk = await loadSdk();
+    const literal = `{ invoice_id: ${inputs[0]}, amount: ${inputs[1]}, nonce: ${inputs[2]} }`;
+    const pt = (sdk as any).Plaintext.fromString(literal);
+    const bits = pt.toBitsLe();
+    const hash = new sdk.BHP256().hash(bits).toString();
+    return [this.addFieldSuffix(hash)];
+  }
+
   /**
    * Central dispatch for local Aleo program execution.
    * Browser → Web Worker (avoids UI freeze); SSR/test → direct pm.run.
@@ -195,6 +206,9 @@ export class AleoProtocolService implements IAleoProtocolService {
     }
     if (functionName === 'compute_invoice_id') {
       return await this.computeInvoiceIdLocal(inputs as string[]);
+    }
+    if (functionName === 'compute_settlement_anchor') {
+      return await this.computeSettlementAnchorLocal(inputs as string[]);
     }
 
     // For other functions, fall back to pm.run
@@ -280,14 +294,39 @@ export class AleoProtocolService implements IAleoProtocolService {
   }
 
   /**
+   * Wave 3: Compute settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce}) locally.
+   * Matches pay_invoice_credits_private commitment in main.leo.
+   */
+  async computeSettlementAnchorOffline(params: {
+    invoiceId: AleoField;
+    amount: Microcredits;
+    nonce: AleoField;
+  }): Promise<AleoField> {
+    const inputs = [
+      params.invoiceId,
+      `${params.amount.toString()}u64`,
+      params.nonce
+    ];
+    const outputs = await this.runProgram('compute_settlement_anchor', inputs);
+    if (!outputs || !outputs[0]) {
+      throw new ProtocolServiceError(
+        ProtocolError.INVALID_RECORD,
+        'compute_settlement_anchor returned empty output',
+        { inputs }
+      );
+    }
+    return String(outputs[0]) as AleoField;
+  }
+
+  /**
    * Get base RPC URL based on network type (for AleoNetworkClient)
    */
-  private getBaseUrlForNetwork(network: WalletAdapterNetwork): string {
+  private getBaseUrlForNetwork(network: Network): string {
     switch (network) {
-      case WalletAdapterNetwork.MainnetBeta:
+      case Network.MAINNET:
         return 'https://api.explorer.provable.com/v1';
-      case WalletAdapterNetwork.Testnet:
-      case WalletAdapterNetwork.TestnetBeta:
+      case Network.TESTNET:
+      case Network.CANARY:
         return 'https://api.explorer.provable.com/v1';
       default:
         return 'https://api.explorer.provable.com/v1';
@@ -402,10 +441,10 @@ export class AleoProtocolService implements IAleoProtocolService {
    *
    * Can query any Mapping of any program, for example:
    * - credits.aleo account mapping (balance query)
-   * - zk_invoice_v2_2.aleo invoice_status mapping (invoice status query)
+   * - zk_invoice_v3_1.aleo invoice_status mapping (invoice status query)
    * - Any custom program's Mapping
    *
-   * @param programId Program identifier (e.g., "zk_invoice_v2_2.aleo")
+   * @param programId Program identifier (e.g., "zk_invoice_v3_1.aleo")
    * @param mappingName Mapping name (e.g., "invoice_status")
    * @param key Mapping key (Field type or Aleo address, depending on mapping definition)
    * @returns Mapping value (string format), or null if it does not exist
@@ -631,8 +670,11 @@ export class AleoProtocolService implements IAleoProtocolService {
    * Use this when calling verifyRecordOnChain so output count verification matches the contract.
    */
   getExpectedOutputCountForFunction(functionName: string): number | undefined {
-    if (functionName === 'pay_invoice_public' || functionName === 'pay_invoice_usdcx') {
-      return WAVE3_PAYMENT_OUTPUT_COUNT;
+    if (functionName === 'pay_invoice_credits_private') {
+      return WAVE3_CREDITS_OUTPUT_COUNT;
+    }
+    if (functionName === 'pay_invoice_usdcx') {
+      return WAVE3_USDCX_OUTPUT_COUNT;
     }
     return undefined;
   }
@@ -649,7 +691,8 @@ export class AleoProtocolService implements IAleoProtocolService {
    * 3. If functionName is provided, verify the function name called by the transaction
    * 4. If expectedOutputsCount is provided, verify the number of output records produced by the transaction
    *
-   * Wave 3: For pay_invoice_public / pay_invoice_usdcx use expectedOutputsCount: WAVE3_PAYMENT_OUTPUT_COUNT (4).
+   * Wave 3: For pay_invoice_credits_private use expectedOutputsCount: WAVE3_CREDITS_OUTPUT_COUNT (6);
+   *         pay_invoice_usdcx uses WAVE3_USDCX_OUTPUT_COUNT (7).
    */
   async verifyRecordOnChain(
     transactionId: AleoTransactionId,

@@ -1295,7 +1295,7 @@ export class AuditService implements IAuditService {
   }
 
   /**
-   * Wave 3: 三阶段验证流水线。Step 1 身份锚点；Step 2 资产核对（settlement_anchor → registry.getInvoiceTxId 双向校验）；Step 3 税务解密与 A/B/C 验证。
+   * Wave 3: 三阶段验证流水线。Step 1 身份锚点；Step 2 资产核对（settlement_anchor → registry.getPaymentCommitment 双向校验）；Step 3 税务解密与 A/B/C 验证。
    */
   async verifyV3(
     envelope: AuditPackageEnvelopeV3,
@@ -1318,12 +1318,12 @@ export class AuditService implements IAuditService {
         step3TaxCheck: { ok: false, message: 'Decrypt failed' }
       };
     }
-    // Buyer: resolve invoice_id from settlement_anchor via invoice_tx_id mapping; Seller: use context.invoice_ids[0]
+    // Buyer: resolve invoice_id from settlement_anchor via payment_commitments mapping; Seller: use context.invoice_ids[0]
     const firstRecord = Array.isArray(decrypted) ? decrypted[0] : decrypted;
     const settlementAnchor = firstRecord?.settlement_anchor;
     const resolvedInvoiceId: AleoField | null =
       envelope.role === 'buyer' && settlementAnchor
-        ? await registry.getInvoiceTxId(settlementAnchor as AleoField)
+        ? await registry.getPaymentCommitment(settlementAnchor as AleoField)
         : (invoiceIds[0] ?? null);
 
     // Step 1: Identity
@@ -1357,20 +1357,20 @@ export class AuditService implements IAuditService {
       step1Identity = { ok: true, message: 'No JCT hint; identity step skipped' };
     }
 
-    // Step 2: Money Flow — buyer: settlement_anchor → getInvoiceTxId → invoice_id 与 envelope.invoice_ids 双向校验
+    // Step 2: Money Flow — buyer: settlement_anchor → getPaymentCommitment → invoice_id 与 envelope.invoice_ids 双向校验
     let step2MoneyFlow: VerifyAuditPackageV3Result['step2MoneyFlow'] = {
       ok: false,
       message: 'Money flow check not run'
     };
     if (envelope.role === 'buyer' && settlementAnchor) {
-      const invoiceIdFromChain = await registry.getInvoiceTxId(settlementAnchor as AleoField);
+      const invoiceIdFromChain = await registry.getPaymentCommitment(settlementAnchor as AleoField);
       const ok = !!invoiceIdFromChain && invoiceIds.some(id => this.normalizeField(id) === this.normalizeField(invoiceIdFromChain));
       step2MoneyFlow = {
         ok,
         txIdHash: settlementAnchor as AleoField,
         transfers: [],
         amountMatch: ok,
-        message: ok ? 'settlement_anchor → invoice_id matches envelope' : 'invoice_tx_id mismatch or not on chain'
+        message: ok ? 'settlement_anchor → invoice_id matches envelope' : 'payment_commitment mismatch or not on chain'
       };
     } else if (resolvedInvoiceId) {
       step2MoneyFlow = { ok: true, txIdHash: undefined, amountMatch: true, message: 'Seller path; Step 2 skipped' };

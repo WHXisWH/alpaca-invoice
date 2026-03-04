@@ -17,10 +17,10 @@ export interface IInvoiceRegistryService {
   getInvoiceJctReg(invoiceId: AleoField): Promise<AleoField | null>;
 
   /**
-   * 查 invoice_tx_id mapping (key: settlement_anchor → value: invoice_id)，供审计 Step 2 Money Flow 双向校验。
-   * ⚠️ key 为 PaymentRecord.settlement_anchor（tx_id_hash），非 invoice_id。
+   * Query payment_commitments mapping (key: settlement_anchor → value: invoice_id) for audit Step 2 money-flow check.
+   * Key is PaymentRecord.settlement_anchor (commitment hash), not invoice_id.
    */
-  getInvoiceTxId(settlementAnchor: AleoField): Promise<AleoField | null>;
+  getPaymentCommitment(settlementAnchor: AleoField): Promise<AleoField | null>;
 
   // --- Wave 2.2 Audit Core Anchors ---
   /** Get the commitment root of an invoice for auditors to compare against locally recalculated root */

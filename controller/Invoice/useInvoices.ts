@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
+import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { AleoField, Invoice, InvoiceStatus, CurrencyFlag } from '@/lib/types';
@@ -381,7 +381,7 @@ export function useInvoices(): IInvoices {
     return complete
       .filter((item) => {
         const tag = item.invoice.taxTag;
-        return tag != null && tag !== '0field' && tag !== '';
+        return tag != null && tag !== '0field';
       })
       .reduce((sum, item) => sum + (item.invoice.taxAmount ?? 0n), 0n);
   }, [complete]);

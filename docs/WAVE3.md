@@ -32,7 +32,7 @@ Wave 3.1 引入隐私优先支付路径，以「链上承诺哈希」代替「�
 
 **统一架构原则**：Credits 与 USDCx 均采用私有 Record 转账，买家须持有对应资产的私有记录（`credits.aleo/credits` 或 `test_usdcx_stablecoin.aleo/Token`）。两条路径的 ZK 审计机制、`settlement_anchor` 语义和 `payment_commitments` 写入逻辑完全一致。
 
-**新合约版本**：`zk_invoice_v3_0.aleo` 已部署且 `@noupgrade`，新架构需部署 `zk_invoice_v3_1.aleo`。
+**新合约版本**：`zk_invoice_v3_1.aleo` 已部署且 `@noupgrade`（最新 tx: at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp）。
 
 2.2 JCT 合规判定与验证逻辑 (Compliance Judgment)
 系统通过"身份+逻辑+事实"三层过滤确保发票法律效力：

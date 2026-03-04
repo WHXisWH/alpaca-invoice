@@ -55,7 +55,7 @@ export interface AleoPaymentRecord {
   amount: string;          // Payment amount (microcredits)
   paid_at: number;         // Payment time (Unix timestamp)
   _nonce?: string;         // Record nonce (optional)
-  /** Wave 3: 结算锚点 = 合约 tx_id_hash（public），供审计 Step 2 回溯 invoice_tx_id mapping */
+  /** Wave 3: 结算锚点 = 承诺哈希（settlement_anchor），供审计 Step 2 回溯 payment_commitments mapping */
   settlement_anchor?: string;  // field
 }
 
@@ -122,7 +122,7 @@ export interface ICryptoService {
    * Complete invoice verification flow:
    * ```typescript
    * // 1. Get decrypted on-chain Records from the wallet
-   * const records = await wallet.requestRecords('zk_invoice_v2_2.aleo');
+   * const records = await wallet.requestRecords('zk_invoice_v3_1.aleo');
    * const chainRecord = await cryptoService.parseAleoRecord<AleoInvoiceRecord>(
    *   JSON.stringify(records[0].data)
    * );

@@ -1,8 +1,14 @@
 #!/bin/bash
 
-# Comprehensive test runner for zk_invoice.aleo
+# Comprehensive test runner for zk_invoice_v3_1.aleo
 # Usage: ./run_tests.sh [function_name]
-# Example: ./run_tests.sh create_invoice
+# Example: ./run_tests.sh compute_invoice_id
+#
+# NOTE ON PRIVATE RECORDS:
+# Transitions that consume private Records (create_invoice, pay_invoice_credits_private,
+# cancel_invoice, set_audit_authorization) cannot be exercised automatically because
+# leo run requires the record ciphertext + a matching view-key/private-key.
+# Those transitions are documented below with SKIP markers and manual guidance.
 
 set -e
 
@@ -18,153 +24,187 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 
-# Function to print colored output
-print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}✗ $1${NC}"
-}
-
-print_info() {
-    echo -e "${BLUE}ℹ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠ $1${NC}"
-}
-
-print_header() {
+print_success() { echo -e "${GREEN}✓ $1${NC}"; }
+print_error()   { echo -e "${RED}✗ $1${NC}"; }
+print_info()    { echo -e "${BLUE}ℹ $1${NC}"; }
+print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
+print_header()  {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}$1${NC}"
     echo -e "${BLUE}========================================${NC}\n"
 }
 
-# Function to run a test
 run_test() {
     local function_name=$1
     local test_name=$2
-    local args=$3
+    shift 2
+    local args=("$@")
 
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     print_info "Running: $test_name"
 
-    if leo run $function_name $args > /dev/null 2>&1; then
+    if leo run "$function_name" "${args[@]}" > /dev/null 2>&1; then
         PASSED_TESTS=$((PASSED_TESTS + 1))
         print_success "$test_name passed"
     else
         FAILED_TESTS=$((FAILED_TESTS + 1))
         print_error "$test_name failed"
+        # Re-run without redirect to show the actual error
+        leo run "$function_name" "${args[@]}" 2>&1 | tail -5 | sed 's/^/    /'
     fi
 }
 
-# Test create_invoice function
-test_create_invoice() {
-    print_header "Testing create_invoice"
+# ---------------------------------------------------------------------------
+# Utility transitions (pure functions, no Records, fully automatable)
+# ---------------------------------------------------------------------------
 
-    # Test 1: Normal invoice creation
-    run_test "create_invoice" \
-        "Normal invoice creation" \
-        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc 1000000u64 1735689600u32 123456789field 99999field"
-
-    # Test 2: Minimum amount
-    run_test "create_invoice" \
-        "Minimum amount (1u64)" \
-        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc 1u64 1735689600u32 123456789field 11111field"
-
-    # Test 3: Large amount
-    run_test "create_invoice" \
-        "Large amount invoice" \
-        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc 1000000000000u64 1735689600u32 123456789field 22222field"
-
-    # Test 4: Different nonce
-    run_test "create_invoice" \
-        "Different nonce" \
-        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc 1000000u64 1735689600u32 123456789field 1field"
-
-    # Test 5: Different hash
-    run_test "create_invoice" \
-        "Different invoice hash" \
-        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc 1000000u64 1735689600u32 987654321field 33333field"
-
-    print_info "create_invoice tests completed"
+test_get_caller() {
+    print_header "Testing get_caller"
+    run_test "get_caller" "get_caller (no inputs)"
 }
 
-# Test verify_invoice function
-test_verify_invoice() {
-    print_header "Testing verify_invoice"
+test_compute_invoice_id() {
+    print_header "Testing compute_invoice_id"
+    # Signature: seller buyer amount:u64 due_date:u32 nonce:field -> field
 
-    print_warning "verify_invoice tests require invoice records from create_invoice"
-    print_info "Manual testing recommended - see tests/README.md"
-    print_info "verify_invoice tests skipped (requires record input)"
+    run_test "compute_invoice_id" "Basic invoice_id computation" \
+        "aleo1qnlczqwxpgmmxzl7kk62a5ze6tpj7s87gy90xzmcagkjxqxp3uyqsaqvyu" \
+        "aleo1rhgdu77ht6wx9g3lq6z6jlhygpdnmv2hr8v3fn9yfmkqe9vlfvsqwvl344" \
+        "1000000u64" "1767225600u32" "12345678901234567890field"
+
+    run_test "compute_invoice_id" "Minimum amount" \
+        "aleo1qnlczqwxpgmmxzl7kk62a5ze6tpj7s87gy90xzmcagkjxqxp3uyqsaqvyu" \
+        "aleo1rhgdu77ht6wx9g3lq6z6jlhygpdnmv2hr8v3fn9yfmkqe9vlfvsqwvl344" \
+        "1u64" "1767225600u32" "1field"
+
+    run_test "compute_invoice_id" "Large amount (1e12 microcredits = 1M credits)" \
+        "aleo1qnlczqwxpgmmxzl7kk62a5ze6tpj7s87gy90xzmcagkjxqxp3uyqsaqvyu" \
+        "aleo1rhgdu77ht6wx9g3lq6z6jlhygpdnmv2hr8v3fn9yfmkqe9vlfvsqwvl344" \
+        "1000000000000u64" "1767225600u32" "99999999999field"
+
+    print_info "compute_invoice_id tests completed"
 }
 
-# Test mark_as_paid function
-test_mark_as_paid() {
-    print_header "Testing mark_as_paid"
+test_compute_invoice_hash() {
+    print_header "Testing compute_invoice_hash"
+    # Signature: seller buyer amount:u64 tax_amount:u64 due_date:u32 nonce:field
+    #            order_id:field currency:field items_hash:field memo_hash:field -> field
 
-    print_warning "mark_as_paid tests require invoice records"
-    print_info "Manual testing recommended - see tests/README.md"
-    print_info "mark_as_paid tests skipped (requires record input)"
+    run_test "compute_invoice_hash" "Standard JCT invoice hash (10% tax)" \
+        "aleo1qnlczqwxpgmmxzl7kk62a5ze6tpj7s87gy90xzmcagkjxqxp3uyqsaqvyu" \
+        "aleo1rhgdu77ht6wx9g3lq6z6jlhygpdnmv2hr8v3fn9yfmkqe9vlfvsqwvl344" \
+        "1000000u64" "100000u64" "1767225600u32" \
+        "12345678901234567890field" \
+        "111111field" "222222field" "333333field" "444444field"
+
+    run_test "compute_invoice_hash" "Non-JCT invoice hash (zero tax)" \
+        "aleo1qnlczqwxpgmmxzl7kk62a5ze6tpj7s87gy90xzmcagkjxqxp3uyqsaqvyu" \
+        "aleo1rhgdu77ht6wx9g3lq6z6jlhygpdnmv2hr8v3fn9yfmkqe9vlfvsqwvl344" \
+        "500000u64" "0u64" "1767225600u32" \
+        "99999field" \
+        "0field" "0field" "555555field" "0field"
+
+    print_info "compute_invoice_hash tests completed"
 }
 
-# Test create_seller_receipt function
-test_create_seller_receipt() {
-    print_header "Testing create_seller_receipt"
+test_compute_tax_tag() {
+    print_header "Testing compute_tax_tag_for_test and compute_tax_tag_export"
+    # compute_tax_tag_for_test: ga_rate_bps ga_net_sum ga_tax_sum gb_rate_bps gb_net_sum gb_tax_sum -> field
 
-    # Test 1: Normal seller receipt
-    run_test "create_seller_receipt" \
-        "Normal seller receipt creation" \
-        "1234567890field aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc 1000000u64 88888field"
+    run_test "compute_tax_tag_for_test" "Standard 10%+8% tax groups" \
+        "1000u64" "100000u64" "10000u64" \
+        "800u64"  "200000u64" "16000u64"
 
-    # Test 2: Small amount
-    run_test "create_seller_receipt" \
-        "Small amount receipt" \
-        "1111111111field aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc 1u64 11111field"
+    run_test "compute_tax_tag_for_test" "Group A only (10%), group B zero" \
+        "1000u64" "500000u64" "50000u64" \
+        "0u64"    "0u64"      "0u64"
 
-    # Test 3: Large amount
-    run_test "create_seller_receipt" \
-        "Large amount receipt" \
-        "2222222222field aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc 1000000000000u64 22222field"
+    run_test "compute_tax_tag_for_test" "Both groups zero (non-JCT equivalent)" \
+        "0u64" "0u64" "0u64" \
+        "0u64" "0u64" "0u64"
 
-    # Test 4: Different payment nonce
-    run_test "create_seller_receipt" \
-        "Different payment nonce" \
-        "3333333333field aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk9svjc aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc 1000000u64 1field"
+    # compute_tax_tag_export: TaxGroups struct
+    run_test "compute_tax_tag_export" "TaxGroups struct (10% group A)" \
+        "{ group_a: { rate_bps: 1000u64, net_sum: 100000u64, tax_sum: 10000u64 }, group_b: { rate_bps: 0u64, net_sum: 0u64, tax_sum: 0u64 } }"
 
-    print_info "create_seller_receipt tests completed"
+    print_info "compute_tax_tag tests completed"
 }
 
-# Test cancel_invoice function
-test_cancel_invoice() {
-    print_header "Testing cancel_invoice"
+test_make_jct() {
+    print_header "Testing make_jct_non_jct and make_jct_jct"
+    # make_jct_non_jct: total_amount:u64 currency_flag:u8
 
-    print_warning "cancel_invoice tests require invoice records"
-    print_info "Manual testing recommended - see tests/README.md"
-    print_info "cancel_invoice tests skipped (requires record input)"
+    run_test "make_jct_non_jct" "Credits non-JCT (currency_flag=0)" \
+        "1000000u64" "0u8"
+
+    run_test "make_jct_non_jct" "USDCx non-JCT (currency_flag=1)" \
+        "1000000u64" "1u8"
+
+    # make_jct_jct: ga_rate_bps ga_net_sum ga_tax_sum gb_rate_bps gb_net_sum gb_tax_sum tax_tag total_amount jct_reg currency_flag
+    # tax_tag must equal BHP256(TaxGroups) — use 0field for script testing (will produce a JCT struct)
+    run_test "make_jct_jct" "JCT struct (10%+8%, credits)" \
+        "1000u64" "100000u64" "10000u64" \
+        "800u64"  "200000u64" "16000u64" \
+        "0field" "326000u64" "0field" "0u8"
+
+    print_info "make_jct tests completed"
 }
 
-# Test verify_payment function
-test_verify_payment() {
-    print_header "Testing verify_payment"
+# ---------------------------------------------------------------------------
+# Transitions requiring private Records — documented, not auto-run
+# ---------------------------------------------------------------------------
 
-    print_warning "verify_payment tests require both payment and invoice records"
-    print_info "Manual testing recommended - see tests/README.md"
-    print_info "verify_payment tests skipped (requires record input)"
+test_create_invoice_doc() {
+    print_header "create_invoice (SKIP — requires pre-computed invoice_hash)"
+    print_warning "create_invoice cannot be tested automatically because:"
+    print_info "  1. invoice_hash must equal BHP256(InvoiceHashInput{...}) — must be pre-computed"
+    print_info "  2. leo run does not support the CreateInvoiceJct struct literal via CLI on all platforms"
+    print_info ""
+    print_info "Manual test (after computing correct invoice_hash offline):"
+    print_info "  leo run create_invoice \\"
+    print_info "    <buyer_addr> \\"
+    print_info "    <amount_u64> <tax_amount_u64> <due_date_u32> \\"
+    print_info "    <invoice_hash_field> <nonce_field> <current_time_u32> \\"
+    print_info "    <order_id_field> <currency_field> <items_hash_field> <memo_hash_field> \\"
+    print_info "    <line_items_sum_u64> <expected_total_u64> <tax_rate_bps_u64> \\"
+    print_info "    '{ tax_groups: { group_a: { rate_bps: 1000u64, net_sum: 100000u64, tax_sum: 10000u64 }, group_b: { rate_bps: 0u64, net_sum: 0u64, tax_sum: 0u64 } }, tax_tag: <tag_field>, total_amount: 110000u64, jct_registration: <reg_field>, currency_flag: 0u8 }'"
+    print_info ""
+    print_info "See DEPLOYMENT_LOG.md for testnet tx: at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp"
 }
 
-# Integration test
-test_integration() {
-    print_header "Integration Test: Complete Invoice Workflow"
-
-    print_info "Step 1: Create invoice"
-    print_warning "Integration tests require interactive record management"
-    print_info "See tests/README.md for complete workflow testing guide"
-    print_info "Integration tests skipped (requires manual record tracking)"
+test_pay_invoice_credits_private_doc() {
+    print_header "pay_invoice_credits_private (SKIP — requires credits record + invoice record)"
+    print_warning "pay_invoice_credits_private requires:"
+    print_info "  1. credits.aleo/credits private record (from buyer wallet)"
+    print_info "  2. zk_invoice_v3_1.aleo/InvoiceRecord private record (status=PENDING, currency_flag=0)"
+    print_info "  3. payment_nonce: field  (any field, e.g. 12345field)"
+    print_info "  4. paid_at: u32  (Unix timestamp, must be <= invoice.due_date)"
+    print_info ""
+    print_info "Manual test:"
+    print_info "  leo run pay_invoice_credits_private \\"
+    print_info "    '<credits_record_ciphertext>' \\"
+    print_info "    '<invoice_record_ciphertext>' \\"
+    print_info "    <payment_nonce_field> <paid_at_u32>"
+    print_info ""
+    print_info "Expected outputs (6): seller_credits change_credits PaymentRecord buyer_InvoiceRecord seller_InvoiceRecord Future"
 }
 
-# Print test summary
+test_cancel_invoice_doc() {
+    print_header "cancel_invoice (SKIP — requires InvoiceRecord)"
+    print_warning "cancel_invoice requires a zk_invoice_v3_1.aleo/InvoiceRecord (status=PENDING, caller=seller)."
+    print_info "Manual: leo run cancel_invoice '<invoice_record_ciphertext>'"
+}
+
+test_set_audit_authorization_doc() {
+    print_header "set_audit_authorization (SKIP — requires InvoiceRecord)"
+    print_warning "set_audit_authorization requires a zk_invoice_v3_1.aleo/InvoiceRecord (caller=seller)."
+    print_info "Manual: leo run set_audit_authorization '<invoice_record>' <audit_key_hash_field> <scopes_bitmask_u64> <expires_at_u32> <current_time_u32>"
+}
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
 print_summary() {
     print_header "Test Summary"
     echo -e "Total Tests:  ${BLUE}${TOTAL_TESTS}${NC}"
@@ -172,7 +212,7 @@ print_summary() {
     echo -e "Failed:       ${RED}${FAILED_TESTS}${NC}"
 
     if [ $FAILED_TESTS -eq 0 ]; then
-        print_success "All tests passed!"
+        print_success "All automatable tests passed!"
         return 0
     else
         print_error "Some tests failed!"
@@ -180,15 +220,17 @@ print_summary() {
     fi
 }
 
-# Main execution
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 main() {
     echo -e "${BLUE}"
     echo "╔════════════════════════════════════════╗"
-    echo "║   zk_invoice_v2.aleo Test Suite       ║"
-    echo "╔════════════════════════════════════════╗"
-    echo -e "${NC}\n"
+    echo "║   zk_invoice_v3_1.aleo Test Suite      ║"
+    echo "╚════════════════════════════════════════╝"
+    echo -e "${NC}"
 
-    # Check if Leo is installed
     if ! command -v leo &> /dev/null; then
         print_error "Leo CLI not found. Please install Leo first."
         echo "Visit: https://developer.aleo.org/leo/installation"
@@ -196,59 +238,43 @@ main() {
     fi
 
     print_info "Leo version: $(leo --version)"
+    print_info "Contract: zk_invoice_v3_1.aleo (testnet deploy tx: at1kf9tl2vmd84398qrpzdrmtfkw2jdt4revyjlv2hmv5efg6rnegzqp3a0yp)"
+    echo ""
 
-    # Parse command line arguments
     if [ $# -eq 0 ]; then
-        # Run all tests
-        test_create_invoice
-        test_verify_invoice
-        test_mark_as_paid
-        test_create_seller_receipt
-        test_cancel_invoice
-        test_verify_payment
-        test_integration
+        # Automatable tests
+        test_get_caller
+        test_compute_invoice_id
+        test_compute_invoice_hash
+        test_compute_tax_tag
+        test_make_jct
+
+        # Documentation-only (record-dependent)
+        test_create_invoice_doc
+        test_pay_invoice_credits_private_doc
+        test_cancel_invoice_doc
+        test_set_audit_authorization_doc
     else
-        # Run specific test
         case $1 in
-            create_invoice)
-                test_create_invoice
-                ;;
-            verify_invoice)
-                test_verify_invoice
-                ;;
-            mark_as_paid)
-                test_mark_as_paid
-                ;;
-            create_seller_receipt)
-                test_create_seller_receipt
-                ;;
-            cancel_invoice)
-                test_cancel_invoice
-                ;;
-            verify_payment)
-                test_verify_payment
-                ;;
-            integration)
-                test_integration
-                ;;
+            get_caller)                     test_get_caller ;;
+            compute_invoice_id)             test_compute_invoice_id ;;
+            compute_invoice_hash)           test_compute_invoice_hash ;;
+            compute_tax_tag)                test_compute_tax_tag ;;
+            make_jct)                       test_make_jct ;;
+            create_invoice)                 test_create_invoice_doc ;;
+            pay_invoice_credits_private)    test_pay_invoice_credits_private_doc ;;
+            cancel_invoice)                 test_cancel_invoice_doc ;;
+            set_audit_authorization)        test_set_audit_authorization_doc ;;
             *)
                 print_error "Unknown test: $1"
-                echo "Available tests:"
-                echo "  - create_invoice"
-                echo "  - verify_invoice"
-                echo "  - mark_as_paid"
-                echo "  - create_seller_receipt"
-                echo "  - cancel_invoice"
-                echo "  - verify_payment"
-                echo "  - integration"
+                echo "Automatable:  get_caller  compute_invoice_id  compute_invoice_hash  compute_tax_tag  make_jct"
+                echo "Docs only:    create_invoice  pay_invoice_credits_private  cancel_invoice  set_audit_authorization"
                 exit 1
                 ;;
         esac
     fi
 
-    # Print summary
     print_summary
 }
 
-# Run main function
 main "$@"

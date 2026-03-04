@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useWallet } from '@demox-labs/aleo-wallet-adapter-react';
+import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
 import { ITxController } from './ITxController';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useUserStore } from '@/stores/User/useUserStore';
@@ -11,7 +11,7 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
-import { PROGRAM_ID, ZERO_FIELD } from '@/lib/contract';
+import { PROGRAM_ID, CREDITS_PROGRAM_ID, USDCX_PROGRAM_ID, ZERO_FIELD } from '@/lib/contract';
 import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
@@ -406,7 +406,8 @@ export function useTransactionController(): ITxController {
 
   /**
    * Execute invoice payment.
-   * Wave 3: Routes by currency_flag — Credits: pay_invoice_public; USDCx: check allowance, approve if needed, then pay_invoice_usdcx.
+   * Wave 3.1: Credits → pay_invoice_credits_private (single-step private transfer + settlement commitment)
+   *           USDCx   → currently unsupported until stablecoin program ID is finalized.
    */
   const executePay = useCallback(
     async (invoice: Invoice): Promise<AleoTransactionId> => {
@@ -438,105 +439,71 @@ export function useTransactionController(): ITxController {
         }
 
         const invoiceRecord = rawRecord;
-        updateProgress(30, 'Invoice record found. Preparing payment...');
-
-        const paymentNonce = await cryptoService.computeInvoiceHash({
-          invoiceNumber: `PAYMENT-${Date.now()}-${Math.random()}`,
-          lineItems: [],
-          subtotal: 0,
-          taxRate: 0,
-          taxAmount: 0,
-          total: 0,
-          currency: 'CREDITS'
-        });
-
-        const paidAt = `${Math.floor(Date.now() / 1000)}u32`;
-        const txIdHash = await cryptoService.computeInvoiceHash({
-          invoiceNumber: `TX-${paymentNonce}-${paidAt}`,
-          lineItems: [],
-          subtotal: 0,
-          taxRate: 0,
-          taxAmount: 0,
-          total: 0,
-          currency: 'CREDITS'
-        });
+        updateProgress(30, 'Invoice record found. Selecting credits record...');
 
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
 
         if (currencyFlag === CurrencyFlag.USDCX) {
-          updateProgress(35, 'Checking USDCx allowance...');
-          const allowance = await protocolService.getUsdcxAllowance(
-            invoice.buyer as AleoAddress,
-            PROGRAM_ID as AleoAddress
-          );
-          if (allowance < payAmount) {
-            updateProgress(40, 'Submitting Approve transaction...');
-            const { USDCX_PROGRAM_ID: usdcxId } = await import('@/lib/contract');
-            if (usdcxId) {
-              await walletService.requestTransaction({
-                functionName: 'approve',
-                inputs: [PROGRAM_ID, `${payAmount.toString()}u64`],
-                publicKey: publicKey,
-                programId: usdcxId,
-                fee: 1000000,
-                chainId: chainId
-              });
-            }
-            updateProgress(45, 'Approve submitted. Submitting payment...');
-          }
-          updateProgress(50, 'Submitting pay_invoice_usdcx...');
-          const requestId = await walletService.requestTransaction({
-            functionName: 'pay_invoice_usdcx',
-            inputs: [invoiceRecord, paymentNonce, paidAt, txIdHash],
-            publicKey: publicKey,
-            programId: PROGRAM_ID,
-            fee: 1000000,
-            chainId: chainId
-          });
-          if (!requestId) {
+          if (!USDCX_PROGRAM_ID) {
             throw new WalletServiceError(
               WalletError.UNAUTHORIZED,
-              'USDCx payment transaction failed - no response from wallet'
+              'USDCx payment requires NEXT_PUBLIC_USDCX_PROGRAM_ID to be set.'
             );
           }
-          try {
-            receiptStore.addReceipt({
-              paymentId: requestId as AleoField,
-              invoiceId: invoice.id,
-              payer: invoice.buyer,
-              payee: invoice.seller,
-              amount: payAmount,
-              paidAt: new Date(Number(paidAt.replace(/u32$/, '')) * 1000),
-              txId: requestId as AleoTransactionId
-            });
-          } catch (err) {
-            console.warn('⚠️ [executePay] Failed to add receipt locally:', err);
+          updateProgress(32, 'Fetching USDCx token record...');
+          const { records: tokenRecords } = await walletService.requestRecords(USDCX_PROGRAM_ID);
+          const tokenRecord = tokenRecords?.[0];
+          if (!tokenRecord) {
+            throw new WalletServiceError(
+              WalletError.DECRYPTION_FAILED,
+              'No USDCx Token record found in wallet.'
+            );
           }
-          if (invoiceStore?.updateInvoice && masterKey) {
-            try {
-              await invoiceStore.updateInvoice(invoice.id, {
-                metadata: {
-                  confirmationStatus: 'SENDING',
-                  dataSource: 'local',
-                  action: 'pay'
-                }
-              } as any, { masterKey, persistFull: true });
-            } catch (e) {
-              console.warn('executePay update metadata failed', e);
-            }
-          }
-          updateProgress(100, '✓ Payment completed!');
-          completeTx();
-          return requestId as AleoTransactionId;
+          // TODO: fetch freeze-list proofs from network once API is available
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'USDCx private transfer requires freeze-list proofs; not implemented yet.'
+          );
         }
 
-        updateProgress(50, 'Submitting payment transaction...');
+        // Credits path: select optimal credits record (smallest amount >= payAmount)
+        const { records } = await walletService.requestRecords(CREDITS_PROGRAM_ID);
+        const parseMicro = (raw: string | undefined): bigint => {
+          const m = String(raw ?? '').match(/^(\d+)/);
+          return m ? BigInt(m[1]) : 0n;
+        };
+        const unspent = (records ?? [])
+          .filter((r: any) => !r.spent && r.data?.microcredits)
+          .map((r: any) => ({ record: r, amount: parseMicro(r.data.microcredits) }))
+          .filter((r) => r.amount > 0n);
+        if (unspent.length === 0) {
+          throw new WalletServiceError(
+            WalletError.DECRYPTION_FAILED,
+            'No credits record available in wallet.'
+          );
+        }
+        const sufficient = unspent.filter((r) => r.amount >= payAmount);
+        if (sufficient.length === 0) {
+          const total = unspent.reduce((sum, r) => sum + r.amount, 0n);
+          throw new WalletServiceError(
+            WalletError.INSUFFICIENT_FEE,
+            `Insufficient credits balance. Required: ${payAmount} microcredits, available: ${total} microcredits across ${unspent.length} record(s).`
+          );
+        }
+        // Pick the smallest record that covers the amount (minimise unnecessary change)
+        const payRecord = sufficient.reduce((best, cur) => cur.amount < best.amount ? cur : best).record;
+
+        // Generate payment nonce and paid_at
+        const paymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
+        const paidAt = `${Math.floor(Date.now() / 1000)}u32`;
+
+        updateProgress(50, 'Submitting pay_invoice_credits_private...');
         const requestId = await walletService.requestTransaction({
-          functionName: 'pay_invoice_public',
-          inputs: [invoiceRecord, paymentNonce, paidAt, txIdHash],
+          functionName: 'pay_invoice_credits_private',
+          inputs: [payRecord, invoiceRecord, paymentNonce, paidAt],
           publicKey: publicKey,
           programId: PROGRAM_ID,
-          fee: 1000000,
+          fee: 1_000_000,
           chainId: chainId
         });
 
@@ -556,6 +523,17 @@ export function useTransactionController(): ITxController {
             amount: payAmount,
             paidAt: new Date(Number(paidAt.replace(/u32$/, '')) * 1000),
             txId: requestId as AleoTransactionId
+          });
+          // Wave 3: immediately compute and store settlement_anchor locally so audit Step 2
+          // is available without waiting for the PaymentRecord to be scanned from chain.
+          protocolService.computeSettlementAnchorOffline({
+            invoiceId: invoice.id,
+            amount: payAmount,
+            nonce: paymentNonce
+          }).then((anchor) => {
+            receiptStore.updateReceipt(invoice.id, { settlementAnchor: anchor });
+          }).catch((err) => {
+            console.warn('⚠️ [executePay] Failed to compute settlement_anchor locally:', err);
           });
         } catch (err) {
           console.warn('⚠️ [executePay] Failed to add receipt locally:', err);

@@ -421,7 +421,7 @@ export class WalletService {
 
   /**
    * Request Records (wraps the wallet adapter's requestRecords method)
-   * @param program Program ID (e.g., 'zk_invoice_v2_2.aleo' or 'credits.aleo')
+   * @param program Program ID (e.g., 'zk_invoice_v3_1.aleo' or 'credits.aleo')
    * @returns An object containing a records array
    * @throws {WalletServiceError} May throw UNAUTHORIZED, DECRYPTION_FAILED
    *
@@ -653,8 +653,8 @@ export class WalletService {
   }
 
   /**
-   * Wave 3: 序列化提交两笔连续 TX（Approve + Pay）.
-   * 若钱包适配器支持 requestSequentialTransactions 则委托；否则串行调用 requestTransaction。
+   * Wave 3: submit two sequential TXs (Approve + Pay) in order.
+   * If the wallet adapter supports requestSequentialTransactions, delegate; otherwise send two requestTransaction calls sequentially.
    */
   async requestSequentialTransactions(params: {
     txList: Array<{

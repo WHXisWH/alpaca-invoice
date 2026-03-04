@@ -154,7 +154,7 @@ export default function AuditCenterV3() {
             <input
               type="date"
               value={expiresAt}
-              onChange={(e) => setExpiresAt(new Date(e.target.value).getTime() / 1000)}
+              onChange={(e) => setExpiresAt(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             />
           </div>
