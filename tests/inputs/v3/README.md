@@ -10,22 +10,24 @@
 
 或：`bash tests/inputs/v3/run_manual.sh`。
 
-**脚本步骤**：get_caller → compute_invoice_hash → make_jct_non_jct → **create_invoice #1** → **cancel_invoice**（用 #1 的 seller record）→ create_invoice #2（Credits）→ **pay_invoice_public**（用 #2 的 buyer record）→ create_invoice #3（USDCx）→ **pay_invoice_usdcx**（用 #3 的 buyer record）。
+**脚本步骤**（合约 **zk_invoice_v3_1.aleo**）：get_caller → compute_invoice_hash → make_jct_non_jct → **create_invoice #1** → **cancel_invoice**（用 #1 的 seller record）→ create_invoice #2（Credits）→ **pay_invoice_credits_private**（用 #2 的 buyer record + credits record）→ create_invoice #3（USDCx）→ **pay_invoice_usdcx**（用 #3 的 buyer record + token record + proofs）。
 
 - 默认使用 `.env` 中的 `PRIVATE_KEY` 作为 seller（create / cancel 等）。
-- **Buyer 地址**：若在 `.env` 中设置了 **`BUYER_PRIVATE_KEY`**，脚本会先用该密钥执行 `get_caller` 得到 buyer 地址，并以此地址作为所有 create_invoice 的 buyer，这样发票上的买家与 pay 时的 caller 一致；未设置则使用测试常量 `aleo1qqqq...3ljyzc` 作为 buyer，并跳过 Step 8 / Step 12（pay 步骤）。
-- **若 Step 8/12 长时间无输出**：`leo run` 在执行 credits/usdcx 跨程序调用时可能挂起。脚本在检测到 `timeout` 命令时会为这两步加 90 秒超时（超时后跳过并继续）；macOS 默认无 `timeout`，可 `brew install coreutils` 后使用。也可在项目根单独执行 pay 命令做手动验证。
+- **Buyer 地址**：若在 `.env` 中设置了 **`BUYER_PRIVATE_KEY`**，脚本会先用该密钥执行 `get_caller` 得到 buyer 地址，并以此地址作为所有 create_invoice 的 buyer；未设置则使用测试常量 `aleo1qqqq...3ljyzc` 作为 buyer，并跳过 Step 8 / Step 12。
+- **Step 8（Credits 支付）**：需在 `.env` 中设置 **`CREDITS_RECORD`**（一行 `credits.aleo/credits` record），否则跳过。签名：`pay_invoice_credits_private(pay_record, invoice_record, payment_nonce, paid_at)`。
+- **Step 12（USDCx 支付）**：需在 `.env` 中设置 **`TOKEN_RECORD`** 与 **`USDCX_PROOFS`**（test_usdcx 的 Token record 与 `[MerkleProof; 2]`），否则跳过。签名：`pay_invoice_usdcx(token_record, invoice_record, payment_nonce, paid_at, proofs)`，返回 7 个输出（seller_token, change_token, compliance_record, PaymentRecord, 2× InvoiceRecord, Future）。
+- **若 Step 8/12 长时间无输出**：跨程序调用可能挂起。脚本在检测到 `timeout` 时会为这两步加 90 秒超时；macOS 可 `brew install coreutils` 使用 `timeout`。
 
 ---
 
 ## 重要说明：Leo 3.4 的 `leo run` 不自动读 .in 文件
 
-在 **Leo 3.4** 下，`leo run <transition>` **只接受命令行参数**，不会从 `inputs/zk_invoice_v3_0.in` 自动读入。  
-因此需要把参数**按 transition 签名顺序**写在命令后面。
+在 **Leo 3.4** 下，`leo run <transition>` **只接受命令行参数**，不会从 `.in` 文件自动读入。  
+因此需要把参数**按 transition 签名顺序**写在命令后面。当前合约为 **zk_invoice_v3_1.aleo**（Credits 私有支付 + USDCx 私有 transfer_private + 承诺审计）。
 
 ## 当前可行方式：用 .in 作参数清单 + 命令行传参
 
-- **`inputs/zk_invoice_v3_0.in`**（项目根）：按 `[transition名]` 区块整理好了各 transition 的参数，用作**参考/复制来源**。
+- **`inputs/zk_invoice_v3_1.in`** 或项目根下对应 v3 的 `.in`：按 `[transition名]` 区块整理各 transition 参数，用作**参考/复制来源**。
 - 运行某 transition 时，从对应区块中按**参数顺序**把值抄到命令行。
 
 ### 示例：compute_invoice_hash（10 个参数）
@@ -120,33 +122,33 @@ leo run get_invoice_tax_tag INVOICE_ID
 leo run get_invoice_jct_reg INVOICE_ID
 ```
 
-### get_invoice_tx_id（1 个参数：settlement_anchor）
+### get_payment_commitment（2 个参数：invoice_id, commitment）
 
-`SETTLEMENT_ANCHOR` 从 pay_invoice_public 返回的 PaymentRecord 中取。
+根据发票 ID 与支付承诺查询链上是否已写入。`invoice_id` 从 create_invoice 的 record 中取；`commitment` 从 pay 返回的 PaymentRecord 等得到。
 
 ```bash
-leo run get_invoice_tx_id SETTLEMENT_ANCHOR
+leo run get_payment_commitment INVOICE_ID COMMITMENT
 ```
 
 ### 使用前必做
 
 1. **seller**：用 `leo run get_caller` 输出替换上述命令中的 seller 地址。
-2. **create_invoice**：先运行 `leo run compute_invoice_hash ...` 得到 `invoice_hash`，再拼 create_invoice 的 15 个参数（或从 `inputs/zk_invoice_v3_0.in` 的 `[create_invoice]` 复制并替换 invoice_hash、jct）。
-3. **getter**：invoice_id / settlement_anchor 从 create 或 pay 的输出中取得后传入。
+2. **create_invoice**：先运行 `leo run compute_invoice_hash ...` 得到 `invoice_hash`，再拼 create_invoice 的 15 个参数（或从 `inputs/` 下对应 v3 的 `.in` 的 `[create_invoice]` 复制并替换 invoice_hash、jct）。
+3. **getter**：invoice_id / commitment 从 create 或 pay 的输出中取得后传入。
 
 ### 推荐执行顺序
 
 1. `leo run get_caller` → 记下地址，用作后续 seller。
 2. `leo run compute_invoice_hash`（用上面示例，替换 SELLER）→ 记下输出的 field，用于 create_invoice 的 invoice_hash。
 3. `leo run make_jct_non_jct 1100000u64 0u8`（非 JCT）或先跑 compute_tax_tag_for_test 再 make_jct_jct（JCT）。
-4. `leo run create_invoice` + 15 个参数（从 `inputs/zk_invoice_v3_0.in` 的 `[create_invoice]` 按顺序复制）。
-5. 需要时：`leo run get_invoice_tax_tag <invoice_id>`、`leo run get_invoice_tx_id <settlement_anchor>` 等。
+4. `leo run create_invoice` + 15 个参数（从 `inputs/` 下 v3 的 `.in` 的 `[create_invoice]` 按顺序复制）。
+5. 需要时：`leo run get_invoice_tax_tag <invoice_id>`、`leo run get_payment_commitment <invoice_id> <commitment>` 等。
 
-**pay_invoice_public / cancel_invoice / set_audit_authorization** 的输入含 Record，需把 create 返回的 record 作为参数传入（通常需粘贴整段到命令行）。
+**pay_invoice_credits_private / pay_invoice_usdcx / cancel_invoice** 等输入含 Record：Credits 路径需 `credits.aleo/credits` 的 pay_record + buyer 的 InvoiceRecord；USDCx 路径需 test_usdcx 的 Token record + InvoiceRecord + `[MerkleProof; 2]`。需把 create 或钱包返回的 record 按签名顺序传入（通常粘贴整段到命令行）。
 
 ---
 
-## 本目录 `tests/inputs/v3/` 与根目录 `inputs/zk_invoice_v3_0.in`
+## 本目录 `tests/inputs/v3/` 与根目录 `inputs/`
 
-- **`run_manual.sh`**：一键执行整条 v3 流程（含 create_invoice、cancel_invoice、pay_invoice_public、pay_invoice_usdcx）。在项目根运行 `./tests/inputs/v3/run_manual.sh` 即可；要跑 pay 步骤请在 `.env` 中设置 `BUYER_PRIVATE_KEY`。
-- **`inputs/zk_invoice_v3_0.in`**（项目根）：集中了所有 v3 transition 的参数字段，按 `[transition名]` 分块，便于复制到命令行。
+- **`run_manual.sh`**：一键执行 v3.1 流程（create_invoice、cancel_invoice、pay_invoice_credits_private、pay_invoice_usdcx）。在项目根运行 `./tests/inputs/v3/run_manual.sh`。要跑 Step 8 需设置 `BUYER_PRIVATE_KEY` + `CREDITS_RECORD`；要跑 Step 12 需设置 `BUYER_PRIVATE_KEY` + `TOKEN_RECORD` + `USDCX_PROOFS`。
+- **`inputs/`**（项目根）：按 `[transition名]` 分块的参数字段，便于复制到命令行；合约为 **zk_invoice_v3_1.aleo**。

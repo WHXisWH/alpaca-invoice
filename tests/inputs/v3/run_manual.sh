@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# v3 手动验证：get_caller → create_invoice → cancel_invoice → create_invoice(2) → pay_invoice_public → create_invoice(USDCx) → pay_invoice_usdcx
+# v3.1 手动验证：get_caller → create_invoice → cancel_invoice → create_invoice(2) → pay_invoice_credits_private → create_invoice(USDCx) → pay_invoice_usdcx
+# 合约：zk_invoice_v3_1.aleo（Credits 私有 + USDCx 私有 transfer_private，承诺审计）
 # 在项目根目录执行：./tests/inputs/v3/run_manual.sh
-# 若在 .env 中设置 BUYER_PRIVATE_KEY，脚本会用该密钥取 buyer 地址并用于所有 create_invoice，这样 pay 步骤的 caller 与发票 buyer 一致；未设置则 buyer 使用测试常量并跳过 pay 步骤。
+# 依赖：BUYER_PRIVATE_KEY（buyer 地址与 pay 的 caller 一致）；Step 8 需 CREDITS_RECORD（可选）；Step 12 需 TOKEN_RECORD + USDCX_PROOFS（可选），未提供则跳过对应 pay 步骤。
 
 set -e
 
@@ -136,7 +137,7 @@ invoice_hash2=$(echo "$out" | sed -n '/➡️  Output/,$p' | grep "field" | tail
 echo "invoice_hash2=$invoice_hash2"
 echo ""
 
-echo "========== Step 7: create_invoice #2 (Credits, for pay_public) =========="
+echo "========== Step 7: create_invoice #2 (Credits, for pay_credits_private) =========="
 out7=$(leo run create_invoice \
   "$BUYER" 1000000u64 100000u64 1735689600u32 \
   "$invoice_hash2" 88888field 1700000000u32 0field 840field 11111field 0field \
@@ -145,23 +146,25 @@ echo "$out7"
 [[ $ret -ne 0 ]] && exit 1
 parse_two_invoice_records "$out7"
 buyer_rec2="$rec2_oneline"
-echo "Parsed buyer_rec2 for pay_invoice_public"
+echo "Parsed buyer_rec2 for pay_invoice_credits_private"
 echo ""
 
-echo "========== Step 8: pay_invoice_public =========="
-if [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
-  echo "(若此处长时间无输出，可能是 leo run 在执行 credits 跨程序调用时挂起，可 Ctrl+C 后单独用 leo run 测试)"
-  out=$(run_with_timeout 90 leo run --private-key "$BUYER_PRIVATE_KEY" pay_invoice_public \
-    "$buyer_rec2" 22222field 1700000000u32 12345678field 2>&1); ret=$?
+echo "========== Step 8: pay_invoice_credits_private =========="
+if [[ -n "${BUYER_PRIVATE_KEY:-}" && -n "${CREDITS_RECORD:-}" ]]; then
+  echo "(需要 credits.aleo/credits 的 pay_record；若长时间无输出可能是跨程序调用挂起，可 Ctrl+C 后单独测试)"
+  out=$(run_with_timeout 90 leo run --private-key "$BUYER_PRIVATE_KEY" pay_invoice_credits_private \
+    "$CREDITS_RECORD" "$buyer_rec2" 22222field 1700000000u32 2>&1); ret=$?
   echo "$out"
   if [[ $ret -eq 124 ]]; then
-    echo "pay_invoice_public 超时(90s)，已跳过。可在项目根手动执行: leo run --private-key \$BUYER_PRIVATE_KEY pay_invoice_public \"<buyer_record>\" 22222field 1700000000u32 12345678field"
+    echo "pay_invoice_credits_private 超时(90s)，已跳过。"
     echo ""
   elif [[ $ret -ne 0 ]]; then
     exit 1
   else
-    echo "pay_invoice_public OK"
+    echo "pay_invoice_credits_private OK"
   fi
+elif [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
+  echo "Skipping (set CREDITS_RECORD in .env with a credits.aleo/credits record to run pay_invoice_credits_private)."
 else
   echo "Skipping (set BUYER_PRIVATE_KEY in .env to run as buyer)."
 fi
@@ -197,10 +200,10 @@ echo "Parsed buyer_rec3 for pay_invoice_usdcx"
 echo ""
 
 echo "========== Step 12: pay_invoice_usdcx =========="
-if [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
-  echo "(若此处长时间无输出，可能是 leo run 在执行 usdcx 跨程序调用时挂起，可 Ctrl+C 后单独测试)"
+if [[ -n "${BUYER_PRIVATE_KEY:-}" && -n "${TOKEN_RECORD:-}" && -n "${USDCX_PROOFS:-}" ]]; then
+  echo "(需要 test_usdcx 的 Token record 与 [MerkleProof; 2]；若长时间无输出可能是跨程序调用挂起)"
   out=$(run_with_timeout 90 leo run --private-key "$BUYER_PRIVATE_KEY" pay_invoice_usdcx \
-    "$buyer_rec3" 22222field 1700000000u32 12345678field 2>&1); ret=$?
+    "$TOKEN_RECORD" "$buyer_rec3" 22222field 1700000000u32 "$USDCX_PROOFS" 2>&1); ret=$?
   echo "$out"
   if [[ $ret -eq 124 ]]; then
     echo "pay_invoice_usdcx 超时(90s)，已跳过。"
@@ -210,6 +213,8 @@ if [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
   else
     echo "pay_invoice_usdcx OK"
   fi
+elif [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
+  echo "Skipping (set TOKEN_RECORD and USDCX_PROOFS in .env to run pay_invoice_usdcx)."
 else
   echo "Skipping (set BUYER_PRIVATE_KEY in .env to run as buyer)."
 fi
