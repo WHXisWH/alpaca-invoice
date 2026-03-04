@@ -1,15 +1,19 @@
-// zk_invoice_v3_0.aleo — Wave 3: JCT compliance, tax_tag, atomic settlement (Credits + USDCx)
+// zk_invoice_v3_1.aleo — Wave 3.1: JCT compliance, tax_tag, atomic settlement (Credits private + USDCx public)
 //
-// 依赖：program.json 声明 credits.aleo、usdcx_test_alpaca_v1.aleo (local for build; network after deploy).
-// - pay_invoice_public: credits.aleo/transfer_public_as_signer，返回 Future 在 async function 中 await 后 finalize.
-// - pay_invoice_usdcx: usdcx_test_alpaca_v1.aleo/transfer_from_public(owner, recipient, amount)；Approve 由前端独立 TX 完成。
+// 依赖：program.json 声明 credits.aleo、test_usdcx_stablecoin.aleo (location: network).
+// - pay_invoice_credits_private: credits.aleo/transfer_private（私有 Record 转账，无 Future），
+//   finalize 只写 invoice_status + payment_commitments（承诺哈希）。
+// - pay_invoice_usdcx: test_usdcx_stablecoin.aleo/transfer_public_as_signer（无 Approve），
+//   finalize await USDCx Future + 写 invoice_status + payment_commitments。
+// - settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce})，ZK 审计承诺。
 
 import credits.aleo;
-import usdcx_test_alpaca_v1.aleo;
+import test_usdcx_stablecoin.aleo;
 
-program zk_invoice_v3_0.aleo {
+program zk_invoice_v3_1.aleo {
 
     // ========= Program lifecycle =========
+    // @noupgrade required by Leo compiler; new contract version can be deployed as zk_invoice_v3_2.aleo if needed.
     @noupgrade
     async constructor() {}
 
@@ -99,6 +103,13 @@ program zk_invoice_v3_0.aleo {
         group_b: TaxGroup
     }
 
+    // Wave 3.1: commitment input for ZK audit anchor (settlement_anchor = BHP256(PaymentCommitData))
+    struct PaymentCommitData {
+        invoice_id: field,
+        amount: u64,
+        nonce: field
+    }
+
     // Bundles JCT-related params to keep create_invoice under the 16-argument limit.
     struct CreateInvoiceJct {
         tax_groups: TaxGroups,
@@ -130,7 +141,8 @@ program zk_invoice_v3_0.aleo {
         currency_flag: u8         // 0 = Credits, 1 = USDCx
     }
 
-    // settlement_anchor: 将 tx_id_hash 固化进隐私收据，作为与 invoice_tx_id 公共 Mapping 的唯一连接键（审计回溯）
+    // settlement_anchor: Wave 3.1 承诺哈希 = BHP256(PaymentCommitData{invoice_id, amount, nonce})
+    // 买家凭 (invoice_id, amount, nonce) 向审计员证明支付真实性；payment_commitments[anchor] = invoice_id
     record PaymentRecord {
         owner: address,
         payment_id: field,
@@ -153,7 +165,8 @@ program zk_invoice_v3_0.aleo {
     mapping audit_counter: address => u64;
     mapping invoice_tax_tag: field => field;
     mapping invoice_jct_reg: field => field;
-    mapping invoice_tx_id: field => field;
+    // Wave 3.1: commitment → invoice_id（替换旧 invoice_tx_id）
+    mapping payment_commitments: field => field;
     mapping getter_commitment_cache: field => field;
     mapping getter_field_commitments_cache: field => FieldCommitments;
     mapping getter_rules_cache: field => field;
@@ -161,7 +174,7 @@ program zk_invoice_v3_0.aleo {
     mapping getter_counter_cache: address => u64;
     mapping getter_tax_tag_cache: field => field;
     mapping getter_jct_reg_cache: field => field;
-    mapping getter_tx_id_cache: field => field;
+    mapping getter_payment_commitment_cache: field => field;
 
     // ========= Helpers =========
     function compute_invoice_id_internal(
@@ -422,14 +435,14 @@ program zk_invoice_v3_0.aleo {
         Mapping::set(audit_counter, seller, audit_count + 1u64);
     }
 
-    // Atomic payment (JCT / Credits public path): transfer + mark PAID in one transition.
-    // tx_id_hash 为 public，链上可见；写入 PaymentRecord.settlement_anchor，供审计 Step 2 回溯。
-    async transition pay_invoice_public(
+    // Wave 3.1: Credits private payment — transfer_private returns records directly (no Future).
+    // settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce})（ZK audit commitment）
+    async transition pay_invoice_credits_private(
+        pay_record: credits.aleo/credits,
         invoice: InvoiceRecord,
         payment_nonce: field,
-        paid_at: u32,
-        public tx_id_hash: field
-    ) -> (PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
+        paid_at: u32
+    ) -> (credits.aleo/credits, credits.aleo/credits, PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
         let payer: address = self.caller;
 
         assert_eq(payer, invoice.buyer);
@@ -438,7 +451,16 @@ program zk_invoice_v3_0.aleo {
         assert(paid_at <= invoice.due_date);
         assert(invoice.total_amount > 0u64);
 
-        let transfer_future: Future = credits.aleo/transfer_public_as_signer(invoice.seller, invoice.total_amount);
+        // transfer_private returns (seller_record, change_record) — no Future
+        let (seller_credits, change_credits): (credits.aleo/credits, credits.aleo/credits) =
+            credits.aleo/transfer_private(pay_record, invoice.seller, invoice.total_amount);
+
+        let commit_data: PaymentCommitData = PaymentCommitData {
+            invoice_id: invoice.invoice_id,
+            amount: invoice.total_amount,
+            nonce: payment_nonce
+        };
+        let commitment: field = BHP256::hash_to_field(commit_data);
 
         let payment_id: field = BHP256::hash_to_field(invoice.invoice_id);
 
@@ -450,7 +472,7 @@ program zk_invoice_v3_0.aleo {
             payee: invoice.seller,
             amount: invoice.total_amount,
             paid_at: paid_at,
-            settlement_anchor: tx_id_hash
+            settlement_anchor: commitment
         };
 
         let buyer_paid: InvoiceRecord = InvoiceRecord {
@@ -495,20 +517,26 @@ program zk_invoice_v3_0.aleo {
         };
 
         return (
+            seller_credits,
+            change_credits,
             receipt,
             buyer_paid,
             seller_paid,
-            finalize_pay_after_transfer(invoice.invoice_id, tx_id_hash, transfer_future)
+            finalize_credits_private_pay(invoice.invoice_id, commitment)
         );
     }
 
-    // USDCx path: same 3-output + Future as pay_invoice_public; settlement_anchor / update_invoice_status 与 Credits 路径一致。
+    // Wave 3.1: USDCx private payment via test_usdcx_stablecoin.aleo/transfer_private.
+    // Signature: transfer_private(recipient, amount, token_record, proofs) -> (ComplianceRecord, Token, Token, Future)
+    // Requires [MerkleProof; 2] for freeze list compliance; returns a Future that must be awaited.
+    // settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce})（ZK audit commitment）
     async transition pay_invoice_usdcx(
+        token_record: test_usdcx_stablecoin.aleo/Token,
         invoice: InvoiceRecord,
         payment_nonce: field,
         paid_at: u32,
-        public tx_id_hash: field
-    ) -> (PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
+        private proofs: [MerkleProof; 2]
+    ) -> (test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/ComplianceRecord, PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
         let payer: address = self.caller;
 
         assert_eq(payer, invoice.buyer);
@@ -517,7 +545,17 @@ program zk_invoice_v3_0.aleo {
         assert(paid_at <= invoice.due_date);
         assert(invoice.total_amount > 0u64);
 
-        let transfer_future: Future = usdcx_test_alpaca_v1.aleo/transfer_from_public(invoice.buyer, invoice.seller, invoice.total_amount);
+        // transfer_private(recipient, amount, token_record, proofs) -> (ComplianceRecord, Token, Token, Future)
+        let (compliance_record, seller_token, change_token, transfer_future):
+            (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/Token, Future) =
+            test_usdcx_stablecoin.aleo/transfer_private(invoice.seller, invoice.total_amount as u128, token_record, proofs);
+
+        let commit_data: PaymentCommitData = PaymentCommitData {
+            invoice_id: invoice.invoice_id,
+            amount: invoice.total_amount,
+            nonce: payment_nonce
+        };
+        let commitment: field = BHP256::hash_to_field(commit_data);
 
         let payment_id: field = BHP256::hash_to_field(invoice.invoice_id);
 
@@ -529,7 +567,7 @@ program zk_invoice_v3_0.aleo {
             payee: invoice.seller,
             amount: invoice.total_amount,
             paid_at: paid_at,
-            settlement_anchor: tx_id_hash
+            settlement_anchor: commitment
         };
 
         let buyer_paid: InvoiceRecord = InvoiceRecord {
@@ -574,21 +612,34 @@ program zk_invoice_v3_0.aleo {
         };
 
         return (
+            seller_token,
+            change_token,
+            compliance_record,
             receipt,
             buyer_paid,
             seller_paid,
-            finalize_pay_after_transfer(invoice.invoice_id, tx_id_hash, transfer_future)
+            finalize_usdcx_pay(invoice.invoice_id, commitment, transfer_future)
         );
     }
 
-    async function finalize_pay_after_transfer(
+    // Credits private path: no transfer Future to await; just write status + commitment.
+    async function finalize_credits_private_pay(
         public invoice_id: field,
-        public tx_id_hash: field,
+        public commitment: field
+    ) {
+        Mapping::set(invoice_status, invoice_id, STATUS_PAID);
+        Mapping::set(payment_commitments, commitment, invoice_id);
+    }
+
+    // USDCx path: must await transfer_private Future (MerkleProof compliance check), then write status + commitment.
+    async function finalize_usdcx_pay(
+        public invoice_id: field,
+        public commitment: field,
         transfer_future: Future
     ) {
         transfer_future.await();
         Mapping::set(invoice_status, invoice_id, STATUS_PAID);
-        Mapping::set(invoice_tx_id, tx_id_hash, invoice_id);
+        Mapping::set(payment_commitments, commitment, invoice_id);
     }
 
     async transition cancel_invoice(
@@ -758,12 +809,12 @@ program zk_invoice_v3_0.aleo {
         Mapping::set(getter_jct_reg_cache, invoice_id, v);
     }
 
-    // 查询方向：invoice_tx_id[settlement_anchor] => invoice_id（供审计 Step 2 回溯）
-    async transition get_invoice_tx_id(settlement_anchor: field) -> Future {
-        return finalize_get_invoice_tx_id(settlement_anchor);
+    // Wave 3.1: payment_commitments[commitment] => invoice_id（供审计 Step 2 承诺验证回溯）
+    async transition get_payment_commitment(commitment: field) -> Future {
+        return finalize_get_payment_commitment(commitment);
     }
-    async function finalize_get_invoice_tx_id(public settlement_anchor: field) {
-        let v: field = Mapping::get_or_use(invoice_tx_id, settlement_anchor, 0field);
-        Mapping::set(getter_tx_id_cache, settlement_anchor, v);
+    async function finalize_get_payment_commitment(public commitment: field) {
+        let v: field = Mapping::get_or_use(payment_commitments, commitment, 0field);
+        Mapping::set(getter_payment_commitment_cache, commitment, v);
     }
 }
