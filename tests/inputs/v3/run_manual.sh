@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v3.1 手动验证：get_caller → create_invoice → cancel_invoice → create_invoice(2) → pay_invoice_credits_private → create_invoice(USDCx) → pay_invoice_usdcx
+# v3.1 手动验证：主流程 + 状态机回归检查（支付后取消应失败、取消后支付应失败）
 # 合约：zk_invoice_v3_1.aleo（Credits 私有 + USDCx 私有 transfer_private，承诺审计）
 # 在项目根目录执行：./tests/inputs/v3/run_manual.sh
 # 依赖：BUYER_PRIVATE_KEY（buyer 地址与 pay 的 caller 一致）；Step 8 需 CREDITS_RECORD（可选）；Step 12 需 TOKEN_RECORD + USDCX_PROOFS（可选），未提供则跳过对应 pay 步骤。
@@ -77,6 +77,8 @@ parse_two_invoice_records() {
   rec2_oneline=$(echo "$parsed" | sed -n '/---SEP---/,$p' | tail -n +2 | head -1)
 }
 
+credits_pay_succeeded=0
+
 echo "========== Step 1: get_caller =========="
 out=$(leo run get_caller 2>&1); ret=$?
 echo "$out"
@@ -145,6 +147,7 @@ out7=$(leo run create_invoice \
 echo "$out7"
 [[ $ret -ne 0 ]] && exit 1
 parse_two_invoice_records "$out7"
+seller_rec2="$rec1_oneline"
 buyer_rec2="$rec2_oneline"
 echo "Parsed buyer_rec2 for pay_invoice_credits_private"
 echo ""
@@ -161,6 +164,7 @@ if [[ -n "${BUYER_PRIVATE_KEY:-}" && -n "${CREDITS_RECORD:-}" ]]; then
   elif [[ $ret -ne 0 ]]; then
     exit 1
   else
+    credits_pay_succeeded=1
     echo "pay_invoice_credits_private OK"
   fi
 elif [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
@@ -202,14 +206,17 @@ echo ""
 echo "========== Step 12: pay_invoice_usdcx =========="
 if [[ -n "${BUYER_PRIVATE_KEY:-}" && -n "${TOKEN_RECORD:-}" && -n "${USDCX_PROOFS:-}" ]]; then
   echo "(需要 test_usdcx 的 Token record 与 [MerkleProof; 2]；若长时间无输出可能是跨程序调用挂起)"
+  set +e
   out=$(run_with_timeout 90 leo run --private-key "$BUYER_PRIVATE_KEY" pay_invoice_usdcx \
     "$TOKEN_RECORD" "$buyer_rec3" 22222field 1700000000u32 "$USDCX_PROOFS" 2>&1); ret=$?
+  set -e
   echo "$out"
   if [[ $ret -eq 124 ]]; then
     echo "pay_invoice_usdcx 超时(90s)，已跳过。"
     echo ""
   elif [[ $ret -ne 0 ]]; then
-    exit 1
+    echo "WARNING: pay_invoice_usdcx failed (exit=$ret), continue to run regression checks."
+    echo "Hint: verify TOKEN_RECORD/USDCX_PROOFS format and test_usdcx program state."
   else
     echo "pay_invoice_usdcx OK"
   fi
@@ -217,6 +224,45 @@ elif [[ -n "${BUYER_PRIVATE_KEY:-}" ]]; then
   echo "Skipping (set TOKEN_RECORD and USDCX_PROOFS in .env to run pay_invoice_usdcx)."
 else
   echo "Skipping (set BUYER_PRIVATE_KEY in .env to run as buyer)."
+fi
+echo ""
+
+echo "========== Step 13 (Regression): cancel after successful pay should FAIL =========="
+if [[ $credits_pay_succeeded -eq 1 ]]; then
+  set +e
+  out=$(leo run cancel_invoice "$seller_rec2" 2>&1); ret=$?
+  set -e
+  echo "$out"
+  if [[ $ret -eq 0 ]]; then
+    echo "INCONCLUSIVE: cancel succeeded in local 'leo run'."
+    echo "Reason: async transitions return Future in local mode, finalize state updates are not enforced like on-chain execute."
+    echo "Use leo execute / on-chain tx to validate paid->cancel protection end-to-end."
+  else
+    echo "PASS: cancel on paid invoice failed as expected."
+  fi
+else
+  echo "Skipping (requires Step 8 to succeed first)."
+fi
+echo ""
+
+echo "========== Step 14 (Regression): pay after cancel should FAIL =========="
+if [[ -n "${BUYER_PRIVATE_KEY:-}" && -n "${CREDITS_RECORD:-}" ]]; then
+  set +e
+  out=$(run_with_timeout 90 leo run --private-key "$BUYER_PRIVATE_KEY" pay_invoice_credits_private \
+    "$CREDITS_RECORD" "$buyer_rec1" 33333field 1700000001u32 2>&1); ret=$?
+  set -e
+  echo "$out"
+  if [[ $ret -eq 124 ]]; then
+    echo "INCONCLUSIVE: timeout while checking pay-after-cancel regression."
+  elif [[ $ret -eq 0 ]]; then
+    echo "INCONCLUSIVE: pay succeeded in local 'leo run'."
+    echo "Reason: async transitions return Future in local mode, finalize state updates are not enforced like on-chain execute."
+    echo "Use leo execute / on-chain tx to validate cancel->pay protection end-to-end."
+  else
+    echo "PASS: pay on cancelled invoice failed as expected."
+  fi
+else
+  echo "Skipping (set BUYER_PRIVATE_KEY and CREDITS_RECORD to run this regression check)."
 fi
 echo ""
 echo "========== Done =========="

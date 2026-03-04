@@ -1,9 +1,9 @@
-// zk_invoice_v3_1.aleo — Wave 3.1: JCT compliance, tax_tag, atomic settlement (Credits private + USDCx public)
+// zk_invoice_v3_1.aleo — Wave 3.1: JCT compliance, tax_tag, atomic settlement (Credits private + USDCx private)
 //
 // 依赖：program.json 声明 credits.aleo、test_usdcx_stablecoin.aleo (location: network).
 // - pay_invoice_credits_private: credits.aleo/transfer_private（私有 Record 转账，无 Future），
 //   finalize 只写 invoice_status + payment_commitments（承诺哈希）。
-// - pay_invoice_usdcx: test_usdcx_stablecoin.aleo/transfer_public_as_signer（无 Approve），
+// - pay_invoice_usdcx: test_usdcx_stablecoin.aleo/transfer_private（需 Merkle proofs），
 //   finalize await USDCx Future + 写 invoice_status + payment_commitments。
 // - settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce})，ZK 审计承诺。
 
@@ -251,12 +251,15 @@ program zk_invoice_v3_1.aleo {
         return BHP256::hash_to_field(tax_groups);
     }
 
-    // Verification A (per group): net_sum * rate_bps / 10000 == tax_sum. Overflow-safe when rate_bps <= 10000.
+    // Verification A (per group): net_sum * rate_bps / 10000 == tax_sum.
     function tax_group_valid(g: TaxGroup) -> bool {
         if g.rate_bps == 0u64 {
             return (g.net_sum == 0u64) && (g.tax_sum == 0u64);
         }
-        let expected_tax: u64 = (g.net_sum / 10000u64) * g.rate_bps;
+        if g.rate_bps > 10000u64 {
+            return false;
+        }
+        let expected_tax: u64 = (g.net_sum * g.rate_bps) / 10000u64;
         return g.tax_sum == expected_tax;
     }
 
@@ -296,6 +299,7 @@ program zk_invoice_v3_1.aleo {
         assert_neq(seller, buyer);
         assert(amount > 0u64);
         assert(amount <= MAX_INVOICE_AMOUNT);
+        assert(tax_rate_bps <= 10000u64);
         assert(due_date >= current_time);
 
         let invoice_id: field = compute_invoice_id_internal(seller, buyer, amount, due_date, nonce);
@@ -313,7 +317,7 @@ program zk_invoice_v3_1.aleo {
         }
         assert_eq(amount + tax_amount, total_amount);
 
-        let expected_tax: u64 = (amount / 10000u64) * tax_rate_bps;
+        let expected_tax: u64 = (amount * tax_rate_bps) / 10000u64;
         let r1_tax_ok: bool = tax_amount == expected_tax;
         let r2_due_ok: bool = due_date >= current_time;
         let r3_total_ok: bool = amount + tax_amount == expected_total;
@@ -462,7 +466,13 @@ program zk_invoice_v3_1.aleo {
         };
         let commitment: field = BHP256::hash_to_field(commit_data);
 
-        let payment_id: field = BHP256::hash_to_field(invoice.invoice_id);
+        let payment_data: PaymentData = PaymentData {
+            invoice_id: invoice.invoice_id,
+            payer: payer,
+            payee: invoice.seller,
+            payment_nonce: payment_nonce
+        };
+        let payment_id: field = BHP256::hash_to_field(payment_data);
 
         let receipt: PaymentRecord = PaymentRecord {
             owner: payer,
@@ -557,7 +567,13 @@ program zk_invoice_v3_1.aleo {
         };
         let commitment: field = BHP256::hash_to_field(commit_data);
 
-        let payment_id: field = BHP256::hash_to_field(invoice.invoice_id);
+        let payment_data: PaymentData = PaymentData {
+            invoice_id: invoice.invoice_id,
+            payer: payer,
+            payee: invoice.seller,
+            payment_nonce: payment_nonce
+        };
+        let payment_id: field = BHP256::hash_to_field(payment_data);
 
         let receipt: PaymentRecord = PaymentRecord {
             owner: payer,
@@ -627,6 +643,8 @@ program zk_invoice_v3_1.aleo {
         public invoice_id: field,
         public commitment: field
     ) {
+        let current_status: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_PENDING);
+        assert_eq(current_status, STATUS_PENDING);
         Mapping::set(invoice_status, invoice_id, STATUS_PAID);
         Mapping::set(payment_commitments, commitment, invoice_id);
     }
@@ -638,6 +656,8 @@ program zk_invoice_v3_1.aleo {
         transfer_future: Future
     ) {
         transfer_future.await();
+        let current_status: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_PENDING);
+        assert_eq(current_status, STATUS_PENDING);
         Mapping::set(invoice_status, invoice_id, STATUS_PAID);
         Mapping::set(payment_commitments, commitment, invoice_id);
     }
@@ -681,6 +701,8 @@ program zk_invoice_v3_1.aleo {
         public invoice_id: field,
         public seller: address
     ) {
+        let current_status: u8 = Mapping::get_or_use(invoice_status, invoice_id, STATUS_PENDING);
+        assert_eq(current_status, STATUS_PENDING);
         Mapping::set(invoice_status, invoice_id, STATUS_CANCELLED);
         let current_count: u64 = Mapping::get_or_use(audit_counter, seller, 0u64);
         if current_count > 0u64 {

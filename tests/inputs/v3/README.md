@@ -10,12 +10,16 @@
 
 或：`bash tests/inputs/v3/run_manual.sh`。
 
-**脚本步骤**（合约 **zk_invoice_v3_1.aleo**）：get_caller → compute_invoice_hash → make_jct_non_jct → **create_invoice #1** → **cancel_invoice**（用 #1 的 seller record）→ create_invoice #2（Credits）→ **pay_invoice_credits_private**（用 #2 的 buyer record + credits record）→ create_invoice #3（USDCx）→ **pay_invoice_usdcx**（用 #3 的 buyer record + token record + proofs）。
+**脚本步骤**（合约 **zk_invoice_v3_1.aleo**）：get_caller → compute_invoice_hash → make_jct_non_jct → **create_invoice #1** → **cancel_invoice**（用 #1 的 seller record）→ create_invoice #2（Credits）→ **pay_invoice_credits_private**（用 #2 的 buyer record + credits record）→ create_invoice #3（USDCx）→ **pay_invoice_usdcx**（用 #3 的 buyer record + token record + proofs）→ **Regression#1: cancel after pay（应失败）** → **Regression#2: pay after cancel（应失败）**。
 
 - 默认使用 `.env` 中的 `PRIVATE_KEY` 作为 seller（create / cancel 等）。
 - **Buyer 地址**：若在 `.env` 中设置了 **`BUYER_PRIVATE_KEY`**，脚本会先用该密钥执行 `get_caller` 得到 buyer 地址，并以此地址作为所有 create_invoice 的 buyer；未设置则使用测试常量 `aleo1qqqq...3ljyzc` 作为 buyer，并跳过 Step 8 / Step 12。
 - **Step 8（Credits 支付）**：需在 `.env` 中设置 **`CREDITS_RECORD`**（一行 `credits.aleo/credits` record），否则跳过。签名：`pay_invoice_credits_private(pay_record, invoice_record, payment_nonce, paid_at)`。
 - **Step 12（USDCx 支付）**：需在 `.env` 中设置 **`TOKEN_RECORD`** 与 **`USDCX_PROOFS`**（test_usdcx 的 Token record 与 `[MerkleProof; 2]`），否则跳过。签名：`pay_invoice_usdcx(token_record, invoice_record, payment_nonce, paid_at, proofs)`，返回 7 个输出（seller_token, change_token, compliance_record, PaymentRecord, 2× InvoiceRecord, Future）。
+- **Step 13 / 14（状态机回归）**：用于验证修复后的竞态保护：  
+  - Step 13：发票 #2 支付成功后再 `cancel_invoice`，应失败（失败=PASS）。  
+  - Step 14：发票 #1 先取消后再 `pay_invoice_credits_private`，应失败（失败=PASS）。  
+  - 注意：在本地 `leo run` 下，async transition 主要返回 Future，无法完全等价链上 finalize 状态推进；若出现“本地成功”，脚本会标记 **INCONCLUSIVE**。要做严格验证请用 `leo execute` / 链上交易流程。
 - **若 Step 8/12 长时间无输出**：跨程序调用可能挂起。脚本在检测到 `timeout` 时会为这两步加 90 秒超时；macOS 可 `brew install coreutils` 使用 `timeout`。
 
 ---
