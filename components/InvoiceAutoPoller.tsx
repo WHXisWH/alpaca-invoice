@@ -5,6 +5,7 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useInvoiceListPolling } from '@/controller/Invoice/useInvoiceListPolling';
 import { AleoField, Invoice } from '@/lib/types';
 import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
+import { useUserStore } from '@/stores/User/useUserStore';
 
 /**
  * InvoiceAutoPoller - Global automatic polling component
@@ -20,6 +21,7 @@ import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
  * - Cross-page sync: all pages share the same polling state
  */
 export function InvoiceAutoPoller() {
+  const masterKey = useUserStore((state) => state.masterKey);
   const sendingInvoiceHashes = useInvoiceStore(
     (state: InvoiceState) => state.sendingInvoiceHashes
   );
@@ -32,19 +34,30 @@ export function InvoiceAutoPoller() {
   const pollingHashesRef = useRef<Set<AleoField>>(new Set());
 
   // Polling complete callback: update invoice status and remove from sending index
-  const handlePollingComplete = (invoiceHash: AleoField, updatedInvoice: Invoice) => {
-    console.log(`✅ [AutoPoller] Polling complete for: ${invoiceHash}`);
+  const handlePollingComplete = async (invoiceHash: AleoField, updatedInvoice: Invoice) => {
+    const isChainConfirmed = updatedInvoice.metadata?.confirmationStatus === 'CONFIRMED';
+    console.log(
+      `${isChainConfirmed ? '✅' : '⚠️'} [AutoPoller] Polling ${isChainConfirmed ? 'complete' : 'timeout'} for: ${invoiceHash}`
+    );
     
-    // Update invoice to store (updateInvoice will automatically update the sending index)
-    updateInvoice(updatedInvoice.id, updatedInvoice, {
-      masterKey: undefined, // Auto-poller does not handle encryption; determined by the specific page
-      persistFull: false     // Only update in memory, do not persist (to avoid overwriting user data)
-    }).catch((error: unknown) => {
+    // Persist to IndexedDB only after true chain confirmation.
+    // For timeout/unconfirmed cases, update memory only.
+    const shouldPersist = Boolean(isChainConfirmed && masterKey);
+    try {
+      await updateInvoice(updatedInvoice.id, updatedInvoice, {
+        masterKey: shouldPersist ? masterKey! : undefined,
+        persistFull: shouldPersist
+      });
+    } catch (error: unknown) {
       console.error(`❌ [AutoPoller] Failed to update invoice ${invoiceHash}:`, error);
-    });
+      // Keep tracking this hash for retry path.
+      return;
+    }
     
-    // Mark as confirmed (remove from sending index)
-    markInvoiceConfirmed(invoiceHash);
+    // Only remove from sending index after real chain confirmation.
+    if (isChainConfirmed) {
+      markInvoiceConfirmed(invoiceHash);
+    }
     
     // Remove from tracking set
     pollingHashesRef.current.delete(invoiceHash);
@@ -63,11 +76,12 @@ export function InvoiceAutoPoller() {
     );
     
     if (newHashes.length > 0) {
-      console.log(`🔄 [AutoPoller] Detected ${newHashes.length} new SENDING invoice(s), starting polling...`);
-      
+      console.log(`🔄 [AutoPoller] Detected ${newHashes.length} new SENDING invoice(s), starting polling...`, {
+        hashes: newHashes,
+        hashLengths: newHashes.map((h) => h?.length)
+      });
       // Mark as polling started
       newHashes.forEach(hash => pollingHashesRef.current.add(hash));
-      
       // Start polling
       startPolling(newHashes);
     }

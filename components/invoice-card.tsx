@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { CreditCard, X, Eye, Copy, Loader2 } from 'lucide-react';
+import { CreditCard, X, Eye, Copy, Loader2, ExternalLink } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -23,6 +23,7 @@ interface InvoiceCardProps {
   isLoading?: boolean;
   isProcessing?: boolean;
   isSyncing?: boolean;
+  explorerTxUrl?: string | null;
   onPay?: (invoice: Invoice) => void;
   onCancel?: (invoice: Invoice) => void;
 }
@@ -42,6 +43,7 @@ export default function InvoiceCard({
   isLoading = false,
   isProcessing = false,
   isSyncing = false,
+  explorerTxUrl = null,
   onPay,
   onCancel,
 }: InvoiceCardProps) {
@@ -136,6 +138,18 @@ export default function InvoiceCard({
               <Eye className="h-4 w-4" />
               View
             </Link>
+            {explorerTxUrl && (
+              <a
+                href={explorerTxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-primary-200/60 bg-white/70 px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-white"
+                title="View transaction on Aleo Explorer"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Explorer
+              </a>
+            )}
 
             {invoice.status === InvoiceStatus.PENDING && role && (
               <>

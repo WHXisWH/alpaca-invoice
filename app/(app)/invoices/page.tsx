@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useInvoices } from '@/controller/Invoice/useInvoices';
+import { Suspense } from 'react';
+import { useInvoicesPageController } from '@/controller/Invoice/useInvoicesPageController';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -15,12 +14,9 @@ import {
   Loader2,
   Shield,
   Wallet,
-  FileText,
-  Download
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { InvoiceStatus } from '@/lib/types';
 
 const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
   { key: 'all', label: 'All' },
@@ -44,14 +40,9 @@ export default function InvoicesPage() {
 }
 
 function InvoicesPageInner() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const { isAuthRequired, handleUnlock } = useAuthCheck();
   const {
-    filteredInvoices,
-    sentInvoices,
-    receivedInvoices,
+    displayInvoices,
     filter,
     search,
     isLoading,
@@ -62,78 +53,15 @@ function InvoicesPageInner() {
     setFilter,
     setSearch,
     handleSyncAll,
-    handlePay,
-    handleCancel,
     isInvoiceProcessing,
-    isInvoiceSyncing
-  } = useInvoices();
-  const [roleFilter, setRoleFilter] = useState<'all' | 'sent' | 'received'>('all');
-
-  useEffect(() => {
-    const q = searchParams?.get('filter');
-    if (q === 'sent' || q === 'received') setRoleFilter(q);
-    else setRoleFilter('all');
-  }, [searchParams]);
-
-  const handleRoleChange = (role: 'all' | 'sent' | 'received') => {
-    setRoleFilter(role);
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    if (role === 'all') params.delete('filter');
-    else params.set('filter', role);
-    router.replace(`${pathname}?${params.toString()}`);
-  };
-
-  const displayInvoices = useMemo(() => {
-    if (roleFilter === 'sent') return sentInvoices;
-    if (roleFilter === 'received') return receivedInvoices;
-    return filteredInvoices;
-  }, [roleFilter, sentInvoices, receivedInvoices, filteredInvoices]);
-
-  const exportCsv = () => {
-    if (!displayInvoices.length) return;
-    const rows = [
-      ['invoiceId', 'role', 'status', 'buyer', 'seller', 'amount_microcredits', 'dueDate', 'createdAt'].join(',')
-    ];
-    for (const item of displayInvoices) {
-      const inv = item.invoice;
-      rows.push(
-        [
-          inv.id,
-          item.role,
-          InvoiceStatus[inv.status] ?? inv.status,
-          inv.buyer,
-          inv.seller,
-          inv.amount.toString(),
-          inv.dueDate?.toISOString?.() ?? '',
-          inv.createdAt?.toISOString?.() ?? ''
-        ].join(',')
-      );
-    }
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'invoices.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Only allow actions after on-chain confirmation
-  const guardActionByChainStatus = (
-    chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined,
-    actionName: 'pay' | 'cancel'
-  ) => {
-    if (chainStatus !== 'CONFIRMED') {
-      toast.warning('Not ready yet', {
-        description:
-          actionName === 'pay'
-            ? 'This invoice is still sending. Please wait for chain confirmation (or click Sync) before paying.'
-            : 'This invoice is still sending. Please wait for chain confirmation (or click Sync) before cancelling.'
-      });
-      return false;
-    }
-    return true;
-  };
+    isInvoiceSyncing,
+    roleFilter,
+    handleRoleChange,
+    exportCsv,
+    handlePayWithGuard,
+    handleCancelWithGuard,
+    getExplorerUrl
+  } = useInvoicesPageController();
 
   // Authorization modal
   if (isAuthRequired) {
@@ -271,7 +199,6 @@ function InvoicesPageInner() {
           className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           title="Export current list to CSV"
         >
-          <Download className="h-4 w-4" />
           Export CSV
         </button>
       </MotionItem>
@@ -356,14 +283,9 @@ function InvoicesPageInner() {
                   isLoading={isLoading}
                   isProcessing={isProcessing}
                   isSyncing={isSyncingInvoice}
-                  onPay={(inv) => {
-                    if (!guardActionByChainStatus(chainStatus, 'pay')) return;
-                    handlePay(inv);
-                  }}
-                  onCancel={(inv) => {
-                    if (!guardActionByChainStatus(chainStatus, 'cancel')) return;
-                    handleCancel(inv);
-                  }}
+                  explorerTxUrl={getExplorerUrl(invoice)}
+                  onPay={(inv) => handlePayWithGuard(inv, chainStatus)}
+                  onCancel={(inv) => handleCancelWithGuard(inv, chainStatus)}
                 />
               </MotionItem>
             );

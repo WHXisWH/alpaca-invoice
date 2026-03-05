@@ -47,8 +47,29 @@ export function useInvoiceDetail(invoiceHash: AleoField | null): IInvoiceDetail 
     (state: InvoiceState) => state.sendingInvoiceHashes
   );
   const isSyncing = useMemo(() => {
-    return invoiceHash ? sendingInvoiceHashes[invoiceHash] === true : false;
-  }, [invoiceHash, sendingInvoiceHashes]);
+    const syncing = invoiceHash ? sendingInvoiceHashes[invoiceHash] === true : false;
+    // [DEBUG] Log when we expect spinner (SENDING) but isSyncing is false — key mismatch or timing
+    if (typeof window !== 'undefined' && invoiceHash && invoice) {
+      const expectSpinner = invoice.metadata?.confirmationStatus === 'SENDING';
+      if (expectSpinner && !syncing) {
+        const keys = Object.keys(sendingInvoiceHashes);
+        const hasKey = keys.includes(invoiceHash);
+        const rawValue = (sendingInvoiceHashes as Record<string, unknown>)[invoiceHash];
+        console.log('[DEBUG useInvoiceDetail] Spinner expected but isSyncing=false', {
+          invoiceHashFromUrl: invoiceHash,
+          invoiceHashLength: invoiceHash?.length,
+          invoiceInvoiceHash: invoice.invoiceHash,
+          sameAsUrl: invoiceHash === invoice.invoiceHash,
+          sendingKeysCount: keys.length,
+          sendingKeysSample: keys.slice(0, 2),
+          hasExactKey: hasKey,
+          rawValue,
+          invoiceId: invoice?.id
+        });
+      }
+    }
+    return syncing;
+  }, [invoiceHash, sendingInvoiceHashes, invoice]);
   
   // 5. Manual sync helpers (auto polling handled globally)
   const {

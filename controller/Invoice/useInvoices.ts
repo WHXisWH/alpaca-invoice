@@ -5,7 +5,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { AleoField, Invoice, InvoiceStatus, CurrencyFlag } from '@/lib/types';
 import { IInvoices, InvoiceWithRole } from './IInvoices';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
-import { updateInvoiceFromPaymentRecord, updateInvoiceFromInvoiceRecord, buildInvoiceFromRecord, cleanAleoField } from '@/lib/invoice';
+import { updateInvoiceFromInvoiceRecord, buildInvoiceFromRecord, cleanAleoField } from '@/lib/invoice';
 import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
 import { useInvoiceListRole } from './useInvoiceListRole';
 import { useInvoiceListFilter } from './useInvoiceListFilter';
@@ -39,13 +39,11 @@ export function useInvoices(): IInvoices {
   const { publicKey, masterKey } = useUserStore();
   const { 
     invoices, 
-    updateInvoice, 
     setInvoices,
     sendingInvoiceHashes,
-    markInvoiceSending,  // Marks invoice as SENDING (triggers AutoPoller)
-    rebuildSendingIndex  // Rebuilds sending index from invoices
+    markInvoiceSending  // Marks invoice as SENDING (triggers AutoPoller)
   } = useInvoiceStore();
-  const { scanAllInvoiceRecords, scanAllPaymentRecords } = useInvoiceChainScan();
+  const { scanAllInvoiceRecords, scanInvoiceRecord } = useInvoiceChainScan();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // 1. Initialization (polling managed globally)
@@ -198,57 +196,13 @@ export function useInvoices(): IInvoices {
       
       // Scan with invoice_id de-duplication
       const { byInvoiceId: invoiceRecordsByInvoiceId } = await scanAllInvoiceRecords();
-      const paymentRecords = await scanAllPaymentRecords();
-      
       const statusValidator = new InvoiceStatusValidator();
       
       // Rebuild full invoice list from on-chain data
       const syncedInvoices: Invoice[] = [];
-      const processedInvoiceIds = new Set<string>();
       
-      // 1) Process payment records first (higher priority)
-      for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
-        try {
-          // Find local invoice
-          const localInvoice = invoices.find((inv: Invoice) => {
-            const cleanLocalId = cleanAleoField(inv.id);
-            const cleanRecordId = cleanAleoField(invoiceId);
-            return cleanLocalId === cleanRecordId;
-          });
-          
-          if (localInvoice) {
-            const validation = statusValidator.validateRecord(
-              paymentRecord,
-              localInvoice.metadata?.action,
-              localInvoice.status
-            );
-            
-            if (validation.shouldConfirm) {
-              const updatedInvoice = updateInvoiceFromPaymentRecord(localInvoice, paymentRecord);
-              syncedInvoices.push({
-                ...localInvoice,
-                ...updatedInvoice,
-                metadata: {
-                  confirmationStatus: 'CONFIRMED',
-                  dataSource: 'chain',
-                  action: localInvoice.metadata?.action
-                }
-              } as Invoice);
-              processedInvoiceIds.add(invoiceId);
-            }
-          }
-        } catch (error) {
-          console.error(`Failed to process payment record ${invoiceId}:`, error);
-          continue;
-        }
-      }
-      
-      // 2) Process InvoiceRecord when no PaymentRecord exists
+      // 1) Process InvoiceRecord only (invoice list page should not depend on PaymentRecord scan)
       for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
-        if (processedInvoiceIds.has(invoiceId)) {
-          continue; // already handled via payment record
-        }
-        
         try {
           const localInvoice = invoices.find((inv: Invoice) => {
             const cleanLocalId = cleanAleoField(inv.id);
@@ -299,6 +253,45 @@ export function useInvoices(): IInvoices {
           continue;
         }
       }
+
+      // 2) Fallback: per-invoice scan to avoid missing confirmations
+      // when bulk parsing/dedup does not return a local invoice.
+      for (const localInvoice of invoices) {
+        const cleanLocalId = cleanAleoField(localInvoice.id);
+        const alreadySynced = syncedInvoices.some(
+          (s) => cleanAleoField(s.id) === cleanLocalId
+        );
+        if (alreadySynced) continue;
+
+        try {
+          const { invoiceRecord } = await scanInvoiceRecord(
+            localInvoice.invoiceHash,
+            localInvoice.id
+          );
+          if (!invoiceRecord) continue;
+
+          const validation = statusValidator.validateRecord(
+            invoiceRecord,
+            localInvoice.metadata?.action,
+            localInvoice.status
+          );
+          if (!validation.shouldConfirm) continue;
+
+          const updatedInvoice = updateInvoiceFromInvoiceRecord(localInvoice, invoiceRecord);
+
+          syncedInvoices.push({
+            ...localInvoice,
+            ...updatedInvoice,
+            metadata: {
+              confirmationStatus: 'CONFIRMED',
+              dataSource: 'chain',
+              action: localInvoice.metadata?.action
+            }
+          } as Invoice);
+        } catch (error) {
+          console.warn(`Fallback scan failed for ${localInvoice.invoiceHash}:`, error);
+        }
+      }
       
       // Preserve SENDING invoices (not yet on chain) so they don't get deleted
       for (const inv of invoices) {
@@ -337,7 +330,7 @@ export function useInvoices(): IInvoices {
     } finally {
       setIsSyncing(false);
     }
-  }, [publicKey, masterKey, invoices, setInvoices, rebuildSendingIndex, scanAllInvoiceRecords, scanAllPaymentRecords]);
+  }, [publicKey, masterKey, invoices, setInvoices, scanAllInvoiceRecords, scanInvoiceRecord]);
 
   // Auto-initialize when wallet is connected (masterKey optional)
   useEffect(() => {

@@ -1,7 +1,6 @@
-import { Invoice, InvoiceStatus, AleoField, CurrencyFlag } from './types';
+import { Invoice, InvoiceStatus, AleoField, CurrencyFlag, type TaxGroups } from './types';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { cleanAleoNumber } from './utils';
-import InvoiceCard from '@/components/invoice-card';
 
 // ============================================================================
 // Invoice status configuration
@@ -67,6 +66,21 @@ export function getStatusConfig(status: InvoiceStatus): StatusConfig {
         border: 'border-slate-300'
       };
   }
+}
+
+// ============================================================================
+// Tax groups (JCT)
+// ============================================================================
+
+/**
+ * 从 invoice.taxGroups 解析适用税率文案（group_a=10%, group_b=8%，仅 net_sum>0 的组）
+ */
+export function getTaxRateLabelFromTaxGroups(taxGroups: TaxGroups | undefined): string | null {
+  if (!taxGroups) return null;
+  const parts: string[] = [];
+  if (Number(taxGroups.group_a?.net_sum ?? 0) > 0) parts.push('10%');
+  if (Number(taxGroups.group_b?.net_sum ?? 0) > 0) parts.push('8%');
+  return parts.length > 0 ? parts.join(', ') : null;
 }
 
 // ============================================================================
@@ -138,6 +152,8 @@ export function buildInvoiceFromRecord(
     currency: record.currency ? cleanAleoField(record.currency) as AleoField : undefined,
     itemsHash: record.items_hash ? cleanAleoField(record.items_hash) as AleoField : undefined,
     memoHash: record.memo_hash ? cleanAleoField(record.memo_hash) as AleoField : undefined,
+    transactionId: record.transactionId,
+    blockHeight: record.blockHeight != null ? Number(record.blockHeight) : undefined,
     details: undefined // On-chain data does not include details
   };
   // Wave 3: map tax_tag, jct_registration, total_amount, currency_flag
@@ -184,7 +200,9 @@ export function updateInvoiceFromPaymentRecord(
     auditKey: invoice.auditKey,
     taxTag: invoice.taxTag,
     jctRegistration: invoice.jctRegistration,
-    currencyFlag: invoice.currencyFlag
+    currencyFlag: invoice.currencyFlag,
+    transactionId: invoice.transactionId,
+    blockHeight: invoice.blockHeight
   };
 }
 
@@ -222,6 +240,8 @@ export function updateInvoiceFromInvoiceRecord(
     currency: invoiceRecord.currency ? cleanAleoField(invoiceRecord.currency) as AleoField : invoice.currency,
     itemsHash: invoiceRecord.items_hash ? cleanAleoField(invoiceRecord.items_hash) as AleoField : invoice.itemsHash,
     memoHash: invoiceRecord.memo_hash ? cleanAleoField(invoiceRecord.memo_hash) as AleoField : invoice.memoHash,
+    transactionId: invoiceRecord.transactionId ?? invoice.transactionId,
+    blockHeight: invoiceRecord.blockHeight != null ? Number(invoiceRecord.blockHeight) : invoice.blockHeight,
     nonce: invoice.nonce,
     auditKey: invoice.auditKey
   };

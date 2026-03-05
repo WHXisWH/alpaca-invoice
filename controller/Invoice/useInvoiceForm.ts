@@ -406,6 +406,10 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
           }
         }
 
+        console.log('[DEBUG useInvoiceForm] Redirecting to detail page', {
+          invoiceHash,
+          invoiceHashLength: invoiceHash?.length
+        });
         router.push(`/invoices/${invoiceHash}`);
       } catch (err) {
         handleError(err);

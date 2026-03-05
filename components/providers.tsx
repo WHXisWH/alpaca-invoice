@@ -45,7 +45,7 @@ export default function Providers({ children }: Props) {
       decryptPermission={DecryptPermission.OnChainHistory}
       network={network}
       programs={programs}
-      autoConnect={false}
+      autoConnect={true}
       localStorageKey="zk-invoice-wallet"
       onError={(err) => {
         console.error('❌ [AleoWalletProvider] error', err);

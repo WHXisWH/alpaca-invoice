@@ -103,6 +103,10 @@ export interface Invoice {
   taxGroups?: TaxGroups;
   /** JCT 登记号明文（13 位数字字符串） */
   tNumber?: string;
+  /** Chain TX id where this invoice record was observed */
+  transactionId?: AleoTransactionId;
+  /** Chain block height where this invoice record was observed */
+  blockHeight?: number;
 }
 
 export interface EncryptedPayload {

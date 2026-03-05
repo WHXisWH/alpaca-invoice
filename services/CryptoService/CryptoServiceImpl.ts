@@ -890,7 +890,7 @@ export class CryptoService implements ICryptoService {
   serializeTaxGroupsForContract(groups: TaxGroups): string {
     const ga = groups.group_a;
     const gb = groups.group_b;
-    return `{group_a: {rate_bps: ${ga.rate_bps}u32, net_sum: ${ga.net_sum}u64, tax_sum: ${ga.tax_sum}u64}, group_b: {rate_bps: ${gb.rate_bps}u32, net_sum: ${gb.net_sum}u64, tax_sum: ${gb.tax_sum}u64}}`;
+    return `{group_a: {rate_bps: ${ga.rate_bps}u64, net_sum: ${ga.net_sum}u64, tax_sum: ${ga.tax_sum}u64}, group_b: {rate_bps: ${gb.rate_bps}u64, net_sum: ${gb.net_sum}u64, tax_sum: ${gb.tax_sum}u64}}`;
   }
 
   /**

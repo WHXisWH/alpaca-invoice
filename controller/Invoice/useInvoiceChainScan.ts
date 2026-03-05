@@ -10,7 +10,7 @@ import { AleoField, Invoice } from '@/lib/types';
 /** Chain-scanned Wave 3 InvoiceRecord (includes tax_tag, jct_registration, total_amount, currency_flag) */
 export type AleoInvoiceRecordV3 = AleoInvoiceRecord;
 import { parseSingleRecord } from '@/lib/recordParser';
-import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId, buildInvoiceFromRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
+import { cleanAleoField, deduplicateInvoiceRecordsByInvoiceId, buildInvoiceFromRecord } from '@/lib/invoice';
 import { cleanAleoNumber } from '@/lib/utils';
 import { PROGRAM_ID } from '@/lib/contract';
 
@@ -80,6 +80,10 @@ export function useInvoiceChainScan() {
           
           const parsed = await parseSingleRecord(record, cryptoService);
           if (parsed?.invoiceRecord) {
+            const txId = typeof record?.transactionId === 'string'
+              ? record.transactionId.trim()
+              : undefined;
+            const blockHeight = Number(record?.blockHeight);
             const cleanChainHash = cleanAleoField(parsed.invoiceRecord.invoice_hash || '');
             if (cleanChainHash) {
               // ✅ 计算 status 数值（用于择优：CANCELLED=2 > PENDING=0）
@@ -88,6 +92,8 @@ export function useInvoiceChainScan() {
               const candidate = {
                 record: {
                   ...parsed.invoiceRecord,
+                  ...(txId ? { transactionId: txId as any } : {}),
+                  ...(Number.isFinite(blockHeight) ? { blockHeight } : {}),
                   originalInvoiceId // 保留原始格式（带 .private）
                 },
                 spent: isSpent,
@@ -153,15 +159,29 @@ export function useInvoiceChainScan() {
       console.log('🔍 [scanAllPaymentRecords] Scanning chain for all payment records...');
       const response = await walletService.requestRecords(PROGRAM_ID);
       const records: any[] = response?.records ?? [];
-      console.log(`📋 [scanAllPaymentRecords] Found ${records.length} records`);
+      const recordNameKey = (r: any) => (typeof r?.recordName === 'string' ? r.recordName : r?.record_name) as string | undefined;
+      const paymentOnly = records.filter((r) => {
+        const name = recordNameKey(r);
+        return !name || name === 'PaymentRecord';
+      });
+      console.log(`📋 [scanAllPaymentRecords] Found ${records.length} records (${paymentOnly.length} PaymentRecord by name)`);
 
-      for (const record of records) {
+      for (const record of paymentOnly) {
         try {
           const parsed = await parseSingleRecord(record, cryptoService);
           if (parsed?.paymentRecord) {
-            const cleanInvoiceId = cleanAleoField(parsed.paymentRecord.invoice_id || '');
+            const txId = typeof record?.transactionId === 'string'
+              ? record.transactionId.trim()
+              : undefined;
+            const blockHeight = Number(record?.blockHeight);
+            const paymentRecordWithChainMeta = {
+              ...parsed.paymentRecord,
+              ...(txId ? { transactionId: txId as any } : {}),
+              ...(Number.isFinite(blockHeight) ? { blockHeight } : {})
+            };
+            const cleanInvoiceId = cleanAleoField(paymentRecordWithChainMeta.invoice_id || '');
             if (cleanInvoiceId) {
-              recordsMap.set(cleanInvoiceId, parsed.paymentRecord);
+              recordsMap.set(cleanInvoiceId, paymentRecordWithChainMeta as any);
             }
           }
         } catch (error) {
@@ -235,21 +255,28 @@ export function useInvoiceChainScan() {
                   spent: isSpent
                 };
               }
-              // PaymentRecord 优先级更高，找到未花费的后可以提前退出
-              if (!isSpent) {
-                break;
-              }
+              // Continue scanning to also collect matching InvoiceRecord.
+              // Polling confirmation now depends on InvoiceRecord fields (e.g. status/amount).
             }
           } else if (parsed?.invoiceRecord) {
+            const txId = typeof record?.transactionId === 'string'
+              ? record.transactionId.trim()
+              : undefined;
+            const blockHeight = Number(record?.blockHeight);
+            const invoiceRecordWithChainMeta = {
+              ...parsed.invoiceRecord,
+              ...(txId ? { transactionId: txId as any } : {}),
+              ...(Number.isFinite(blockHeight) ? { blockHeight } : {})
+            };
             // InvoiceRecord - 通过 invoice_hash 匹配
-            const cleanChainHash = cleanAleoField(parsed.invoiceRecord.invoice_hash || '');
+            const cleanChainHash = cleanAleoField(invoiceRecordWithChainMeta.invoice_hash || '');
             const cleanInvoiceHash = cleanAleoField(invoiceHash);
 
             if (cleanChainHash === cleanInvoiceHash) {
-              console.log(`✅ [scanInvoiceRecord] Found matching InvoiceRecord (spent: ${isSpent}):`, parsed.invoiceRecord);
+              console.log(`✅ [scanInvoiceRecord] Found matching InvoiceRecord (spent: ${isSpent}):`, invoiceRecordWithChainMeta);
               // ✅ 收集所有匹配的 InvoiceRecord
               matchingInvoiceRecords.push({
-                record: parsed.invoiceRecord,
+                record: invoiceRecordWithChainMeta as any,
                 raw: record,
                 spent: isSpent
               });
@@ -261,25 +288,31 @@ export function useInvoiceChainScan() {
         }
       }
 
-      // ✅ 选择未花费的 record（spent 为 false）
-      if (matchingPaymentRecord && !matchingPaymentRecord.spent) {
-        latestPaymentRecord = matchingPaymentRecord.record;
-        rawRecord = matchingPaymentRecord.raw;
-      } else if (matchingInvoiceRecords.length > 0) {
-        // ✅ 从匹配的 InvoiceRecords 中选择未花费的（spent 为 false）
+      // Select InvoiceRecord and PaymentRecord independently.
+      // This allows callers to confirm status using InvoiceRecord while still reading PaymentRecord metadata.
+      let selectedInvoiceRaw: any | null = null;
+      if (matchingInvoiceRecords.length > 0) {
         const unspentRecord = matchingInvoiceRecords.find(r => !r.spent);
         if (unspentRecord) {
           latestInvoiceRecord = unspentRecord.record;
-          rawRecord = unspentRecord.raw;
+          selectedInvoiceRaw = unspentRecord.raw;
           console.log('✅ [scanInvoiceRecord] Selected unspent InvoiceRecord');
         } else {
-          // 如果没有未花费的，使用最新的（可能是已花费的，用于交易输入）
+          // If no unspent invoice record exists, use latest one (possibly spent)
           const latestRecord = matchingInvoiceRecords[matchingInvoiceRecords.length - 1];
           latestInvoiceRecord = latestRecord.record;
-          rawRecord = latestRecord.raw;
-          console.log('⚠️ [scanInvoiceRecord] No unspent record found, using latest (may be spent)');
+          selectedInvoiceRaw = latestRecord.raw;
+          console.log('⚠️ [scanInvoiceRecord] No unspent InvoiceRecord found, using latest (may be spent)');
         }
       }
+
+      if (matchingPaymentRecord && !matchingPaymentRecord.spent) {
+        latestPaymentRecord = matchingPaymentRecord.record;
+      }
+
+      // Keep rawRecord aligned with InvoiceRecord first (transaction inputs expect invoice record),
+      // fall back to PaymentRecord raw only when invoice raw is unavailable.
+      rawRecord = selectedInvoiceRaw ?? (matchingPaymentRecord?.raw ?? null);
 
       if (!latestInvoiceRecord && !latestPaymentRecord) {
         console.log('❌ [scanInvoiceRecord] No matching record found');
@@ -305,8 +338,7 @@ export function useInvoiceChainScan() {
    * 扫描链上所有发票并构建 Invoice 对象
    * 
    * 职责：
-   * - 调用 scanAllInvoiceRecords 和 scanAllPaymentRecords
-   * - 合并处理（优先 PaymentRecord）
+   * - 调用 scanAllInvoiceRecords
    * - 构建完整的 Invoice 对象列表
    * 
    * @returns Invoice[] - 已构建好的发票对象数组
@@ -314,64 +346,15 @@ export function useInvoiceChainScan() {
   const scanAndBuildInvoices = useCallback(async (): Promise<Invoice[]> => {
     const invoices: Invoice[] = [];
     
-    // 1. 扫描链上数据
+    // 1. 扫描链上 InvoiceRecord
     const { byInvoiceId: invoiceRecordsByInvoiceId } = await scanAllInvoiceRecords();
-    const paymentRecords = await scanAllPaymentRecords();
-    
-    if (invoiceRecordsByInvoiceId.size === 0 && paymentRecords.size === 0) {
+    if (invoiceRecordsByInvoiceId.size === 0) {
       console.log('📋 [scanAndBuildInvoices] No records found on chain');
       return [];
     }
-    
-    const processedInvoiceIds = new Set<string>();
-    
-    // 2. 先处理 PaymentRecord（优先级更高）
-    for (const [invoiceId, paymentRecord] of paymentRecords.entries()) {
-      try {
-        const invoiceRecordData = invoiceRecordsByInvoiceId.get(invoiceId);
-        const invoiceHash = invoiceRecordData?.invoiceHash || invoiceId;
-        
-        // 构建基础发票对象
-        const baseInvoice = invoiceRecordData 
-          ? buildInvoiceFromRecord(invoiceRecordData.record, invoiceHash as AleoField)
-          : {
-              id: invoiceId as AleoField,
-              invoiceHash: invoiceHash as AleoField,
-              seller: paymentRecord.payee as any,
-              buyer: paymentRecord.payer as any,
-              amount: BigInt(cleanAleoNumber(paymentRecord.amount)) as any,
-              dueDate: new Date(),
-              createdAt: new Date(),
-              status: 1 as any, // PAID
-              details: undefined
-            } as Invoice;
-        
-        // 使用 PaymentRecord 更新状态
-        const updatedInvoice = updateInvoiceFromPaymentRecord(baseInvoice, paymentRecord);
-        const finalInvoice: Invoice = {
-          ...baseInvoice,
-          ...updatedInvoice,
-          id: invoiceRecordData?.record?.originalInvoiceId 
-            ? (invoiceRecordData.record.originalInvoiceId as AleoField)
-            : (invoiceId as AleoField),
-          status: 1, // PAID
-          invoiceHash: invoiceHash as AleoField
-        };
-        
-        invoices.push(finalInvoice);
-        processedInvoiceIds.add(invoiceId);
-      } catch (error) {
-        console.error(`[scanAndBuildInvoices] Failed to process payment record ${invoiceId}:`, error);
-        continue;
-      }
-    }
-    
-    // 3. 处理剩余的 InvoiceRecord
+
+    // 2. 处理 InvoiceRecord
     for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
-      if (processedInvoiceIds.has(invoiceId)) {
-        continue;
-      }
-      
       try {
         const invoice = buildInvoiceFromRecord(
           invoiceRecordData.record,
@@ -391,7 +374,7 @@ export function useInvoiceChainScan() {
     
     console.log(`✅ [scanAndBuildInvoices] Built ${invoices.length} invoices from chain`);
     return invoices;
-  }, [scanAllInvoiceRecords, scanAllPaymentRecords]);
+  }, [scanAllInvoiceRecords]);
 
   return {
     scanAllInvoiceRecords,

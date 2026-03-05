@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft } from 'lucide-react';
-import { useInvoiceDetail } from '@/controller/Invoice/useInvoiceDetail';
+import { useInvoiceDetailPage } from '@/controller/Invoice/useInvoiceDetailPage';
 import PaymentProgress from '@/components/payment-progress';
 import { CurrencyFlag } from '@/lib/types';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { AleoField, InvoiceStatus } from '@/lib/types';
+import { getTaxRateLabelFromTaxGroups } from '@/lib/invoice';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { useAuditPackageGenerate } from '@/controller/Audit/useAuditPackageGenerate';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
-import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -22,15 +20,12 @@ export default function InvoiceDetailPage() {
     [params]
   );
 
-  // Authorization check (independent call)
   const { isAuthRequired, handleUnlock } = useAuthCheck();
 
-  // Detail page logic (unified polling architecture)
-  // Automatic polling is managed by the global AutoPoller; manual sync is triggered via handleSyncStatus
-  const { 
-    invoice, 
+  const {
+    invoice,
     isLoadingInvoice,
-    isSyncing, 
+    isSyncing,
     isConfirmed,
     userRole,
     statusConfig,
@@ -38,73 +33,14 @@ export default function InvoiceDetailPage() {
     isSyncingStatus,
     handlePay,
     handleCancel,
-    handleSyncStatus
-  } = useInvoiceDetail(invoiceHash);
-  const { generate } = useAuditPackageGenerate();
-  const protocolService = useMemo(() => new AleoProtocolService(), []);
-  const [anchors, setAnchors] = useState<{
-    commitment?: string | null;
-    rules?: string | null;
-    fieldCommitments?: any;
-    auth?: any;
-    counter?: number | null;
-  }>({});
-  const [isFetchingAnchors, setIsFetchingAnchors] = useState(false);
-  const [downloadMsg, setDownloadMsg] = useState('');
-
-  const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
-  const safeStringify = useCallback(
-    (obj: any) => JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2),
-    []
-  );
-
-  useEffect(() => {
-    const fetchAnchors = async () => {
-      if (!invoice) return;
-      setIsFetchingAnchors(true);
-      try {
-        const [commitment, fieldCommitments, rules, auth, counter] = await Promise.all([
-          registry.getCommitmentRoot(invoice.id),
-          registry.getFieldCommitments(invoice.id),
-          registry.getRulesResult(invoice.id),
-          registry.getAuditAuthorization(invoice.id),
-          registry.getAuditCounter(invoice.seller)
-        ]);
-        setAnchors({ commitment, fieldCommitments, rules, auth, counter });
-      } catch (e) {
-        setAnchors({});
-      } finally {
-        setIsFetchingAnchors(false);
-      }
-    };
-    fetchAnchors();
-  }, [invoice, registry]);
-
-  const handleDownloadPackage = async (mode: 'minimal' | 'full') => {
-    if (!invoice) return;
-    setDownloadMsg('');
-    try {
-      const fields =
-        mode === 'minimal'
-          ? ['amount', 'tax_amount', 'due_date', 'buyer', 'seller']
-          : ['amount', 'tax_amount', 'due_date', 'buyer', 'seller', 'currency', 'items_hash', 'memo_hash', 'order_id'];
-      const pkg = await generate({
-        invoiceId: invoice.id,
-        selectedFields: fields,
-        expiresAt: Date.now() + 7 * 24 * 3600 * 1000
-      });
-      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `audit-package-${mode}-${invoice.id}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setDownloadMsg(`Generated ${mode} package`);
-    } catch (e: any) {
-      setDownloadMsg(e?.message || 'Failed to generate package');
-    }
-  };
+    handleSyncStatus,
+    displayCurrency,
+    anchors,
+    isFetchingAnchors,
+    downloadMsg,
+    safeStringify,
+    handleDownloadPackage
+  } = useInvoiceDetailPage(invoiceHash);
 
   // Display authorization overlay
   if (isAuthRequired) {
@@ -231,7 +167,7 @@ export default function InvoiceDetailPage() {
           <div className="text-xs text-slate-500 mb-1">Amount</div>
           <div className="text-2xl font-bold text-slate-900">
             {(Number(invoice.amount) / 1_000_000).toFixed(2)}
-            <span className="text-sm font-normal text-slate-600 ml-2">credits</span>
+            <span className="text-sm font-normal text-slate-600 ml-2">{displayCurrency}</span>
           </div>
         </div>
 
@@ -276,30 +212,13 @@ export default function InvoiceDetailPage() {
           <div className="flex justify-between">
             <span className="text-slate-600">Tax Amount</span>
             <span className="font-medium text-slate-900">
-              {(Number(invoice.taxAmount ?? 0) / 1_000_000).toFixed(2)} credits
+              {(Number(invoice.taxAmount ?? 0) / 1_000_000).toFixed(2)} {displayCurrency}
             </span>
           </div>
-          {/* tax_rate (from details, if available) */}
-          {invoice.details?.taxRate != null && (
-            <div className="flex justify-between">
-              <span className="text-slate-600">Tax Rate</span>
-              <span className="font-medium text-slate-900">
-                {(invoice.details.taxRate * 100).toFixed(2)}%
-              </span>
-            </div>
-          )}
           {/* currency */}
           <div className="flex justify-between">
             <span className="text-slate-600">Currency</span>
-            {invoice.details?.currency ? (
-              <span className="font-medium text-slate-900">{invoice.details.currency}</span>
-            ) : invoice.currency ? (
-              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
-                {invoice.currency}
-              </code>
-            ) : (
-              <span className="text-slate-400">—</span>
-            )}
+            <span className="font-medium text-slate-900">{displayCurrency}</span>
           </div>
           {/* order_id */}
           <div className="flex justify-between">
@@ -308,10 +227,6 @@ export default function InvoiceDetailPage() {
               <span className="font-medium text-slate-900">
                 {invoice.details.orderId ?? invoice.details.invoiceNumber}
               </span>
-            ) : invoice.orderId ? (
-              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
-                {invoice.orderId}
-              </code>
             ) : (
               <span className="text-slate-400">—</span>
             )}
@@ -321,10 +236,6 @@ export default function InvoiceDetailPage() {
             <span className="text-slate-600">Memo</span>
             {invoice.details?.notes ? (
               <span className="font-medium text-slate-900">{invoice.details.notes}</span>
-            ) : invoice.memoHash ? (
-              <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
-                {invoice.memoHash}
-              </code>
             ) : (
               <span className="text-slate-400">—</span>
             )}
@@ -337,6 +248,64 @@ export default function InvoiceDetailPage() {
             </code>
           </div>
         </div>
+      {/* Line Items & Summary（仅详情页展示；列表页卡片不展示 line items） */}
+      {invoice.details && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-900">Line Items</div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[360px] text-sm text-slate-700 border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  <th className="py-2 pr-2">Description</th>
+                  <th className="py-2 pr-2 text-right">Qty</th>
+                  <th className="py-2 pr-2 text-right">Unit Price</th>
+                  <th className="py-2 pr-2 text-right">Tax Rate</th>
+                  <th className="py-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const taxRateFromGroups = getTaxRateLabelFromTaxGroups(invoice.taxGroups);
+                  return invoice.details.lineItems.map((item, idx) => {
+                    const fallbackRaw = (item as { taxRate?: number }).taxRate ?? invoice.details!.taxRate;
+                    const fallbackPct = fallbackRaw != null && Number(fallbackRaw) > 0
+                      ? (Number(fallbackRaw) <= 1 ? Number(fallbackRaw) * 100 : Number(fallbackRaw))
+                      : 0;
+                    const taxRateLabel = taxRateFromGroups ?? (fallbackPct > 0 ? `${fallbackPct.toFixed(0)}%` : null);
+                    return (
+                      <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="py-2 pr-2">{item.description}</td>
+                        <td className="py-2 pr-2 text-right">{item.quantity}</td>
+                        <td className="py-2 pr-2 text-right">{item.unitPrice}</td>
+                        <td className="py-2 pr-2 text-right">
+                          {taxRateLabel ?? '—'}
+                        </td>
+                        <td className="py-2 text-right">{item.amount}</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-700">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{invoice.details.subtotal} {invoice.details.currency}</span>
+            </div>
+            {invoice.details.taxRate > 0 && (
+              <div className="flex justify-between">
+                <span>Tax ({(invoice.details.taxRate * 100).toFixed(2)}%)</span>
+                <span>{invoice.details.taxAmount} {invoice.details.currency}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold text-slate-900">
+              <span>Total</span>
+              <span>{invoice.details.total} {invoice.details.currency}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* Audit anchors — only render when at least one anchor has data */}
         {!isFetchingAnchors && (anchors.commitment || anchors.rules || anchors.fieldCommitments || anchors.auth || anchors.counter != null) && (
@@ -378,29 +347,36 @@ export default function InvoiceDetailPage() {
                 </div>
               )}
             </div>
-            {invoice.details ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => handleDownloadPackage('minimal')}
-                  className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  Download minimal package
-                </button>
-                <button
-                  onClick={() => handleDownloadPackage('full')}
-                  className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
-                >
-                  Download full package
-                </button>
-                {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
-              </div>
-            ) : (
-              <p className="mt-3 text-xs text-slate-400">
-                Audit package download requires locally stored invoice details.
-              </p>
-            )}
           </div>
         )}
+              
+
+
+        {/* Audit package download — inside Invoice detail card */}
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <div className="font-semibold text-slate-900">Audit package</div>
+          {invoice.details ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => handleDownloadPackage('minimal')}
+                className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                Download minimal package
+              </button>
+              <button
+                onClick={() => handleDownloadPackage('full')}
+                className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                Download full package
+              </button>
+              {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-400">
+              Audit package download requires locally stored invoice details.
+            </p>
+          )}
+        </div>
 
         {/* Payment progress (Phase 1/2/3) when paying */}
         {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && isProcessing && (
@@ -456,39 +432,7 @@ export default function InvoiceDetailPage() {
           </div>
         )}
       </div>
-      
-      {/* Line Items & Summary */}
-      {invoice.details && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Line Items</div>
-          <ul className="mt-2 space-y-2 text-sm text-slate-700">
-            {invoice.details.lineItems.map((item, idx) => (
-              <li key={idx} className="flex items-center justify-between">
-                <span>{item.description}</span>
-                <span>
-                  {item.quantity} × {item.unitPrice} = {item.amount}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-700">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{invoice.details.subtotal} {invoice.details.currency}</span>
-            </div>
-            {invoice.details.taxRate > 0 && (
-              <div className="flex justify-between">
-                <span>Tax ({(invoice.details.taxRate * 100).toFixed(2)}%)</span>
-                <span>{invoice.details.taxAmount} {invoice.details.currency}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-semibold text-slate-900">
-              <span>Total</span>
-              <span>{invoice.details.total} {invoice.details.currency}</span>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

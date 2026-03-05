@@ -11,10 +11,11 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
-import { PROGRAM_ID, CREDITS_PROGRAM_ID, USDCX_PROGRAM_ID, ZERO_FIELD } from '@/lib/contract';
+import { PROGRAM_ID, USDCX_PROGRAM_ID, ZERO_FIELD } from '@/lib/contract';
 import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
+import { toRecordInputString } from '@/lib/recordParser';
 
 // Initialize service instance (used inside the hook)
 const cryptoService = new CryptoService();
@@ -377,12 +378,14 @@ export function useTransactionController(): ITxController {
           invoicePayload.currencyFlag = currencyFlagU8;
           invoicePayload.taxGroups = params.taxGroups;
           invoicePayload.tNumber = params.tNumber;
+          // Important: do NOT persist to IndexedDB before chain confirmation.
+          // Keep it in-memory as SENDING first; AutoPoller persists after true confirmation.
           await invoiceStore.addInvoice(invoicePayload, {
-            masterKey: currentMasterKey,
-            persistFull: true  // Persist full invoice information (including basic info)
+            masterKey: undefined,
+            persistFull: false
           });
-          updateProgress(97, '✓ Saved to local storage (status: SENDING)');
-          console.log('✅ [TransactionController] Invoice saved to Store and IndexedDB:', invoiceHash);
+          updateProgress(97, '✓ Saved locally in memory (status: SENDING)');
+          console.log('✅ [TransactionController] Invoice saved to Store memory as SENDING:', invoiceHash);
         }
 
         updateProgress(98, '✓ Status synced');
@@ -466,32 +469,23 @@ export function useTransactionController(): ITxController {
           );
         }
 
-        // Credits path: select optimal credits record (smallest amount >= payAmount)
-        const { records } = await walletService.requestRecords(CREDITS_PROGRAM_ID);
-        const parseMicro = (raw: string | undefined): bigint => {
-          const m = String(raw ?? '').match(/^(\d+)/);
-          return m ? BigInt(m[1]) : 0n;
-        };
-        const unspent = (records ?? [])
-          .filter((r: any) => !r.spent && r.data?.microcredits)
-          .map((r: any) => ({ record: r, amount: parseMicro(r.data.microcredits) }))
-          .filter((r) => r.amount > 0n);
-        if (unspent.length === 0) {
-          throw new WalletServiceError(
-            WalletError.DECRYPTION_FAILED,
-            'No credits record available in wallet.'
-          );
-        }
-        const sufficient = unspent.filter((r) => r.amount >= payAmount);
-        if (sufficient.length === 0) {
-          const total = unspent.reduce((sum, r) => sum + r.amount, 0n);
+        // Credits path: use getFeeRecords to select optimal credits record(s); pay_invoice_credits_private accepts a single record
+        const recordStrings = await walletService.getFeeRecords(payAmount, publicKey);
+        if (recordStrings.length === 0) {
           throw new WalletServiceError(
             WalletError.INSUFFICIENT_FEE,
-            `Insufficient credits balance. Required: ${payAmount} microcredits, available: ${total} microcredits across ${unspent.length} record(s).`
+            'No credits record available in wallet. Please ensure you have private credits (e.g. receive or transfer privately first).'
           );
         }
-        // Pick the smallest record that covers the amount (minimise unnecessary change)
-        const payRecord = sufficient.reduce((best, cur) => cur.amount < best.amount ? cur : best).record;
+        if (recordStrings.length > 1) {
+          throw new WalletServiceError(
+            WalletError.INSUFFICIENT_FEE,
+            'Payment requires a single credits record covering the amount. Your balance is split across multiple records; consider consolidating.'
+          );
+        }
+        // Wallet/Shield expect inputs as strings; passing objects causes "Invalid transaction payload"
+        const payRecordStr = recordStrings[0];
+        const invoiceRecordStr = toRecordInputString(invoiceRecord);
 
         // Generate payment nonce and paid_at
         const paymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
@@ -500,7 +494,7 @@ export function useTransactionController(): ITxController {
         updateProgress(50, 'Submitting pay_invoice_credits_private...');
         const requestId = await walletService.requestTransaction({
           functionName: 'pay_invoice_credits_private',
-          inputs: [payRecord, invoiceRecord, paymentNonce, paidAt],
+          inputs: [payRecordStr, invoiceRecordStr, paymentNonce, paidAt],
           publicKey: publicKey,
           programId: PROGRAM_ID,
           fee: 1_000_000,
@@ -515,7 +509,7 @@ export function useTransactionController(): ITxController {
         }
 
         try {
-          receiptStore.addReceipt({
+          void receiptStore.addReceipt({
             paymentId: requestId as AleoField,
             invoiceId: invoice.id,
             payer: invoice.buyer,
@@ -531,7 +525,7 @@ export function useTransactionController(): ITxController {
             amount: payAmount,
             nonce: paymentNonce
           }).then((anchor) => {
-            receiptStore.updateReceipt(invoice.id, { settlementAnchor: anchor });
+            void receiptStore.updateReceipt(invoice.id, { settlementAnchor: anchor });
           }).catch((err) => {
             console.warn('⚠️ [executePay] Failed to compute settlement_anchor locally:', err);
           });
@@ -605,8 +599,8 @@ export function useTransactionController(): ITxController {
           throw new Error('Invoice record not found on chain. Please wait for chain confirmation.');
         }
 
-        // Use raw record object (wallet handles encryption and signing)
-        const invoiceRecord = rawRecord;
+        // Use raw record; wallet expects string inputs (Shield rejects objects → "Invalid transaction payload")
+        const invoiceRecordStr = toRecordInputString(rawRecord);
 
         updateProgress(40, 'Invoice record found. Preparing cancellation...');
 
@@ -614,9 +608,7 @@ export function useTransactionController(): ITxController {
         const chainId = getChainIdFromNetwork(getNetworkFromEnv());
         const requestId = await walletService.requestTransaction({
           functionName: 'cancel_invoice',
-          inputs: [
-            invoiceRecord
-          ],
+          inputs: [invoiceRecordStr],
           publicKey: publicKey,
           programId: PROGRAM_ID,
           fee: 1000000,
@@ -709,11 +701,12 @@ export function useTransactionController(): ITxController {
         throw new Error('Invoice record is already spent. Cannot set audit authorization on spent record.');
       }
 
+      const rawRecordStr = toRecordInputString(rawRecord);
       const currentTime = `${Math.floor(Date.now() / 1000)}u32`;
       const requestId = await walletService.requestTransaction({
         functionName: 'set_audit_authorization',
         inputs: [
-          rawRecord,
+          rawRecordStr,
           auditKeyHash as AleoField,
           `${scopesBitmask.toString()}u64`,
           `${expiresAt}u32`,

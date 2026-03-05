@@ -3,8 +3,11 @@
 import Image from 'next/image';
 import InvoiceForm from '@/components/invoice-form';
 import { FilePlus } from 'lucide-react';
+import { useCreateInvoicePage } from '@/controller/Invoice/useCreateInvoicePage';
 
 export default function CreateInvoicePage() {
+  const { title, description, mascotSrc, mascotAlt } = useCreateInvoicePage();
+
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-6">
@@ -14,17 +17,15 @@ export default function CreateInvoicePage() {
               <FilePlus className="h-5 w-5 text-accent-600" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-primary-900">Create Invoice</h1>
-              <p className="text-sm text-primary-500">
-                Data is encrypted locally before on-chain commitment
-              </p>
+              <h1 className="text-xl font-semibold text-primary-900">{title}</h1>
+              <p className="text-sm text-primary-500">{description}</p>
             </div>
           </div>
         </div>
         <div className="relative hidden h-20 w-20 md:block">
           <Image
-            src="/images/mascot/mascot-writing.png"
-            alt="Creating invoice"
+            src={mascotSrc}
+            alt={mascotAlt}
             fill
             className="object-contain"
             onError={(e) => {

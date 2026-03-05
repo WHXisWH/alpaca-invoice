@@ -167,6 +167,34 @@ export class WalletService {
   }
 
   /**
+   * Extract microcredits amount from a single record (supports recordPlaintext and data.microcredits shapes)
+   */
+  private getAmountFromRecord(record: any): bigint {
+    if (!record) return 0n;
+    const plaintext = record.recordPlaintext ?? record.record_plaintext;
+    if (typeof plaintext === 'string') {
+      const match = plaintext.match(/microcredits:\s*(\d+)u64/);
+      if (match) return BigInt(match[1]);
+    }
+    const rawMc = record.data?.microcredits ?? record.microcredits;
+    const microcredits = typeof rawMc === 'object' && rawMc != null && 'value' in rawMc
+      ? (rawMc as { value?: string }).value
+      : rawMc;
+    return this.parseMicrocredits(microcredits);
+  }
+
+  /**
+   * Prefer plaintext record API when wallet supports both.
+   * Some adapters return encrypted/minimal payloads from requestRecords(),
+   * which breaks downstream record parsing.
+   */
+  private getRecordRequester():
+    | ((program: string) => Promise<{ records: any[] } | any[]>)
+    | undefined {
+    return this.wallet.requestRecordPlaintexts || this.wallet.requestRecords;
+  }
+
+  /**
    * Get private balance (calculated from wallet Records)
    * @param publicKey Wallet public key address
    * @returns Private balance (Microcredits)
@@ -185,23 +213,22 @@ export class WalletService {
     }
 
     try {
-      const requestRecords = this.wallet.requestRecords || this.wallet.requestRecordPlaintexts;
+      const requestRecords = this.getRecordRequester();
 
       if (!requestRecords) {
         return 0n;
       }
 
-      // Request Records for credits.aleo
+      // Request Records for credits.aleo (prefer plaintext so wallet decrypts with ViewKey)
       const creditsResponse = await requestRecords('credits.aleo');
-      const records = creditsResponse?.records || [];
+      const rawRecords = Array.isArray(creditsResponse) ? creditsResponse : creditsResponse?.records ?? [];
 
-      // Calculate private balance
       let privateBalance = 0n;
-      for (const record of records) {
-        if (!record.spent && record.data?.microcredits) {
-          const amount = this.parseMicrocredits(record.data.microcredits);
-          privateBalance += amount;
-        }
+      for (const raw of rawRecords) {
+        const record = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+        if (!record || record.spent === true) continue;
+        const amount = this.getAmountFromRecord(record);
+        if (amount > 0n) privateBalance += amount;
       }
 
       return privateBalance;
@@ -233,7 +260,7 @@ export class WalletService {
       );
     }
 
-    const requestRecords = this.wallet.requestRecords || this.wallet.requestRecordPlaintexts;
+    const requestRecords = this.getRecordRequester();
 
     if (!requestRecords) {
       throw new WalletServiceError(
@@ -244,17 +271,30 @@ export class WalletService {
 
     try {
       const creditsResponse = await requestRecords('credits.aleo');
-      const records = creditsResponse?.records || [];
+      const records: any[] = Array.isArray(creditsResponse)
+        ? creditsResponse
+        : (creditsResponse && typeof creditsResponse === 'object' && 'records' in creditsResponse
+          ? (creditsResponse as { records: any[] }).records
+          : []);
 
-      // Filter unspent Records with amount > 0 and convert to objects with amount info
-      const unspentRecords = records
+      // Shield/Leo expect record inputs as Aleo plaintext string (parseable as credits.record), not JSON
+      const toRecordInputString = (r: any): string => {
+        if (typeof r === 'string') return r;
+        const plain =
+          r?.plaintext ?? r?.recordPlaintext ?? r?.record_plaintext ?? (typeof r?.data === 'string' ? r.data : undefined);
+        if (typeof plain === 'string') return plain;
+        return JSON.stringify(r);
+      };
+
+      type UnspentRecord = { record: any; amount: bigint; recordString: string };
+      const unspentRecords: UnspentRecord[] = records
         .filter((r: any) => !r.spent)
         .map((r: any) => ({
           record: r,
-          amount: this.parseMicrocredits(r.data?.microcredits),
-          recordString: typeof r === 'string' ? r : JSON.stringify(r)
+          amount: this.getAmountFromRecord(r),
+          recordString: toRecordInputString(r)
         }))
-        .filter((r: any) => r.amount > 0n); // Filter out records with zero amount
+        .filter((r: UnspentRecord) => r.amount > 0n);
 
       if (unspentRecords.length === 0) {
         throw new WalletServiceError(
@@ -265,10 +305,9 @@ export class WalletService {
       }
 
       // Strategy 1: Minimum satisfaction - find a single Record with the smallest denomination >= the fee
-      const suitableRecords = unspentRecords.filter(r => r.amount >= amount);
+      const suitableRecords = unspentRecords.filter((r: UnspentRecord) => r.amount >= amount);
       if (suitableRecords.length > 0) {
-        // Find the smallest qualifying Record
-        const minRecord = suitableRecords.reduce((min, current) =>
+        const minRecord = suitableRecords.reduce((min: UnspentRecord, current: UnspentRecord) =>
           current.amount < min.amount ? current : min
         );
         return [minRecord.recordString];
@@ -278,7 +317,7 @@ export class WalletService {
       const bestCombination = this.findBestRecordCombination(unspentRecords, amount);
 
       if (bestCombination.length === 0) {
-        const totalAvailable = unspentRecords.reduce((sum, r) => sum + r.amount, 0n);
+        const totalAvailable = unspentRecords.reduce((sum: bigint, r: UnspentRecord) => sum + r.amount, 0n);
         throw new WalletServiceError(
           WalletError.INSUFFICIENT_FEE,
           'Insufficient fee records',
@@ -438,7 +477,7 @@ export class WalletService {
       );
     }
 
-    const requestRecords = this.wallet.requestRecords || this.wallet.requestRecordPlaintexts;
+    const requestRecords = this.getRecordRequester();
 
     if (!requestRecords) {
       throw new WalletServiceError(

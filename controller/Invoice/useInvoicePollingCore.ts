@@ -3,7 +3,7 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
-import { updateInvoiceFromInvoiceRecord, updateInvoiceFromPaymentRecord } from '@/lib/invoice';
+import { updateInvoiceFromInvoiceRecord } from '@/lib/invoice';
 import { PollingService } from '@/services/PollingService/PollingServiceImpl';
 import { createInvoiceValidationAdapter, InvoiceScanResult } from '@/services/PollingService/adapters/InvoiceStatusValidatorAdapter';
 import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
@@ -51,21 +51,11 @@ export function useInvoicePollingCore() {
   }, []);
 
   /**
-   * Build updated Invoice from a chain record
+   * Build updated Invoice from the paid InvoiceRecord only.
+   * Do not use PaymentRecord — amount/status must come from InvoiceRecord (user pays pre-tax amount).
    */
-  const buildUpdatedInvoice = useCallback((
-    invoice: Invoice,
-    record: AleoInvoiceRecord | AleoPaymentRecord
-  ): Invoice => {
-    const isPaymentRecord = 'payment_id' in record;
-    let updatedFields: Partial<Invoice>;
-
-    if (isPaymentRecord) {
-      updatedFields = updateInvoiceFromPaymentRecord(invoice, record as AleoPaymentRecord);
-    } else {
-      updatedFields = updateInvoiceFromInvoiceRecord(invoice, record as AleoInvoiceRecord);
-    }
-
+  const buildUpdatedInvoice = useCallback((invoice: Invoice, invoiceRecord: AleoInvoiceRecord): Invoice => {
+    const updatedFields = updateInvoiceFromInvoiceRecord(invoice, invoiceRecord);
     return {
       ...invoice,
       ...updatedFields,
@@ -85,8 +75,9 @@ export function useInvoicePollingCore() {
     return {
       ...invoice,
       metadata: {
-        confirmationStatus: 'CONFIRMED',
-        dataSource: 'chain',
+        // Timeout means we have not confirmed this invoice on chain.
+        confirmationStatus: 'SENDING',
+        dataSource: 'local',
         lastUpdated: new Date(),
         action: invoice.metadata?.action
       }
@@ -150,17 +141,15 @@ export function useInvoicePollingCore() {
       return validateAdapter(result);
     },
         
-        // Success callback
+        // Success callback: only update invoice from paid InvoiceRecord (never PaymentRecord — amount must stay pre-tax)
         onSuccess: async (result) => {
-          const recordToUse = result.paymentRecord || result.invoiceRecord;
-          if (recordToUse) {
-            // Use latest invoice from store when building update
+          if (result.invoiceRecord) {
             const latestInvoice = getLatestInvoice(invoiceHash) || invoice;
-            const updatedInvoice = buildUpdatedInvoice(latestInvoice, recordToUse);
-            
+            const updatedInvoice = buildUpdatedInvoice(latestInvoice, result.invoiceRecord);
             console.log(`✅ [PollingCore] Polling succeeded for: ${invoiceHash}`);
-            await callbacks.onSuccess(updatedInvoice, recordToUse);
+            await callbacks.onSuccess(updatedInvoice, result.invoiceRecord);
           }
+          // If only paymentRecord exists, do not update invoice (wait for InvoiceRecord or user re-sync)
         },
         
         // Timeout callback

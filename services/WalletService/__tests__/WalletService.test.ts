@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from '../WalletServiceImpl';
+import { WalletServiceError, WalletError } from '../IWalletService';
 import { AleoAddress } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 import type { WalletContextState } from '@provablehq/aleo-wallet-adaptor-react';
+
+/** Mock wallet type: WalletContextState plus optional fields used by WalletService / tests */
+type MockWallet = Partial<WalletContextState> & {
+  publicKey?: string;
+  requestRecordPlaintexts?: (program: string) => Promise<{ records: any[] } | any[]>;
+  requestTransaction?: (params: any) => Promise<string>;
+};
 
 /**
  * WalletService Unit Tests
@@ -14,7 +22,7 @@ import type { WalletContextState } from '@provablehq/aleo-wallet-adaptor-react';
  * 4. Such mocks are closer to real usage scenarios, improving test accuracy
  */
 describe('WalletService', () => {
-  let mockWallet: Partial<WalletContextState>;
+  let mockWallet: MockWallet;
   let walletService: WalletService;
   const mockAddress: AleoAddress = 'aleo1test123456789abcdefghijklmnopqrstuvwxyz' as AleoAddress;
 
@@ -194,6 +202,20 @@ describe('WalletService', () => {
       expect(balance).toBe(1500000n);
       expect(mockWallet.requestRecordPlaintexts).toHaveBeenCalledWith('credits.aleo');
     });
+
+    it('should parse recordPlaintext shape (Provable/Leo wallet format)', async () => {
+      const mockRecords = [
+        {
+          spent: false,
+          recordPlaintext: '{\n  owner: aleo14u86g3q3r3zmwwr89gjw78krpfv6ad27cneg837rxpxfd7e47cysee7qkz.private,\n  microcredits: 5000000u64.private,\n  _nonce: 6366549752431533238298243962540274543772062915283908425760580959061989746860group.public,\n  _version: 1u8.public\n}'
+        }
+      ];
+      mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
+
+      const balance = await walletService.getPrivateBalance(mockAddress);
+
+      expect(balance).toBe(5000000n);
+    });
   });
 
   describe('getFeeRecords', () => {
@@ -259,6 +281,24 @@ describe('WalletService', () => {
         expect(records.length).toBe(1);
         const parsed = JSON.parse(records[0]);
         expect(parsed.data.microcredits).toBe('2000000u64.private');
+      });
+
+      it('should work with recordPlaintext shape (Provable/Leo wallet format)', async () => {
+        mockWallet.connected = true;
+        mockWallet.publicKey = mockAddress;
+        const mockRecords = [
+          {
+            spent: false,
+            recordPlaintext: '{\n  owner: aleo14u86g3q3r3zmwwr89gjw78krpfv6ad27cneg837rxpxfd7e47cysee7qkz.private,\n  microcredits: 5000000u64.private,\n  _nonce: 6366549752431533238298243962540274543772062915283908425760580959061989746860group.public,\n  _version: 1u8.public\n}'
+          }
+        ];
+        mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
+
+        const records = await walletService.getFeeRecords(2000000n, mockAddress);
+
+        expect(records.length).toBe(1);
+        const parsed = JSON.parse(records[0]);
+        expect(parsed.recordPlaintext).toContain('microcredits: 5000000u64.private');
       });
 
       it('should ignore spent Records', async () => {
@@ -558,6 +598,19 @@ describe('WalletService', () => {
 
         // Act & Assert
         await expect(walletService.getFeeRecords(1000000n, mockAddress)).rejects.toThrow('No unspent fee records available');
+      });
+
+      it('should throw DECRYPTION_FAILED when requestRecords rejects (e.g. ViewKey decryption failure)', async () => {
+        // Arrange
+        mockWallet.connected = true;
+        mockWallet.publicKey = mockAddress;
+        mockWallet.requestRecords = vi.fn().mockRejectedValue(new Error('Failed to decrypt records'));
+
+        // Act & Assert
+        const err = await walletService.getFeeRecords(1000000n, mockAddress).catch((e) => e);
+        expect(err).toBeInstanceOf(WalletServiceError);
+        expect((err as WalletServiceError).code).toBe(WalletError.DECRYPTION_FAILED);
+        expect((err as WalletServiceError).message).toContain('Failed to get fee records');
       });
     });
 
@@ -929,7 +982,7 @@ describe('WalletService', () => {
   describe('Integration test scenarios', () => {
     it('Full flow: connect -> sign message -> disconnect', async () => {
       // Arrange
-      mockWallet.publicKey = null;
+      mockWallet.publicKey = undefined;
       mockWallet.connected = false;
 
       // Act - connect

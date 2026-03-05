@@ -116,17 +116,20 @@ export function useWalletController(): IWalletController {
 
 
   /**
-   * Sync balances (public + private) in parallel
+   * Sync balances: private from wallet (always when connected); public from chain when AleoProtocolService is ready
    */
   const syncBalances = useCallback(async () => {
-    if (!walletService || !wallet?.connected || !publicKey || !aleoProtocolService) return;
+    if (!walletService || !wallet?.connected || !publicKey) return;
 
     try {
-      // Fetch both balance types in parallel
-      const [privateBalance, publicBalance] = await Promise.all([
-        walletService.getPrivateBalance(publicKey),
-        aleoProtocolService.getPublicBalance(publicKey)
-      ]);
+      let privateBalance = 0n;
+      let publicBalance = 0n;
+
+      privateBalance = await walletService.getPrivateBalance(publicKey);
+
+      if (aleoProtocolService) {
+        publicBalance = await aleoProtocolService.getPublicBalance(publicKey);
+      }
 
       updateBalances(publicBalance, privateBalance);
     } catch (error) {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
-import { Invoice, AleoField, AleoAddress, EncryptedPayload, InvoiceStatus, CurrencyFlag, TaxGroups } from '@/lib/types';
+import { Invoice, AleoField, AleoAddress, AleoTransactionId, EncryptedPayload, InvoiceStatus, CurrencyFlag, TaxGroups } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 
@@ -55,6 +55,8 @@ interface InvoiceStorageData {
   currencyFlag?: CurrencyFlag;
   taxGroups?: TaxGroups;
   tNumber?: string;
+  transactionId?: AleoTransactionId;
+  blockHeight?: number;
   // Encrypted details
   encryptedDetails: EncryptedPayload | null;
   // Metadata
@@ -114,6 +116,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           currencyFlag: invoice.currencyFlag,
           taxGroups: invoice.taxGroups,
           tNumber: invoice.tNumber,
+          transactionId: invoice.transactionId,
+          blockHeight: invoice.blockHeight,
           encryptedDetails: encryptedDetails,
           metadata: {
             confirmationStatus: 'SENDING',
@@ -151,6 +155,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         ? { ...state.sendingInvoiceHashes, [invoiceWithMetadata.invoiceHash]: true as const }
         : state.sendingInvoiceHashes;
 
+      if (invoiceWithMetadata.metadata?.confirmationStatus === 'SENDING') {
+        console.log('[DEBUG addInvoice] Added to sendingInvoiceHashes', {
+          keyUsed: invoiceWithMetadata.invoiceHash,
+          keyLength: invoiceWithMetadata.invoiceHash?.length,
+          invoiceId: invoiceWithMetadata.id
+        });
+      }
       return {
         invoices: [...state.invoices, invoiceWithMetadata],
         sendingInvoiceHashes: newSending
@@ -227,54 +238,88 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           }
         }
 
+        const finalMetadata = updatedInvoice.metadata || (existing && existing.metadata);
+
         if (!existing) {
-          console.warn('[Store.updateInvoice] Invoice not found in IndexedDB:', id);
-          return;
+          // First-time persist: invoice was only in memory (e.g. created with persistFull: false, then chain confirmed).
+          // Insert full record so encryptedDetails (line items etc.) are stored.
+          const encryptedDetails = updatedInvoice.details
+            ? await getCryptoService().encryptPayload(updatedInvoice.details, masterKey)
+            : null;
+          const storageData: InvoiceStorageData = {
+            id: updatedInvoice.id,
+            invoiceHash: updatedInvoice.invoiceHash,
+            seller: updatedInvoice.seller,
+            buyer: updatedInvoice.buyer,
+            amount: updatedInvoice.amount,
+            dueDate: updatedInvoice.dueDate,
+            createdAt: updatedInvoice.createdAt,
+            status: updatedInvoice.status,
+            nonce: updatedInvoice.nonce,
+            auditKey: updatedInvoice.auditKey,
+            taxAmount: updatedInvoice.taxAmount,
+            currency: updatedInvoice.currency,
+            itemsHash: updatedInvoice.itemsHash,
+            memoHash: updatedInvoice.memoHash,
+            orderId: updatedInvoice.orderId,
+            taxTag: updatedInvoice.taxTag,
+            jctRegistration: updatedInvoice.jctRegistration,
+            totalAmount: updatedInvoice.totalAmount,
+            currencyFlag: updatedInvoice.currencyFlag,
+            taxGroups: updatedInvoice.taxGroups,
+            tNumber: updatedInvoice.tNumber,
+            transactionId: updatedInvoice.transactionId,
+            blockHeight: updatedInvoice.blockHeight,
+            encryptedDetails,
+            metadata: {
+              confirmationStatus: finalMetadata?.confirmationStatus ?? 'CONFIRMED',
+              lastUpdated: new Date(),
+              dataSource: finalMetadata?.dataSource ?? 'chain',
+              action: finalMetadata?.action
+            }
+          };
+          await getStorageService().addData(INVOICE_TABLE, updatedInvoice.id, storageData);
+          console.log('[Store.updateInvoice] First-time persist to IndexedDB (with details):', updatedInvoice.invoiceHash);
+        } else {
+          // Update existing record
+          const encryptedDetails = updatedInvoice.details
+            ? await getCryptoService().encryptPayload(updatedInvoice.details, masterKey)
+            : existing.encryptedDetails;
+          const storageUpdates: Partial<InvoiceStorageData> = {
+            id: updatedInvoice.id,
+            invoiceHash: updatedInvoice.invoiceHash,
+            seller: updatedInvoice.seller,
+            buyer: updatedInvoice.buyer,
+            amount: updatedInvoice.amount,
+            dueDate: updatedInvoice.dueDate,
+            createdAt: updatedInvoice.createdAt,
+            status: updatedInvoice.status,
+            ...(updatedInvoice.nonce !== undefined && { nonce: updatedInvoice.nonce }),
+            ...(updatedInvoice.auditKey !== undefined && { auditKey: updatedInvoice.auditKey }),
+            ...(updatedInvoice.taxAmount !== undefined && { taxAmount: updatedInvoice.taxAmount }),
+            ...(updatedInvoice.currency !== undefined && { currency: updatedInvoice.currency }),
+            ...(updatedInvoice.itemsHash !== undefined && { itemsHash: updatedInvoice.itemsHash }),
+            ...(updatedInvoice.memoHash !== undefined && { memoHash: updatedInvoice.memoHash }),
+            ...(updatedInvoice.orderId !== undefined && { orderId: updatedInvoice.orderId }),
+            ...(updatedInvoice.taxTag !== undefined && { taxTag: updatedInvoice.taxTag }),
+            ...(updatedInvoice.jctRegistration !== undefined && { jctRegistration: updatedInvoice.jctRegistration }),
+            ...(updatedInvoice.totalAmount !== undefined && { totalAmount: updatedInvoice.totalAmount }),
+            ...(updatedInvoice.currencyFlag !== undefined && { currencyFlag: updatedInvoice.currencyFlag }),
+            ...(updatedInvoice.taxGroups !== undefined && { taxGroups: updatedInvoice.taxGroups }),
+            ...(updatedInvoice.tNumber !== undefined && { tNumber: updatedInvoice.tNumber }),
+            ...(updatedInvoice.transactionId !== undefined && { transactionId: updatedInvoice.transactionId }),
+            ...(updatedInvoice.blockHeight !== undefined && { blockHeight: updatedInvoice.blockHeight }),
+            encryptedDetails,
+            metadata: {
+              confirmationStatus: finalMetadata.confirmationStatus,
+              lastUpdated: new Date(),
+              dataSource: finalMetadata.dataSource,
+              action: finalMetadata.action
+            }
+          };
+          await getStorageService().updateData(INVOICE_TABLE, dbKey, storageUpdates);
+          console.log('[Store.updateInvoice] Updated in IndexedDB:', dbKey);
         }
-
-        // Encrypt updated details (if present)
-        const encryptedDetails = updatedInvoice.details
-          ? await getCryptoService().encryptPayload(updatedInvoice.details, masterKey)
-          : existing.encryptedDetails;
-
-        // Build update data (directly using Invoice's basic fields)
-        // Use updatedInvoice.metadata (already correctly merged), fall back to existing.metadata if absent
-        const finalMetadata = updatedInvoice.metadata || existing.metadata;
-        const storageUpdates: Partial<InvoiceStorageData> = {
-          id: updatedInvoice.id,
-          invoiceHash: updatedInvoice.invoiceHash,
-          seller: updatedInvoice.seller,
-          buyer: updatedInvoice.buyer,
-          amount: updatedInvoice.amount,
-          dueDate: updatedInvoice.dueDate,
-          createdAt: updatedInvoice.createdAt,
-          status: updatedInvoice.status,
-          ...(updatedInvoice.nonce !== undefined && { nonce: updatedInvoice.nonce }),
-          ...(updatedInvoice.auditKey !== undefined && { auditKey: updatedInvoice.auditKey }),
-          ...(updatedInvoice.taxAmount !== undefined && { taxAmount: updatedInvoice.taxAmount }),
-          ...(updatedInvoice.currency !== undefined && { currency: updatedInvoice.currency }),
-          ...(updatedInvoice.itemsHash !== undefined && { itemsHash: updatedInvoice.itemsHash }),
-          ...(updatedInvoice.memoHash !== undefined && { memoHash: updatedInvoice.memoHash }),
-          ...(updatedInvoice.orderId !== undefined && { orderId: updatedInvoice.orderId }),
-          ...(updatedInvoice.taxTag !== undefined && { taxTag: updatedInvoice.taxTag }),
-          ...(updatedInvoice.jctRegistration !== undefined && { jctRegistration: updatedInvoice.jctRegistration }),
-          ...(updatedInvoice.totalAmount !== undefined && { totalAmount: updatedInvoice.totalAmount }),
-          ...(updatedInvoice.currencyFlag !== undefined && { currencyFlag: updatedInvoice.currencyFlag }),
-          ...(updatedInvoice.taxGroups !== undefined && { taxGroups: updatedInvoice.taxGroups }),
-          ...(updatedInvoice.tNumber !== undefined && { tNumber: updatedInvoice.tNumber }),
-          encryptedDetails: encryptedDetails,
-          metadata: {
-            confirmationStatus: finalMetadata.confirmationStatus,
-            lastUpdated: new Date(),
-            dataSource: finalMetadata.dataSource,
-            action: finalMetadata.action
-          }
-        };
-
-        // Use generic storage interface to update (using the correct dbKey, which may have .private suffix)
-        await getStorageService().updateData(INVOICE_TABLE, dbKey, storageUpdates);
-
-        console.log('[Store.updateInvoice] Updated in IndexedDB:', dbKey);
       } catch (error) {
         console.error('[Store.updateInvoice] Failed to update IndexedDB:', error);
         // Throw error on persistence failure, do not update memory, keep DB and memory in sync
@@ -415,6 +460,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
         currencyFlag: updatedInvoiceFull.currencyFlag ?? oldRecordData.currencyFlag,
         taxGroups: updatedInvoiceFull.taxGroups ?? oldRecordData.taxGroups,
         tNumber: updatedInvoiceFull.tNumber ?? oldRecordData.tNumber,
+        transactionId: updatedInvoiceFull.transactionId ?? oldRecordData.transactionId,
+        blockHeight: updatedInvoiceFull.blockHeight ?? oldRecordData.blockHeight,
         encryptedDetails: encryptedDetails,
         metadata: {
           confirmationStatus: finalMetadata.confirmationStatus,
@@ -539,6 +586,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             currencyFlag: dbRecord.currencyFlag,
             taxGroups: dbRecord.taxGroups,
             tNumber: dbRecord.tNumber,
+            transactionId: dbRecord.transactionId,
+            blockHeight: dbRecord.blockHeight,
             details: details,
             metadata: dbRecord.metadata
           };
@@ -608,6 +657,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             currencyFlag: dbRecord.currencyFlag,
             taxGroups: dbRecord.taxGroups,
             tNumber: dbRecord.tNumber,
+            transactionId: dbRecord.transactionId,
+            blockHeight: dbRecord.blockHeight,
             details: details,
             metadata: dbRecord.metadata
           };
@@ -638,6 +689,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             currencyFlag: dbRecord.currencyFlag,
             taxGroups: dbRecord.taxGroups,
             tNumber: dbRecord.tNumber,
+            transactionId: dbRecord.transactionId,
+            blockHeight: dbRecord.blockHeight,
             details: undefined,
             metadata: dbRecord.metadata
           };
@@ -647,19 +700,38 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
       // 3. Update memory state (if refreshMemory is true)
       if (refreshMemory) {
-        // Use functional update to ensure state is correctly updated
+        const dbInvoiceHashes = new Set(invoices.map((inv) => inv.invoiceHash));
         set((state) => {
-          // Rebuild sending index
+          // Rebuild sending index from DB-loaded list
           const newSending: Record<AleoField, true> = {};
           for (const invoice of invoices) {
             if (invoice.metadata?.confirmationStatus === 'SENDING') {
               newSending[invoice.invoiceHash] = true;
             }
           }
+          // Preserve hashes and list entries for in-memory-only SENDING invoices (e.g. just created, not yet in IndexedDB).
+          // Otherwise getAllInvoices (e.g. from useAuditPackageGenerate on detail page) would clear them
+          // and the detail page spinner would never show; also keep them in the list so they appear when navigating back.
+          const mergedInvoices = [...invoices];
+          for (const inv of state.invoices) {
+            if (
+              inv.metadata?.confirmationStatus === 'SENDING' &&
+              !dbInvoiceHashes.has(inv.invoiceHash)
+            ) {
+              newSending[inv.invoiceHash] = true;
+              mergedInvoices.push(inv);
+            }
+          }
+          if (state.currentInvoice?.metadata?.confirmationStatus === 'SENDING' && !dbInvoiceHashes.has(state.currentInvoice.invoiceHash)) {
+            newSending[state.currentInvoice.invoiceHash] = true;
+            if (!mergedInvoices.some((i) => i.invoiceHash === state.currentInvoice!.invoiceHash)) {
+              mergedInvoices.push(state.currentInvoice);
+            }
+          }
 
           return {
             ...state,
-            invoices: invoices,
+            invoices: mergedInvoices,
             sendingInvoiceHashes: newSending
           };
         });
@@ -743,6 +815,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               currencyFlag: invoice.currencyFlag,
               taxGroups: invoice.taxGroups,
               tNumber: invoice.tNumber,
+              transactionId: invoice.transactionId,
+              blockHeight: invoice.blockHeight,
               encryptedDetails: encryptedDetails,
               metadata: invoiceMetadata
             };
@@ -843,6 +917,8 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
             currencyFlag: dbRecord.currencyFlag,
             taxGroups: dbRecord.taxGroups,
             tNumber: dbRecord.tNumber,
+            transactionId: dbRecord.transactionId,
+            blockHeight: dbRecord.blockHeight,
             details: details,
             metadata: dbRecord.metadata
           };

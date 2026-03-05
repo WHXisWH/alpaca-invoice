@@ -24,7 +24,7 @@ export function useInvoiceListPolling(
   onPollingComplete: (invoiceHash: AleoField, updatedInvoice: Invoice) => void
 ) {
   const { masterKey, publicKey } = useUserStore();
-  const { createPollingService, getLatestInvoice, fetchChainAnchors } = useInvoicePollingCore();
+  const { createPollingService, getLatestInvoice } = useInvoicePollingCore();
   
   // ✅ 为每张发票维护独立的 PollingService 实例
   const pollingServicesRef = useRef<Map<AleoField, PollingService<InvoiceScanResult>>>(new Map());
@@ -57,24 +57,6 @@ export function useInvoiceListPolling(
       hasMasterKey: !!masterKey,
       canPersist: !!masterKey
     });
-
-    // ✅ 先走 mapping 快速检查，若已确认则直接回调，无需轮询
-    (async () => {
-      const anchors = await fetchChainAnchors(invoice.id || invoiceHash);
-      if (anchors.status !== null) {
-        onPollingComplete(invoiceHash, {
-          ...invoice,
-          status: anchors.status,
-          metadata: {
-            confirmationStatus: 'CONFIRMED',
-            dataSource: 'chain',
-            lastUpdated: new Date(),
-            action: invoice.metadata?.action
-          }
-        });
-        return;
-      }
-    })();
 
     // ✅ 使用核心逻辑创建 PollingService
     const pollingService = createPollingService(invoiceHash, invoice, {

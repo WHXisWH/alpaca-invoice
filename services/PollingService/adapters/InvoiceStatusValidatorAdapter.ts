@@ -23,28 +23,23 @@ export function createInvoiceValidationAdapter(
   invoice: Invoice
 ): (result: InvoiceScanResult) => ValidationResult {
   return (result: InvoiceScanResult): ValidationResult => {
-    const recordToUse = result.paymentRecord || result.invoiceRecord;
-    
-    if (!recordToUse) {
+    // Only confirm when we have InvoiceRecord (invoice amount/status must come from it, not PaymentRecord)
+    if (result.invoiceRecord) {
+      const validation = validator.validateRecord(
+        result.invoiceRecord,
+        invoice.metadata?.action,
+        invoice.status
+      );
       return {
-        shouldStop: false,
-        reason: 'No record found',
-        shouldContinue: true
+        shouldStop: validation.shouldConfirm,
+        reason: validation.reason,
+        shouldContinue: !validation.shouldConfirm
       };
     }
-
-    // 使用验证服务验证
-    const validation = validator.validateRecord(
-      recordToUse,
-      invoice.metadata?.action,
-      invoice.status
-    );
-
-    return {
-      shouldStop: validation.shouldConfirm,
-      reason: validation.reason,
-      shouldContinue: !validation.shouldConfirm // 如果不符合预期，继续轮询
-    };
+    if (result.paymentRecord) {
+      return { shouldStop: false, reason: 'Waiting for InvoiceRecord', shouldContinue: true };
+    }
+    return { shouldStop: false, reason: 'No record found', shouldContinue: true };
   };
 }
 

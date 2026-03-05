@@ -9,7 +9,6 @@ import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { useInvoicePollingCore } from './useInvoicePollingCore';
-import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 
 /**
  * Hook: manual on-chain sync (shared polling architecture)
@@ -34,9 +33,8 @@ export function useInvoiceChainSync(
   const { handleError } = useErrorHandler();
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
-  // Use shared polling core (only for buildUpdatedInvoice / mapping lookup)
-  const { buildUpdatedInvoice, fetchChainAnchors } = useInvoicePollingCore();
-  const protocolService = new AleoProtocolService();
+  // Use shared polling core for record-to-invoice mapping
+  const { buildUpdatedInvoice } = useInvoicePollingCore();
   
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
 
@@ -198,25 +196,7 @@ export function useInvoiceChainSync(
       console.log('🔄 [ChainSync] Starting manual sync for invoice:', latestInvoice.id);
       toast.loading('Syncing status...', { id: 'sync-status' });
 
-      // Fast path: check mapping anchor first; if confirmed, short-circuit
-      const chainAnchor = await fetchChainAnchors(latestInvoice.id);
-      if (chainAnchor.status !== null) {
-        const updatedFromMapping: Invoice = {
-          ...latestInvoice,
-          status: chainAnchor.status,
-          metadata: {
-            confirmationStatus: 'CONFIRMED',
-            dataSource: 'chain',
-            action: latestInvoice.metadata?.action,
-            lastUpdated: new Date()
-          }
-        };
-        await confirmInvoice(updatedFromMapping, {} as any);
-        toast.success('Status refreshed from on-chain mapping', { id: 'sync-status' });
-        return;
-      }
-
-      // Otherwise, scan on-chain records via useInvoiceChainScan
+      // Scan on-chain records via useInvoiceChainScan
       const { invoiceRecord, paymentRecord } = await scanInvoiceRecord(invoiceHash, latestInvoice.id);
 
       if (!invoiceRecord && !paymentRecord) {
@@ -224,14 +204,14 @@ export function useInvoiceChainSync(
         return;
       }
 
-      // Build updated invoice using shared core logic
-      const recordToUse = paymentRecord || invoiceRecord!;
-      const updatedInvoice = buildUpdatedInvoice(latestInvoice, recordToUse);
-
-      // Confirm invoice (includes key-migration handling)
-      await confirmInvoice(updatedInvoice, recordToUse);
-      
-      toast.success('Status sync successful', { id: 'sync-status' });
+      // Only update invoice from paid InvoiceRecord (never PaymentRecord — amount must stay pre-tax)
+      if (invoiceRecord) {
+        const updatedInvoice = buildUpdatedInvoice(latestInvoice, invoiceRecord);
+        await confirmInvoice(updatedInvoice, invoiceRecord);
+        toast.success('Status sync successful', { id: 'sync-status' });
+      } else {
+        toast.info('Payment detected but invoice record not yet available. Try again shortly.', { id: 'sync-status' });
+      }
     } catch (error) {
       console.error('❌ [ChainSync] Failed to sync status:', error);
       toast.error('Sync failed', {

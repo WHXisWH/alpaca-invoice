@@ -71,11 +71,17 @@ export default function WalletConnectButtonV2() {
       {/* Divider */}
       <div className="h-8 w-px bg-primary-200/70" />
 
-      {/* Balance */}
-      <div className="flex flex-col text-right">
-        <span className="text-xs text-primary-500">Balance</span>
-        <span className="text-sm font-semibold text-primary-900">
-          {publicBalance} <span className="text-xs font-normal text-primary-500">credits</span>
+      {/* Balance: Public / Private in 2 lines (credits 不换行) */}
+      <div className="flex min-w-0 flex-col gap-0.5 text-sm">
+        <span className="whitespace-nowrap text-primary-900">
+          <span className="text-xs text-primary-500">Public </span>
+          <span className="font-semibold tabular-nums">{publicBalance}</span>
+          <span className="text-xs text-primary-500"> credits</span>
+        </span>
+        <span className="whitespace-nowrap text-primary-900">
+          <span className="text-xs text-primary-500">Private </span>
+          <span className="font-semibold tabular-nums">{privateBalance}</span>
+          <span className="text-xs text-primary-500"> credits</span>
         </span>
       </div>
 

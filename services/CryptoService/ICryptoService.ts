@@ -2,6 +2,7 @@
 import {
   InvoiceDetails,
   AleoField,
+  AleoTransactionId,
   EncryptedPayload,
   LineItem,
   ContractInvoiceHashParams,
@@ -41,6 +42,10 @@ export interface AleoInvoiceRecord {
   jct_registration?: string; // field; BHP256(T_number as u64)
   total_amount?: string;   // u64
   currency_flag?: number;  // u8: 0=Credits, 1=USDCx
+  /** Chain transaction id from wallet record metadata */
+  transactionId?: AleoTransactionId;
+  /** Chain block height from wallet record metadata */
+  blockHeight?: number;
 }
 
 /**
@@ -57,6 +62,10 @@ export interface AleoPaymentRecord {
   _nonce?: string;         // Record nonce (optional)
   /** Wave 3: 结算锚点 = 承诺哈希（settlement_anchor），供审计 Step 2 回溯 payment_commitments mapping */
   settlement_anchor?: string;  // field
+  /** Chain transaction id from wallet record metadata */
+  transactionId?: AleoTransactionId;
+  /** Chain block height from wallet record metadata */
+  blockHeight?: number;
 }
 
 /**

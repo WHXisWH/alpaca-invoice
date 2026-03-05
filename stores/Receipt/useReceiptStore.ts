@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { AleoAddress, AleoField, AleoTransactionId, Microcredits } from '@/lib/types';
+import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 
 /**
  * Receipt item aligned with PaymentReceipt (SPEC 1.5).
@@ -18,22 +18,32 @@ export type ReceiptItem = {
   paidAt: Date;
   /** 链上 tx_id（Money Flow 审计） */
   txId?: AleoTransactionId;
+  /** 链上区块高度（用于审计与追踪） */
+  blockHeight?: number;
 };
 
 function reviveReceipts(list: any[]): ReceiptItem[] {
-  return list.map((r) => ({
-    ...r,
-    paidAt: r?.paidAt instanceof Date ? r.paidAt : new Date(r?.paidAt),
-    amount: typeof r?.amount === 'bigint' ? r.amount : BigInt(r?.amount ?? 0)
-  }));
+  return list
+    .map((r) => ({
+      ...r,
+      paidAt: r?.paidAt instanceof Date ? r.paidAt : new Date(r?.paidAt),
+      amount: typeof r?.amount === 'bigint' ? r.amount : BigInt(r?.amount ?? 0),
+      blockHeight: Number.isFinite(Number(r?.blockHeight)) ? Number(r.blockHeight) : undefined
+    }))
+    .filter((r) => r.paymentId && r.invoiceId);
 }
 
 type ReceiptState = {
   receipts: ReceiptItem[];
-  addReceipt: (r: ReceiptItem) => void;
+  addReceipt: (r: ReceiptItem) => Promise<void>;
   /** Wave 3: 按 invoiceId 更新 receipt 字段（如 settlementAnchor，轮询到 PaymentRecord 后写入） */
-  updateReceipt: (invoiceId: AleoField, patch: Partial<Pick<ReceiptItem, 'settlementAnchor' | 'txId'>>) => void;
-  clear: () => void;
+  updateReceipt: (
+    invoiceId: AleoField,
+    patch: Partial<Pick<ReceiptItem, 'settlementAnchor' | 'txId' | 'blockHeight'>>
+  ) => Promise<void>;
+  setReceipts: (items: ReceiptItem[]) => Promise<void>;
+  getAllReceipts: () => Promise<ReceiptItem[]>;
+  clear: () => Promise<void>;
   exportCsv: () => string;
 };
 
@@ -41,51 +51,92 @@ function normalizeField(f: string): string {
   return String(f).replace(/field\.(private|public)$/i, 'field').trim();
 }
 
+const RECEIPT_TABLE = 'receipts';
+const storageService = new StorageService();
+
 export const useReceiptStore = create<ReceiptState>()(
-  persist(
-    (set, get) => ({
-      receipts: [],
-      addReceipt: (r) =>
-        set((state) => ({
-          receipts: [r, ...state.receipts].slice(0, 200) // keep recent
-        })),
-      updateReceipt: (invoiceId, patch) =>
-        set((state) => ({
-          receipts: state.receipts.map((r) =>
-            normalizeField(r.invoiceId) === normalizeField(invoiceId) ? { ...r, ...patch } : r
-          )
-        })),
-      clear: () => set({ receipts: [] }),
-      exportCsv: () => {
-        const rows = [
-          ['paymentId', 'settlementAnchor', 'invoiceId', 'payer', 'payee', 'amount_microcredits', 'paidAt', 'txId'].join(',')
-        ];
-        for (const r of get().receipts) {
-          rows.push(
-            [
-              r.paymentId,
-              r.settlementAnchor ?? '',
-              r.invoiceId,
-              r.payer,
-              r.payee,
-              r.amount.toString(),
-              r.paidAt.toISOString(),
-              r.txId ?? ''
-            ].join(',')
-          );
-        }
-        return rows.join('\n');
+  (set, get) => ({
+    receipts: [],
+    addReceipt: async (r) => {
+      const key = normalizeField(r.paymentId);
+      const next = [r, ...get().receipts.filter((it) => normalizeField(it.paymentId) !== key)].slice(0, 500);
+      set({ receipts: next });
+      try {
+        await storageService.addData(RECEIPT_TABLE, key, r);
+      } catch (error) {
+        console.error('❌ [ReceiptStore.addReceipt] Failed to persist receipt:', error);
       }
-    }),
-    {
-      name: 'receipt-store',
-      deserialize: (str) => {
-        const data = JSON.parse(str);
-        if (data?.state?.receipts) {
-          data.state.receipts = reviveReceipts(data.state.receipts);
-        }
-        return data;
+    },
+    updateReceipt: async (invoiceId, patch) => {
+      const normalizedInvoiceId = normalizeField(invoiceId);
+      const updated = get().receipts.map((r) =>
+        normalizeField(r.invoiceId) === normalizedInvoiceId ? { ...r, ...patch } : r
+      );
+      set({ receipts: updated });
+      try {
+        const targets = updated.filter((r) => normalizeField(r.invoiceId) === normalizedInvoiceId);
+        await Promise.all(
+          targets.map((r) => storageService.addData(RECEIPT_TABLE, normalizeField(r.paymentId), r))
+        );
+      } catch (error) {
+        console.error('❌ [ReceiptStore.updateReceipt] Failed to persist receipt patch:', error);
       }
+    },
+    setReceipts: async (items) => {
+      const revived = reviveReceipts(items);
+      set({ receipts: revived });
+      try {
+        await storageService.resetAllData(RECEIPT_TABLE, revived.map((r) => ({
+          ...r,
+          key: normalizeField(r.paymentId)
+        })));
+      } catch (error) {
+        console.error('❌ [ReceiptStore.setReceipts] Failed to reset receipts in DB:', error);
+      }
+    },
+    getAllReceipts: async () => {
+      try {
+        const data = await storageService.getAllData<ReceiptItem>(RECEIPT_TABLE);
+        const revived = reviveReceipts(data);
+        set({ receipts: revived });
+        return revived;
+      } catch (error) {
+        console.error('❌ [ReceiptStore.getAllReceipts] Failed to load receipts from DB:', error);
+        return [];
+      }
+    },
+    clear: async () => {
+      set({ receipts: [] });
+      try {
+        const all = await storageService.getAllData<ReceiptItem>(RECEIPT_TABLE);
+        const keys = all.map((r) => normalizeField(r.paymentId));
+        if (keys.length > 0) {
+          await storageService.deleteData(RECEIPT_TABLE, keys);
+        }
+      } catch (error) {
+        console.error('❌ [ReceiptStore.clear] Failed to clear receipts DB:', error);
+      }
+    },
+    exportCsv: () => {
+      const rows = [
+        ['paymentId', 'settlementAnchor', 'invoiceId', 'payer', 'payee', 'amount_microcredits', 'paidAt', 'txId', 'blockHeight'].join(',')
+      ];
+      for (const r of get().receipts) {
+        rows.push(
+          [
+            r.paymentId,
+            r.settlementAnchor ?? '',
+            r.invoiceId,
+            r.payer,
+            r.payee,
+            r.amount.toString(),
+            r.paidAt.toISOString(),
+            r.txId ?? '',
+            r.blockHeight ?? ''
+          ].join(',')
+        );
+      }
+      return rows.join('\n');
     }
-  )
+  })
 );

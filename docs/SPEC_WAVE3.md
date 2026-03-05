@@ -716,6 +716,7 @@ export interface UseTransactionControllerReturn {
    * - USDCx 路径：需从钱包获取买家的 test_usdcx_stablecoin.aleo/Token 私有 Record 传入合约（与 Credits 对称）
    * - 两路径均为全隐私 transfer_private，链上无余额变动痕迹
    * - 两路径均生成 payment_nonce（随机 field）计算承诺哈希；nonce 须持久化至 ReceiptStore
+   * - 当 requestRecords 返回无可用未花费 credits 时，应抛出 WalletError.INSUFFICIENT_FEE（非 DECRYPTION_FAILED），以便前端显示「余额不足」类提示
    */
   executePay(invoiceId: AleoField): Promise<void>;
 
@@ -786,6 +787,23 @@ export interface UseInvoiceDetailReturn {
 }
 ```
 
+### 4.2.1 `useInvoiceDetailPage`（🆕 新建）
+
+> 文件：`controller/Invoice/useInvoiceDetailPage.ts`
+
+详情页专用 Controller：组合 `useInvoiceDetail`，并承接 registry 锚点拉取、审计包下载等逻辑，使 `app/(app)/invoices/[id]/page.tsx` 仅负责渲染。
+
+```typescript
+export interface UseInvoiceDetailPageReturn extends IInvoiceDetail {
+  displayCurrency: string;
+  anchors: { commitment?: string | null; rules?: string | null; fieldCommitments?: any; auth?: any; counter?: number | null };
+  isFetchingAnchors: boolean;
+  downloadMsg: string;
+  safeStringify: (obj: any) => string;
+  handleDownloadPackage: (mode: 'minimal' | 'full') => Promise<void>;
+}
+```
+
 ### 4.3 `useInvoices`（🔧 修改）
 
 > 文件：`controller/Invoice/useInvoices.ts`
@@ -816,6 +834,31 @@ export interface UseInvoicesReturn {
   }>;
 }
 ```
+
+**实现约束（Wave 3.1 补充）**：
+- 发票列表批量同步（`handleSyncAll`）仅扫描 `InvoiceRecord`（`scanAllInvoiceRecords`），不再在该页面触发 `scanAllPaymentRecords`
+- `PaymentRecord` 全链扫描职责下沉至收据域（`useReceipts` / `receipts` 页面）
+
+### 4.3.1 `useInvoicesPageController`（🆕 新建）
+
+> 文件：`controller/Invoice/useInvoicesPageController.ts`
+
+```typescript
+export interface UseInvoicesPageControllerReturn extends UseInvoicesReturn {
+  roleFilter: 'all' | 'sent' | 'received';
+  displayInvoices: InvoiceWithRole[];
+  handleRoleChange(role: 'all' | 'sent' | 'received'): void;
+  exportCsv(): void;
+  handlePayWithGuard(invoice: Invoice, chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined): void;
+  handleCancelWithGuard(invoice: Invoice, chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined): void;
+  getExplorerUrl(invoice: Invoice): string | null;
+}
+```
+
+职责：
+- 路由筛选（role filter）与 URL query 同步
+- CSV 导出、链上状态动作守卫（pay/cancel 仅在 CONFIRMED 可执行）
+- 生成 Aleo Explorer 交易链接（`invoice.transactionId`）
 
 ### 4.4 `useInvoiceForm`（🆕 新建，架构合规）
 
@@ -1021,6 +1064,8 @@ export interface AleoPaymentRecordV3 extends AleoPaymentRecord {
    * 需从链上解析的 PaymentRecord 字段中读取，并映射至本地 PaymentReceipt.settlementAnchor
    */
   settlement_anchor: string;  // field
+  transactionId?: AleoTransactionId;
+  blockHeight?: number;
 }
 
 /**
@@ -1045,6 +1090,34 @@ export type BuildInvoiceFromChainRecord = (record: AleoInvoiceRecordV3) => Invoi
  */
 export type BuildReceiptFromChainRecord = (record: AleoPaymentRecordV3) => PaymentReceipt;
 ```
+
+### 4.9 `useReceipts`（🆕 新建）
+
+> 文件：`controller/Receipt/useReceipts.ts`
+
+```typescript
+export interface UseReceiptsReturn {
+  receipts: PaymentReceipt[];
+  isLoading: boolean;
+  isSyncing: boolean;
+  showWalletPrompt: boolean;
+  handleSyncAllReceipts(): Promise<void>;
+  exportCsv(): string;
+}
+```
+
+职责：
+- 初始化时从 `ReceiptStore`（IndexedDB）加载本地收据
+- 收据页触发 `scanAllPaymentRecords` 并落库（`setReceipts`）
+- 对外暴露排序后的展示列表与导出能力
+
+**实现约束（Wave 3.1 收据页防循环）**：
+- 当本地收据为空时，仅**自动同步一次**（通过 `hasAutoSyncAttemptedRef` 标记），避免「sync 返回 0 条 → 依赖不变 → 再次触发 sync」导致的无限循环。
+- 用户可随时通过「Sync」按钮手动再次拉取链上 PaymentRecord。
+
+**`scanAllPaymentRecords` 行为（与合约 `main.leo` PaymentRecord 一致）**：
+- `requestRecords(PROGRAM_ID)` 返回该程序下全部 record（含 InvoiceRecord 与 PaymentRecord）。
+- 若钱包返回的 record 带 `recordName` / `record_name`，则仅解析 `recordName === 'PaymentRecord'` 的 record，避免将 InvoiceRecord 当作 PaymentRecord 解析；未提供 recordName 时仍对所有 record 做类型判断后只保留 PaymentRecord。
 
 ### 4.8 `useInvoicePollingCore`（🔧 轮询兼容 Wave 3）
 
@@ -1089,6 +1162,14 @@ export interface InvoiceState {
  * - 当前版本（Wave 2.2）：v2
  * - Wave 3 需升级至 v3，以支持新字段的持久化
  * - 版本迁移：旧记录缺失新字段时，使用默认值（taxTag: undefined, currencyFlag: 0）
+ *
+ * updateInvoice 首次持久化（Wave 3.1 补充）：
+ * - 创建发票时 addInvoice(..., { persistFull: false }) 仅写内存，不落库。
+ * - 链上确认后 AutoPoller 调用 updateInvoice(..., { persistFull: true, masterKey })。
+ * - 若 IndexedDB 中无该 id 记录，updateInvoice 必须执行**插入**（用当前 merged invoice 构建完整 InvoiceStorageData，含 encryptedDetails），否则 details/lineItems 永远无法持久化，详情页解密后仍为 null。
+ *
+ * getAllInvoices(refreshMemory: true)（Wave 3.1 补充）：
+ * - 用 IndexedDB 数据刷新内存时，必须**保留**仅存在于内存、且 confirmationStatus === 'SENDING' 的发票：其 invoiceHash 保留在 sendingInvoiceHashes 中，且合并回 invoices 列表。否则其他调用方（如详情页 useAuditPackageGenerate）触发 getAllInvoices 后会清掉新建未落库发票的 sending 状态，详情页轮询旋转不显示。
  */
 ```
 
@@ -1101,8 +1182,10 @@ export interface ReceiptState {
   receipts: PaymentReceipt[];
 
   addReceipt(receipt: PaymentReceipt): Promise<void>;
-  getReceiptByInvoiceId(invoiceId: AleoField): PaymentReceipt | null;
-  getAllReceipts(options?: { masterKey?: string }): Promise<PaymentReceipt[]>;
+  updateReceipt(invoiceId: AleoField, patch: Partial<Pick<PaymentReceipt, 'settlementAnchor'>>): Promise<void>;
+  setReceipts(items: PaymentReceipt[]): Promise<void>;
+  getAllReceipts(): Promise<PaymentReceipt[]>;
+  clear(): Promise<void>;
 }
 
 /**
@@ -1115,6 +1198,10 @@ export interface ReceiptState {
  * 旧版记录缺少这些字段时的兼容策略：
  * - paymentId 缺失 → 读取后为 '0field'
  * - settlementAnchor 缺失 → 读取后为 '0field'，Step 2 验证将报错提示"收据不含结算锚点"
+ *
+ * 持久化要求（Wave 3.1 补充）：
+ * - ReceiptStore 与 InvoiceStore 一致，使用 IndexedDB（`zk_invoice_db`）
+ * - 禁止仅依赖 localStorage 持久化收据
  */
 ```
 
@@ -1123,6 +1210,12 @@ export interface ReceiptState {
 ## 6. View 层接口（Component Props）
 
 > **架构规则（已落地）**：View 层不含任何业务逻辑。所有计算、验证、副作用均在 Controller 层的 Hook 中完成；View 组件通过调用对应 Hook 获取状态与操作函数，只负责渲染与事件转发。
+
+**页面级补充（Wave 3.1）**：
+- `app/(app)/invoices/page.tsx` 必须通过 `useInvoicesPageController` 获取列表展示所需逻辑（筛选、导出、动作守卫、Explorer 链接）；**列表页发票卡片（`components/invoice-card.tsx`）不展示 line items**
+- `app/(app)/invoices/create/page.tsx` 必须通过 `controller/Invoice/useCreateInvoicePage` 获取页面展示配置，保持 page 文件为纯 View
+- `app/(app)/invoices/[id]/page.tsx` 必须通过 `useInvoiceDetailPage(invoiceHash)` 获取详情数据、锚点、displayCurrency、审计包下载等，页面仅负责渲染，不直接使用 `useInvoiceDetail` + registry/anchors 等内联逻辑；**详情页为 line items 唯一展示位置**：以表格形式展示 line items，且每行显示该商品税率（Tax Rate 列，支持发票级或逐行税率）
+- `app/(app)/receipts/page.tsx` 的链上扫描入口由 `useReceipts` 提供，`PaymentRecord` 不再由发票列表页承担
 
 ### 6.1 发票创建表单组件
 
