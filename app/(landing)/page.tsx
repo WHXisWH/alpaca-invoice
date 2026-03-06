@@ -22,25 +22,27 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Marquee } from '@/components/ui/marquee';
 import InvoiceCard from '@/components/invoice-card';
-import { ReceiptCard } from '@/components/receipt-card';
+import ReceiptCard from '@/components/receipt-card';
 import type { Invoice } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 
-/** Mock receipts for landing page demo (How section step 3) */
-const MOCK_BUYER_RECEIPT = {
-  variant: 'buyer' as const,
-  payee: 'aleo1seller1234567890abcdefghijklmnopqrstuvwxyz1234567890abc',
-  amount: '1,250.00 credits',
-  status: 'Paid',
-  documentId: 'pay_0x7f3a...2b1c',
+/** Mock receipts for landing page demo (How section step 3) — ReceiptItem shape for ReceiptCard */
+const MOCK_RECEIPT_BUYER = {
+  paymentId: 'pay_0x7f3a2b1c_field' as any,
+  invoiceId: 'inv_0xpaydemo1a2b3c_field' as any,
+  payer: 'aleo1buyer1234567890abcdefghijklmnopqrstuvwxyz1234567890ab' as any,
+  payee: 'aleo1seller1234567890abcdefghijklmnopqrstuvwxyz1234567890abc' as any,
+  amount: BigInt(1_250_000_000),
+  paidAt: new Date(),
 };
 
-const MOCK_SELLER_RECEIPT = {
-  variant: 'seller' as const,
-  payer: 'aleo1buyer1234567890abcdefghijklmnopqrstuvwxyz1234567890ab',
-  amount: '1,250.00 credits',
-  status: 'Received',
-  documentId: 'pay_0x7f3a...2b1c',
+const MOCK_RECEIPT_SELLER = {
+  paymentId: 'pay_0x7f3a2b1c_field' as any,
+  invoiceId: 'inv_0xpaydemo1a2b3c_field' as any,
+  payer: 'aleo1buyer1234567890abcdefghijklmnopqrstuvwxyz1234567890ab' as any,
+  payee: 'aleo1seller1234567890abcdefghijklmnopqrstuvwxyz1234567890abc' as any,
+  amount: BigInt(1_250_000_000),
+  paidAt: new Date(),
 };
 
 /** Mock invoices for hero marquee */
@@ -607,22 +609,10 @@ export default function LandingPage() {
               </p>
               <div className="space-y-6">
                 <div className="transform -rotate-2 hover:rotate-0 transition-transform">
-                  <ReceiptCard
-                    variant={MOCK_BUYER_RECEIPT.variant}
-                    payee={MOCK_BUYER_RECEIPT.payee}
-                    amount={MOCK_BUYER_RECEIPT.amount}
-                    status={MOCK_BUYER_RECEIPT.status}
-                    documentId={MOCK_BUYER_RECEIPT.documentId}
-                  />
+                  <ReceiptCard receipt={MOCK_RECEIPT_BUYER} />
                 </div>
                 <div className="transform rotate-2 hover:rotate-0 transition-transform">
-                  <ReceiptCard
-                    variant={MOCK_SELLER_RECEIPT.variant}
-                    payer={MOCK_SELLER_RECEIPT.payer}
-                    amount={MOCK_SELLER_RECEIPT.amount}
-                    status={MOCK_SELLER_RECEIPT.status}
-                    documentId={MOCK_SELLER_RECEIPT.documentId}
-                  />
+                  <ReceiptCard receipt={MOCK_RECEIPT_SELLER} />
                 </div>
               </div>
               <div className="mt-6 inline-block rounded-full border border-primary-800 bg-primary-900/50 px-5 py-2 font-mono text-xs text-accent-400">
