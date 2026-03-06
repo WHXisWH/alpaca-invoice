@@ -41,7 +41,7 @@ export function useReceipts() {
   const wallet = useWallet();
   const { publicKey } = useUserStore();
   const { scanAllPaymentRecords } = useInvoiceChainScan();
-  const { receipts, setReceipts, getAllReceipts, exportCsv } = useReceiptStore();
+  const { receipts, setReceipts, getAllReceipts, exportCsv, bulkEnrichDetails } = useReceiptStore();
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   /** Prevent infinite loop: auto-sync only once when receipts are empty (do not re-run when sync returns 0) */
@@ -72,6 +72,30 @@ export function useReceipts() {
         if (item) items.push(item);
       }
       await setReceipts(items);
+
+      // Enrich receipts with invoice details from KV (non-fatal, best-effort)
+      if (items.length > 0) {
+        try {
+          const enriched = await Promise.all(
+            items.map(async (item) => {
+              try {
+                const res = await fetch(
+                  `/api/invoice-details?invoiceId=${encodeURIComponent(String(item.invoiceId))}`
+                );
+                if (!res.ok) return item;
+                const { details } = await res.json();
+                return details ? { ...item, details } : item;
+              } catch {
+                return item;
+              }
+            })
+          );
+          bulkEnrichDetails(enriched);
+        } catch {
+          // Non-fatal — receipts are synced even without details
+        }
+      }
+
       toast.success('Receipts synced', {
         id: 'sync-receipts',
         description: `Synced ${items.length} payment receipt(s) from chain`

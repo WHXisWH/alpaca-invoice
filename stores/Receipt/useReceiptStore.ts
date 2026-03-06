@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AleoAddress, AleoField, AleoTransactionId, Microcredits } from '@/lib/types';
+import type { AleoAddress, AleoField, AleoTransactionId, Microcredits, InvoiceDetails, LineItem } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 
 /**
@@ -9,9 +9,11 @@ import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 export type ReceiptItem = {
   /** Chain PaymentRecord.payment_id — 供审计包 buyer 路径使用 */
   paymentId: AleoField;
-  /** Chain PaymentRecord.settlement_anchor（tx_id_hash 公开锚点）— 审计员 Step 2 资产核对起点 */
+  /** Chain PaymentRecord.settlement_anchor — used by auditor Step 2 */
   settlementAnchor?: AleoField;
   invoiceId: AleoField;
+  /** Invoice line-item details fetched from KV (optional, buyer-side enrichment) */
+  details?: InvoiceDetails & { lineItems: (LineItem & { taxRate?: number })[] };
   payer: AleoAddress;
   payee: AleoAddress;
   amount: Microcredits;
@@ -45,6 +47,8 @@ type ReceiptState = {
   getAllReceipts: () => Promise<ReceiptItem[]>;
   clear: () => Promise<void>;
   exportCsv: () => string;
+  /** Update in-memory receipts with enriched details (no persistence needed) */
+  bulkEnrichDetails: (enriched: ReceiptItem[]) => void;
 };
 
 function normalizeField(f: string): string {
@@ -116,6 +120,9 @@ export const useReceiptStore = create<ReceiptState>()(
       } catch (error) {
         console.error('❌ [ReceiptStore.clear] Failed to clear receipts DB:', error);
       }
+    },
+    bulkEnrichDetails: (enriched) => {
+      set({ receipts: enriched });
     },
     exportCsv: () => {
       const rows = [

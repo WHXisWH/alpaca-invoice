@@ -117,6 +117,47 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
             </div>
           </div>
 
+          {/* Line items — shown when invoice details are available */}
+          {receipt.details && receipt.details.lineItems.length > 0 && (
+            <div className="mb-4">
+              <p className="mb-1.5 text-xs font-medium text-primary-500">Line Items</p>
+              <div className="overflow-x-auto rounded-lg border border-primary-100">
+                <table className="w-full min-w-[320px] text-xs text-primary-800">
+                  <thead>
+                    <tr className="border-b border-primary-100 bg-primary-50 text-left text-primary-500">
+                      <th className="px-2 py-1.5">Description</th>
+                      <th className="px-2 py-1.5 text-right">Qty</th>
+                      <th className="px-2 py-1.5 text-right">Unit Price</th>
+                      <th className="px-2 py-1.5 text-right">Tax</th>
+                      <th className="px-2 py-1.5 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receipt.details.lineItems.map((item, idx) => (
+                      <tr key={idx} className="border-b border-primary-50 last:border-0">
+                        <td className="px-2 py-1.5">{item.description}</td>
+                        <td className="px-2 py-1.5 text-right">{item.quantity}</td>
+                        <td className="px-2 py-1.5 text-right">{item.unitPrice}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          {(item as { taxRate?: number }).taxRate != null
+                            ? `${(item as { taxRate?: number }).taxRate}%`
+                            : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">{item.amount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-1.5 flex justify-between text-xs text-primary-600">
+                <span>Subtotal: {receipt.details.subtotal} {receipt.details.currency}</span>
+                <span className="font-semibold text-primary-900">
+                  Total: {receipt.details.total} {receipt.details.currency}
+                </span>
+              </div>
+            </div>
+          )}
+
           {explorerTxUrl && (
             <div className="flex gap-2 border-t border-primary-100/70 pt-4">
               <a
