@@ -123,6 +123,11 @@ export class StorageService implements IStorageService {
 
         request.onsuccess = () => {
           this.db = request.result;
+          // Close connection gracefully when another instance triggers a version upgrade
+          this.db.onversionchange = () => {
+            this.db?.close();
+            this.db = null;
+          };
           // Record existing tables
           for (let i = 0; i < this.db.objectStoreNames.length; i++) {
             this.tableNames.add(this.db.objectStoreNames[i]);
@@ -252,6 +257,11 @@ export class StorageService implements IStorageService {
 
         upgradeRequest.onsuccess = () => {
           this.db = upgradeRequest.result;
+          // Close connection gracefully when another instance triggers a version upgrade
+          this.db.onversionchange = () => {
+            this.db?.close();
+            this.db = null;
+          };
           this.tableNames.add(tableName);
 
           // If there is backup data, restore it

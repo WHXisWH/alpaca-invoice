@@ -12,10 +12,10 @@ export interface PaymentProgressProps {
 }
 
 /**
- * 三阶段支付进度条（PRD 4.2）
- * Phase 1: 权限获取（USDCx Approve）
- * Phase 2: Proving（隐私盾牌动效）
- * Phase 3: Finalizing（确认深度）
+ * Three-phase payment progress bar (PRD 4.2)
+ * Phase 1: Authorization (USDCx Approve)
+ * Phase 2: Proving (privacy shield animation)
+ * Phase 3: Finalizing (confirmation depth)
  */
 export default function PaymentProgress({
   currencyFlag,
@@ -55,17 +55,17 @@ export default function PaymentProgress({
             step1Active ? 'border-amber-300 bg-amber-50' : approvalStatus === 'approved' ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-slate-50'
           }`}
         >
-          <span className="font-medium text-slate-800">Phase 1 — 权限获取</span>
+          <span className="font-medium text-slate-800">Phase 1 — Authorization</span>
           <p className="mt-0.5 text-slate-600">
-            {approvalStatus === 'checking' && '正在检查授权额度…'}
-            {approvalStatus === 'insufficient' && '授权不足，请点击「Approve & Pay」'}
-            {approvalStatus === 'approved' && '✓ 已授权'}
-            {approvalStatus === 'idle' && '等待授权'}
+            {approvalStatus === 'checking' && 'Checking allowance…'}
+            {approvalStatus === 'insufficient' && 'Insufficient allowance, click "Approve & Pay"'}
+            {approvalStatus === 'approved' && '✓ Authorized'}
+            {approvalStatus === 'idle' && 'Awaiting authorization'}
           </p>
         </div>
       )}
 
-      {/* Phase 2: Proving — 隐私盾牌动效 */}
+      {/* Phase 2: Proving — privacy shield animation */}
       <div
         className={`rounded-lg border px-3 py-3 text-sm flex items-center gap-3 ${
           step2Active ? 'border-blue-300 bg-blue-100/80' : 'border-slate-200 bg-slate-50'
@@ -75,9 +75,9 @@ export default function PaymentProgress({
           <Shield className="h-8 w-8 text-blue-600" />
         </div>
         <div>
-          <span className="font-medium text-slate-800">Phase 2 — 证明生成 (Proving)</span>
+          <span className="font-medium text-slate-800">Phase 2 — Proving</span>
           <p className="mt-0.5 text-slate-600">
-            正在本地生成零知识证明，请勿关闭浏览器
+            Generating zero-knowledge proof locally, do not close the browser
           </p>
         </div>
       </div>
@@ -88,9 +88,9 @@ export default function PaymentProgress({
           step3Active || isComplete ? 'border-emerald-300 bg-emerald-50/80' : 'border-slate-200 bg-slate-50'
         }`}
       >
-        <span className="font-medium text-slate-800">Phase 3 — 广播确认 (Finalizing)</span>
+        <span className="font-medium text-slate-800">Phase 3 — Finalizing</span>
         <p className="mt-0.5 text-slate-600">
-          {isComplete ? '✓ 交易已确认' : step3Active ? `链上确认中… (${confirmationDepth} confirmations)` : '等待链上确认'}
+          {isComplete ? '✓ Transaction confirmed' : step3Active ? `Confirming on-chain… (${confirmationDepth} confirmations)` : 'Awaiting on-chain confirmation'}
         </p>
       </div>
     </div>

@@ -21,10 +21,10 @@ export interface JctPdfPreviewProps {
 }
 
 /**
- * JCT PDF 预览组件（NTA 六要素合规）
- * - 发行者标识（T+13）、交易日期、内容明细（※）、税率分类汇总、确切税额、受票者标识
- * - 8% 商品行名称自动追加 ※
- * - 底部分类汇总表与法定免责声明脚注
+ * JCT PDF preview component (NTA six-element compliance)
+ * - Issuer ID (T+13), issue date, line item details (※), tax rate breakdown, exact tax amount, buyer ID
+ * - 8% items automatically prefixed with ※
+ * - Bottom breakdown table and legal disclaimer footnote
  */
 export default function JctPdfPreview({
   sellerName,
@@ -37,7 +37,7 @@ export default function JctPdfPreview({
   const displaySeller = sellerName.trim() || '—';
   const displayT = sellerTNumber.replace(/\D/g, '').slice(0, 13);
   const displayBuyer = buyerName.trim() || '—';
-  const dateStr = format(issueDate, 'yyyy年MM月dd日');
+  const dateStr = format(issueDate, 'MMM dd, yyyy');
 
   return (
     <div
@@ -45,45 +45,45 @@ export default function JctPdfPreview({
       style={{ minHeight: 420 }}
     >
       <div className="border-b border-amber-200 bg-amber-50/50 px-4 py-2 text-center text-sm font-semibold text-amber-900">
-        JCT 適合請求書（プレビュー）
+        JCT Qualified Invoice (Preview)
       </div>
 
       <div className="p-4 space-y-4 text-sm text-slate-800">
-        {/* 1. 发行者标识：卖方名称 + 登録番号 T+13 */}
+        {/* 1. Issuer: seller name + registration number T+13 */}
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium text-slate-900">発行者</span>
+          <span className="font-medium text-slate-900">Issuer</span>
           <span>{displaySeller}</span>
           {displayT.length === 13 && (
             <span className="text-slate-600">
-              登録番号 T{displayT}
+              Reg. No. T{displayT}
             </span>
           )}
         </div>
 
-        {/* 2. 交易日期 */}
+        {/* 2. Issue date */}
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium text-slate-900">取引日</span>
+          <span className="font-medium text-slate-900">Issue Date</span>
           <span>{dateStr}</span>
         </div>
 
-        {/* 3. 内容明细：8% 行追加 ※ */}
+        {/* 3. Line items: 8% rows prefixed with ※ */}
         <div>
-          <div className="font-medium text-slate-900 mb-2">明細</div>
+          <div className="font-medium text-slate-900 mb-2">Line Items</div>
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-300 bg-slate-100 text-left">
-                <th className="px-2 py-1.5 font-semibold">品目</th>
-                <th className="px-2 py-1.5 font-semibold w-16 text-right">数量</th>
-                <th className="px-2 py-1.5 font-semibold w-20 text-right">単価(税込)</th>
-                <th className="px-2 py-1.5 font-semibold w-16 text-right">税率</th>
-                <th className="px-2 py-1.5 font-semibold w-24 text-right">金額(税抜)</th>
+                <th className="px-2 py-1.5 font-semibold">Item</th>
+                <th className="px-2 py-1.5 font-semibold w-16 text-right">Qty</th>
+                <th className="px-2 py-1.5 font-semibold w-20 text-right">Unit Price (incl. tax)</th>
+                <th className="px-2 py-1.5 font-semibold w-16 text-right">Tax Rate</th>
+                <th className="px-2 py-1.5 font-semibold w-24 text-right">Amount (excl. tax)</th>
               </tr>
             </thead>
             <tbody>
               {lineItems.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-2 py-3 text-slate-400 text-center">
-                    商品行を追加してください
+                    Add line items
                   </td>
                 </tr>
               ) : (
@@ -108,33 +108,33 @@ export default function JctPdfPreview({
           </table>
         </div>
 
-        {/* 4 & 5. 税率分类汇总 + 确切税额 */}
+        {/* 4 & 5. Tax rate breakdown + exact tax amount */}
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <div className="font-medium text-slate-700">10% 対象（税抜）</div>
-            <div className="text-right">{summary.net10.toLocaleString()} 円</div>
-            <div className="font-medium text-slate-700">10% 消費税</div>
-            <div className="text-right">{summary.tax10.toLocaleString()} 円</div>
-            <div className="font-medium text-slate-700">8% 対象（税抜）※軽減</div>
-            <div className="text-right">{summary.net8.toLocaleString()} 円</div>
-            <div className="font-medium text-slate-700">8% 消費税 ※軽減税率</div>
-            <div className="text-right">{summary.tax8.toLocaleString()} 円</div>
+            <div className="font-medium text-slate-700">10% Base (excl. tax)</div>
+            <div className="text-right">{summary.net10.toLocaleString()} JPY</div>
+            <div className="font-medium text-slate-700">10% Consumption Tax</div>
+            <div className="text-right">{summary.tax10.toLocaleString()} JPY</div>
+            <div className="font-medium text-slate-700">8% Base (excl. tax) ※Reduced</div>
+            <div className="text-right">{summary.net8.toLocaleString()} JPY</div>
+            <div className="font-medium text-slate-700">8% Consumption Tax ※Reduced Rate</div>
+            <div className="text-right">{summary.tax8.toLocaleString()} JPY</div>
           </div>
           <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900">
-            <span>合計（税込）</span>
-            <span>{summary.total.toLocaleString()} 円</span>
+            <span>Total (incl. tax)</span>
+            <span>{summary.total.toLocaleString()} JPY</span>
           </div>
         </div>
 
-        {/* 6. 受票者标识 */}
+        {/* 6. Buyer ID */}
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium text-slate-900">宛先</span>
+          <span className="font-medium text-slate-900">Bill To</span>
           <span>{displayBuyer}</span>
         </div>
 
-        {/* 法定免责声明脚注 */}
+        {/* Legal disclaimer footnote */}
         <p className="text-[10px] text-slate-500 border-t border-slate-100 pt-3 mt-3">
-          本請求書は適格請求書等に該当します。※は軽減税率対象品目を示します。取引内容に疑義がある場合は発行者にご確認ください。
+          This invoice qualifies as a qualified invoice under the JCT system. ※ indicates items subject to the reduced tax rate. Please contact the issuer if you have any questions regarding the transaction.
         </p>
       </div>
     </div>
