@@ -487,9 +487,14 @@ export function useTransactionController(): ITxController {
         const payRecordStr = recordStrings[0];
         const invoiceRecordStr = toRecordInputString(invoiceRecord);
 
-        // Generate payment nonce and paid_at
+        // Generate payment nonce and paid_at.
+        // Contract asserts paid_at <= invoice.due_date; use min(now, due_date) so overdue invoices can still be paid.
+        const nowSec = Math.floor(Date.now() / 1000);
+        const dueDateSec = Math.floor(invoice.dueDate.getTime() / 1000);
+        const paidAtSec = Math.min(nowSec, dueDateSec);
+        const paidAt = `${paidAtSec}u32`;
+
         const paymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
-        const paidAt = `${Math.floor(Date.now() / 1000)}u32`;
 
         updateProgress(50, 'Submitting pay_invoice_credits_private...');
         const requestId = await walletService.requestTransaction({

@@ -208,10 +208,10 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         }
       : undefined,
     
-    // Forward requestRecords
+    // Forward requestRecords — request with plaintext (true) so records can be used as tx inputs (prover expects Leo plaintext)
     requestRecords: walletContext.requestRecords
       ? async (program: string) => {
-          const records = await walletContext.requestRecords!(program, false);
+          const records = await walletContext.requestRecords!(program, true);
           return { records: records as any[] };
         }
       : undefined,

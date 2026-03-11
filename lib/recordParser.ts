@@ -120,6 +120,7 @@ export async function parseSingleRecord(
 /**
  * Convert a record (object or string) to the string format required for wallet transaction inputs.
  * Shield/Leo expect Aleo record plaintext strings, not JSON-serialized objects.
+ * Tries multiple common wallet response shapes so the prover receives valid Leo plaintext.
  */
 export function toRecordInputString(record: any): string {
   if (typeof record === 'string') return record;
@@ -127,8 +128,19 @@ export function toRecordInputString(record: any): string {
     record?.plaintext ??
     record?.recordPlaintext ??
     record?.record_plaintext ??
-    (typeof record?.data === 'string' ? record.data : undefined);
+    (typeof record?.data === 'string' ? record.data : undefined) ??
+    (typeof record?.value === 'string' ? record.value : undefined) ??
+    (typeof record?.record === 'string' ? record.record : undefined) ??
+    (typeof record?.decryptedRecord === 'string' ? record.decryptedRecord : undefined);
   if (typeof plain === 'string') return plain;
-  return JSON.stringify(record);
+  const fallback = JSON.stringify(record);
+  // Prover fails with "proving failed" if given JSON instead of Leo plaintext (e.g. "{\"owner\":...")
+  if (fallback.includes('\\"') || /^\s*\{\s*"[^"]+":\s*"/.test(fallback)) {
+    throw new Error(
+      'Invoice record is not in Leo plaintext format. The wallet may not have returned record plaintext. ' +
+        'Try reconnecting the wallet, refreshing the page, or use a wallet that returns record plaintext for transaction inputs.'
+    );
+  }
+  return fallback;
 }
 
