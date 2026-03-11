@@ -3,6 +3,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { cleanAleoField } from '@/lib/invoice';
+import { fetchAndMergeKvDetails } from './useInvoiceKvSync';
 import { toast } from 'sonner';
 
 /**
@@ -19,6 +20,7 @@ export function useInvoiceListInitialize() {
   const {
     getAllInvoices,
     setInvoices,
+    updateInvoice,
     rebuildSendingIndex
   } = useInvoiceStore();
   const { scanAndBuildInvoices } = useInvoiceChainScan();
@@ -70,6 +72,9 @@ export function useInvoiceListInitialize() {
         }
       });
       
+      // §3.9: fetch encrypted details from KV for invoices missing details (buyer side)
+      await fetchAndMergeKvDetails(invoices, updateInvoice, masterKey);
+      
       // ✅ 重建 sending 索引（setInvoices 已经自动处理了，这里只是确保）
       rebuildSendingIndex();
       console.log(`✅ [syncFromChain] Synced ${invoices.length} invoices from chain with CONFIRMED status`);
@@ -79,7 +84,7 @@ export function useInvoiceListInitialize() {
     } finally {
       setIsLoading(false);
     }
-  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices, rebuildSendingIndex]);
+  }, [masterKey, publicKey, scanAndBuildInvoices, setInvoices, updateInvoice, rebuildSendingIndex]);
 
   /**
    * 初始化流程：处理两种情况

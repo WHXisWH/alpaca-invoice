@@ -280,6 +280,70 @@ export class CryptoService implements ICryptoService {
     }
   }
 
+  /** Salt for KV store key derivation (shared by seller and buyer via invoiceId). */
+  private static readonly KV_DETAILS_KEY_SALT = 'alpaca-invoice-details-kv-v1';
+
+  /**
+   * Derive a 256-bit key from invoiceId for online KV store encryption.
+   * Both seller and buyer can derive the same key from the public invoiceId.
+   */
+  private async deriveKeyFromInvoiceId(invoiceId: string): Promise<Uint8Array> {
+    const crypto = this.getWebCrypto();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(invoiceId),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+    const salt = new TextEncoder().encode(CryptoService.KV_DETAILS_KEY_SALT);
+    const derivedBits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+      keyMaterial,
+      256
+    );
+    return new Uint8Array(derivedBits);
+  }
+
+  /**
+   * Encrypt invoice details with key derived from invoiceId (§3.9 shared-key for KV store).
+   */
+  async encryptPayloadWithInvoiceId(
+    details: InvoiceDetails,
+    invoiceId: string
+  ): Promise<EncryptedPayload> {
+    try {
+      const key = await this.deriveKeyFromInvoiceId(invoiceId);
+      return await this.encryptWithRawKey(details, key);
+    } catch (error: any) {
+      throw new CryptoServiceError(
+        CryptoError.ENCRYPTION_FAILED,
+        'Failed to encrypt payload for KV store',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * Decrypt payload encrypted with encryptPayloadWithInvoiceId.
+   */
+  async decryptPayloadWithInvoiceId(
+    payload: EncryptedPayload,
+    invoiceId: string
+  ): Promise<InvoiceDetails> {
+    try {
+      const key = await this.deriveKeyFromInvoiceId(invoiceId);
+      return await this.decryptWithRawKey(payload, key);
+    } catch (error: any) {
+      if (error instanceof CryptoServiceError) throw error;
+      throw new CryptoServiceError(
+        CryptoError.DECRYPTION_FAILED,
+        'Failed to decrypt KV store payload. Invalid invoiceId or corrupted data.',
+        { originalError: error }
+      );
+    }
+  }
+
   /**
    * Decrypt payload with raw Uint8Array key (for audit package validation).
    */

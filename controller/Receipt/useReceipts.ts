@@ -5,6 +5,8 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { useReceiptStore, type ReceiptItem } from '@/stores/Receipt/useReceiptStore';
 import { useInvoiceChainScan } from '@/controller/Invoice/useInvoiceChainScan';
 import { cleanAleoNumber } from '@/lib/utils';
+import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
+import type { EncryptedPayload } from '@/lib/types';
 
 function normalizeField(field?: string): string {
   return String(field ?? '').replace(/field\.(private|public)$/i, 'field').trim();
@@ -73,9 +75,10 @@ export function useReceipts() {
       }
       await setReceipts(items);
 
-      // Enrich receipts with invoice details from KV (non-fatal, best-effort)
+      // Enrich receipts with invoice details from KV (§3.9: decrypt EncryptedPayload with invoiceId)
       if (items.length > 0) {
         try {
+          const cryptoService = new CryptoService();
           const enriched = await Promise.all(
             items.map(async (item) => {
               try {
@@ -84,7 +87,16 @@ export function useReceipts() {
                 );
                 if (!res.ok) return item;
                 const { details } = await res.json();
-                return details ? { ...item, details } : item;
+                if (!details) return item;
+                const raw = details as Record<string, unknown>;
+                if (typeof raw?.iv === 'string' && typeof raw?.ciphertext === 'string') {
+                  const decrypted = await cryptoService.decryptPayloadWithInvoiceId(
+                    raw as unknown as EncryptedPayload,
+                    String(item.invoiceId)
+                  );
+                  return { ...item, details: decrypted };
+                }
+                return { ...item, details };
               } catch {
                 return item;
               }

@@ -188,6 +188,17 @@ export interface ICryptoService {
   decryptPayload(payload: EncryptedPayload, masterKey: string): Promise<InvoiceDetails>;
 
   /**
+   * Encrypt invoice details with a key derived from invoiceId (shared key: seller and buyer can both derive).
+   * Used for online KV store (§3.9) so buyer can decrypt without seller's masterKey.
+   */
+  encryptPayloadWithInvoiceId(details: InvoiceDetails, invoiceId: string): Promise<EncryptedPayload>;
+
+  /**
+   * Decrypt payload that was encrypted with encryptPayloadWithInvoiceId.
+   */
+  decryptPayloadWithInvoiceId(payload: EncryptedPayload, invoiceId: string): Promise<InvoiceDetails>;
+
+  /**
    * Decrypt payload with raw Uint8Array key (for audit package validation).
    */
   decryptWithRawKey(

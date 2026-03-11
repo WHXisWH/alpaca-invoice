@@ -3,9 +3,10 @@ import { redis, kvKey, DETAILS_TTL } from '@/lib/redis';
 
 /**
  * POST /api/invoice-details
- * Body: { invoiceHash, invoiceId?, details }
- * Saves invoice details (line items, tax rates, currency, etc.) to Upstash Redis
- * so the buyer can retrieve them by invoiceHash or invoiceId.
+ * Body: { invoiceHash, invoiceId?, details: EncryptedPayload }
+ * Saves encrypted invoice details (EncryptedPayload = { iv, ciphertext, authTag? }) to Upstash Redis
+ * so the buyer can retrieve and decrypt them by invoiceHash or invoiceId.
+ * API does not interpret plain vs encrypted; it stores the payload as-is.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -35,7 +36,8 @@ export async function POST(req: NextRequest) {
 /**
  * GET /api/invoice-details?invoiceHash=xxx
  * GET /api/invoice-details?invoiceId=xxx
- * Returns the stored invoice details, or { details: null } if not found.
+ * Returns the stored payload (EncryptedPayload), or { details: null } if not found.
+ * Client must decrypt with CryptoService.decryptPayloadWithInvoiceId(payload, invoiceId).
  */
 export async function GET(req: NextRequest) {
   try {

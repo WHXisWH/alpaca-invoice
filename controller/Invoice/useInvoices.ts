@@ -12,6 +12,7 @@ import { useInvoiceListFilter } from './useInvoiceListFilter';
 import { useInvoiceListInitialize } from './useInvoiceListInitialize';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { fetchAndMergeKvDetails } from './useInvoiceKvSync';
 import { toast } from 'sonner';
 
 /**
@@ -40,6 +41,7 @@ export function useInvoices(): IInvoices {
   const { 
     invoices, 
     setInvoices,
+    updateInvoice,
     sendingInvoiceHashes,
     markInvoiceSending  // Marks invoice as SENDING (triggers AutoPoller)
   } = useInvoiceStore();
@@ -222,6 +224,7 @@ export function useInvoices(): IInvoices {
               syncedInvoices.push({
                 ...localInvoice,
                 ...updatedInvoice,
+                details: localInvoice.details,
                 metadata: {
                   confirmationStatus: 'CONFIRMED',
                   dataSource: 'chain',
@@ -282,6 +285,7 @@ export function useInvoices(): IInvoices {
           syncedInvoices.push({
             ...localInvoice,
             ...updatedInvoice,
+            details: localInvoice.details,
             metadata: {
               confirmationStatus: 'CONFIRMED',
               dataSource: 'chain',
@@ -315,6 +319,9 @@ export function useInvoices(): IInvoices {
             dataSource: 'chain'
           }
         });
+
+        // §3.9: fetch encrypted details from KV for invoices missing details (buyer side)
+        await fetchAndMergeKvDetails(syncedInvoices, updateInvoice, masterKey);
       }
       
       toast.success('Batch sync successful', {
@@ -330,7 +337,7 @@ export function useInvoices(): IInvoices {
     } finally {
       setIsSyncing(false);
     }
-  }, [publicKey, masterKey, invoices, setInvoices, scanAllInvoiceRecords, scanInvoiceRecord]);
+  }, [publicKey, masterKey, invoices, setInvoices, updateInvoice, scanAllInvoiceRecords, scanInvoiceRecord]);
 
   // Auto-initialize when wallet is connected (masterKey optional)
   useEffect(() => {

@@ -6,6 +6,7 @@ import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
 import { AleoField, Invoice } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { fetchAndMergeKvDetails } from './useInvoiceKvSync';
 import { toast } from 'sonner';
 import { useInvoiceChainScan } from './useInvoiceChainScan';
 import { useInvoicePollingCore } from './useInvoicePollingCore';
@@ -208,6 +209,15 @@ export function useInvoiceChainSync(
       if (invoiceRecord) {
         const updatedInvoice = buildUpdatedInvoice(latestInvoice, invoiceRecord);
         await confirmInvoice(updatedInvoice, invoiceRecord);
+
+        // §3.9: if the confirmed invoice has no details, try fetching from KV
+        const freshInvoice = useNewInvoiceStore.getState().invoices.find(
+          (inv: Invoice) => inv.invoiceHash === invoiceHash
+        ) || updatedInvoice;
+        if (!freshInvoice.details) {
+          await fetchAndMergeKvDetails([freshInvoice], updateInvoice, masterKey || undefined);
+        }
+
         toast.success('Status sync successful', { id: 'sync-status' });
       } else {
         toast.info('Payment detected but invoice record not yet available. Try again shortly.', { id: 'sync-status' });

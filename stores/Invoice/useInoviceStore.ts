@@ -774,16 +774,27 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           console.log(`[Store.setInvoices] Cleared ${allKeys.length} existing invoices from IndexedDB`);
         }
 
+        // Build a lookup from existing data so we can preserve encryptedDetails
+        const existingByInvoiceId = new Map(
+          allExistingData.map(item => [item.id, item])
+        );
+
         // Prepare batch data
         const dataList: Array<{ key: string; data: InvoiceStorageData }> = [];
 
         console.log('invoices', invoices)
         for (const invoice of invoices) {
           try {
-            // Encrypt details (if present)
-            const encryptedDetails = invoice.details
+            // Encrypt details (if present), otherwise preserve existing encryptedDetails from IndexedDB
+            let encryptedDetails = invoice.details
               ? await getCryptoService().encryptPayload(invoice.details, masterKey)
               : null;
+            if (!encryptedDetails) {
+              const existing = existingByInvoiceId.get(invoice.id);
+              if (existing?.encryptedDetails) {
+                encryptedDetails = existing.encryptedDetails;
+              }
+            }
 
             // Use the provided metadata or default values
             const invoiceMetadata = metadata || {

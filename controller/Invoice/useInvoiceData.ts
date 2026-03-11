@@ -3,7 +3,8 @@ import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInovi
 import { useUserStore } from '@/stores/User/useUserStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
-import { AleoField } from '@/lib/types';
+import { AleoField, EncryptedPayload } from '@/lib/types';
+import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 
 /**
  * Hook: load invoice data
@@ -50,26 +51,54 @@ export function useInvoiceData(invoiceHash: AleoField | null) {
     loadInvoice();
   }, [invoiceHash, masterKey, setCurrentInvoice]);
 
-  // When the current invoice has no details (buyer side), fetch them from KV.
+  // When the current invoice has no details (buyer side), fetch from KV and decrypt (§3.9).
+  // The ref tracks hashes we already fetched. If the invoice had details but now doesn't
+  // (e.g. after a chain sync overwrite), we clear the guard so it can re-fetch.
+  const prevDetailsRef = useRef<boolean>(false);
+  useEffect(() => {
+    const hasDetails = !!currentInvoice?.details;
+    if (prevDetailsRef.current && !hasDetails && currentInvoice?.invoiceHash) {
+      fetchedHashesRef.current.delete(currentInvoice.invoiceHash);
+    }
+    prevDetailsRef.current = hasDetails;
+  }, [currentInvoice?.details, currentInvoice?.invoiceHash]);
+
   useEffect(() => {
     if (!currentInvoice || currentInvoice.details) return;
     const hash = currentInvoice.invoiceHash;
-    if (!hash || fetchedHashesRef.current.has(hash)) return;
+    const invoiceId = currentInvoice.id;
+    if (!hash || !invoiceId || fetchedHashesRef.current.has(hash)) return;
     fetchedHashesRef.current.add(hash);
 
     fetch(`/api/invoice-details?invoiceHash=${encodeURIComponent(hash)}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
+      .then(async (data) => {
         if (!data?.details) return;
-        // Persist to buyer's IndexedDB if masterKey is available, otherwise memory-only
+        const raw = data.details as Record<string, unknown>;
+        // §3.9: payload may be EncryptedPayload (iv + ciphertext) or legacy plaintext
+        let plainDetails: unknown = raw;
+        if (
+          typeof raw?.iv === 'string' &&
+          typeof raw?.ciphertext === 'string'
+        ) {
+          try {
+            plainDetails = await new CryptoService().decryptPayloadWithInvoiceId(
+              raw as unknown as EncryptedPayload,
+              invoiceId
+            );
+          } catch (e) {
+            console.warn('[useInvoiceData] KV decrypt failed:', e);
+            return;
+          }
+        }
         void updateInvoice(
           currentInvoice.id,
-          { details: data.details } as any,
+          { details: plainDetails } as any,
           { masterKey: masterKey || undefined, persistFull: !!masterKey }
         );
       })
       .catch((err) => console.warn('[useInvoiceData] KV fetch failed:', err));
-  }, [currentInvoice?.invoiceHash, currentInvoice?.details, masterKey, updateInvoice]);
+  }, [currentInvoice?.invoiceHash, currentInvoice?.id, currentInvoice?.details, masterKey, updateInvoice]);
 
   // Derive confirmationStatus reactively from currentInvoice.metadata
   const confirmationStatus: ChainConfirmationStatus | null = currentInvoice?.metadata?.confirmationStatus || null;

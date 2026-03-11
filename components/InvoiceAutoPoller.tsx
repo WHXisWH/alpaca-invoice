@@ -6,6 +6,7 @@ import { useInvoiceListPolling } from '@/controller/Invoice/useInvoiceListPollin
 import { AleoField, Invoice } from '@/lib/types';
 import type { InvoiceState } from '@/stores/Invoice/InvoiceState';
 import { useUserStore } from '@/stores/User/useUserStore';
+import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 
 /**
  * InvoiceAutoPoller - Global automatic polling component
@@ -58,7 +59,35 @@ export function InvoiceAutoPoller() {
     if (isChainConfirmed) {
       markInvoiceConfirmed(invoiceHash);
     }
-    
+
+    // §3.9: After chain confirmation for a create action, save encrypted invoice details to online KV.
+    if (
+      isChainConfirmed &&
+      updatedInvoice.metadata?.action === 'create' &&
+      updatedInvoice.details &&
+      updatedInvoice.invoiceHash &&
+      updatedInvoice.id
+    ) {
+      const cryptoService = new CryptoService();
+      cryptoService
+        .encryptPayloadWithInvoiceId(updatedInvoice.details, updatedInvoice.id)
+        .then((encryptedPayload) =>
+          fetch('/api/invoice-details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              invoiceHash: updatedInvoice.invoiceHash,
+              invoiceId: updatedInvoice.id,
+              details: encryptedPayload,
+            }),
+          })
+        )
+        .then((res) => {
+          if (!res.ok) console.warn('[AutoPoller] Failed to save invoice details to KV:', res.status);
+        })
+        .catch((err) => console.warn('[AutoPoller] Failed to encrypt or save invoice details to KV:', err));
+    }
+
     // Remove from tracking set
     pollingHashesRef.current.delete(invoiceHash);
   };

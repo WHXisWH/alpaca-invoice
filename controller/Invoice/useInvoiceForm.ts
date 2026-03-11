@@ -406,26 +406,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
           }
         }
 
-        // Save enriched details (with per-line tax rates) to KV so the buyer can view them.
-        // This is non-fatal: the invoice is already on-chain even if this fails.
-        try {
-          const kvDetails = {
-            ...details,
-            lineItems: details.lineItems.map((item, idx) => ({
-              ...item,
-              taxRate: Number(jctRates[idx] ?? '0') as 0 | 8 | 10,
-            })),
-            tNumber: tNumber.replace(/\D/g, ''),
-            currencyFlag: currencyFlagVal,
-          };
-          await fetch('/api/invoice-details', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ invoiceHash, invoiceId, details: kvDetails }),
-          });
-        } catch {
-          // Non-fatal — invoice was created successfully on-chain
-        }
+        // Invoice details are saved to the online store only after chain confirmation (see InvoiceAutoPoller §3.9).
 
         console.log('[DEBUG useInvoiceForm] Redirecting to detail page', {
           invoiceHash,
