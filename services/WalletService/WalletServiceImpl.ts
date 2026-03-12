@@ -103,8 +103,13 @@ export class WalletService {
         );
       }
 
-      // Network mismatch
-      if (error?.message?.includes('network')) {
+      // Network mismatch — only match specific wallet adapter errors, not generic "network" keywords
+      if (
+        error?.name === 'WalletSwitchNetworkError' ||
+        errorMessage.includes('switch network') ||
+        errorMessage.includes('network mismatch') ||
+        errorMessage.includes('wrong network')
+      ) {
         console.log('🔍 [WalletService] Identified as network mismatch');
         throw new WalletServiceError(
           WalletError.NETWORK_MISMATCH,
@@ -424,8 +429,28 @@ export class WalletService {
       );
     }
 
+    const SIGN_MESSAGE_TIMEOUT_MS = 60_000;
+
     try {
-      const signature = await this.wallet.signMessage(message);
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(
+            new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Signature request timed out',
+              { hint: 'No response from wallet. Please ensure the extension is unlocked and try again.' }
+            )
+          );
+        }, SIGN_MESSAGE_TIMEOUT_MS);
+      });
+
+      const signature = await Promise.race([
+        this.wallet.signMessage(message),
+        timeoutPromise
+      ]);
+
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (!signature || signature.trim() === '') {
         throw new WalletServiceError(
@@ -436,7 +461,7 @@ export class WalletService {
 
       return signature;
     } catch (error: any) {
-      // Already a WalletServiceError, rethrow directly
+      // Already a WalletServiceError (e.g. timeout), rethrow so hint is preserved
       if (error instanceof WalletServiceError) {
         throw error;
       }
@@ -618,10 +643,12 @@ export class WalletService {
         );
       }
 
-      // Network mismatch (case-insensitive)
+      // Network mismatch — only match specific wallet adapter errors, not generic "network" keywords
       if (
-        errorMessage.includes('network') ||
-        errorString.includes('network')
+        error?.name === 'WalletSwitchNetworkError' ||
+        errorMessage.includes('switch network') ||
+        errorMessage.includes('network mismatch') ||
+        errorMessage.includes('wrong network')
       ) {
         throw new WalletServiceError(
           WalletError.NETWORK_MISMATCH,

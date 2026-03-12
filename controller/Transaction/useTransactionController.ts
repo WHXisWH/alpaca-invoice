@@ -83,6 +83,25 @@ export function useTransactionController(): ITxController {
           );
         }
 
+        // Ensure wallet context is actually connected (fixes "No response" when store
+        // was rehydrated from localStorage but the adapter never reconnected this session).
+        // Only reconnect when the adapter explicitly reports disconnected; do NOT check
+        // address equality — React state updates asynchronously and a transient mismatch
+        // is normal right after page load.
+        if (!wallet?.connected) {
+          updateProgress(0, 'Reconnecting wallet...');
+          try {
+            await walletService.connect();
+          } catch (connectErr: any) {
+            if (connectErr instanceof WalletServiceError) throw connectErr;
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Wallet session expired or not connected. Please confirm in your wallet and try again.',
+              { originalError: connectErr, hint: connectErr?.message || 'No response' }
+            );
+          }
+        }
+
         // Trigger identity authorization on demand (if masterKey does not exist)
         let currentMasterKey = masterKey;
         if (!currentMasterKey) {
@@ -404,7 +423,7 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
-    [publicKey, masterKey, setMasterKey, tryRestoreMasterKey, startTx, updateProgress, completeTx, invoiceStore, walletService]
+    [publicKey, masterKey, setMasterKey, tryRestoreMasterKey, startTx, updateProgress, completeTx, invoiceStore, walletService, wallet]
   );
 
   /**
