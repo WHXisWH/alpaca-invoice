@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import type { ReceiptItem } from '@/stores/Receipt/useReceiptStore';
+import type { InvoiceDetails, LineItem } from '@/lib/types';
 import { format } from 'date-fns';
 import {
   Tooltip,
@@ -8,15 +10,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Copy, ExternalLink } from 'lucide-react';
+import { ChevronDown, Copy, ExternalLink } from 'lucide-react';
+
+type ReceiptCardDetails = InvoiceDetails & { lineItems: (LineItem & { taxRate?: number })[] };
+type ReceiptCardItem = ReceiptItem & { details?: ReceiptCardDetails };
 
 interface ReceiptCardProps {
-  receipt: ReceiptItem;
+  receipt: ReceiptCardItem;
   explorerTxUrl?: string | null;
 }
 
 export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCardProps) {
   const truncateAddress = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <TooltipProvider>
@@ -117,44 +123,69 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
             </div>
           </div>
 
-          {/* Line items — shown when invoice details are available */}
-          {receipt.details && receipt.details.lineItems.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-1.5 text-xs font-medium text-primary-500">Line Items</p>
-              <div className="overflow-x-auto rounded-lg border border-primary-100">
-                <table className="w-full min-w-[320px] text-xs text-primary-800">
-                  <thead>
-                    <tr className="border-b border-primary-100 bg-primary-50 text-left text-primary-500">
-                      <th className="px-2 py-1.5">Description</th>
-                      <th className="px-2 py-1.5 text-right">Qty</th>
-                      <th className="px-2 py-1.5 text-right">Unit Price</th>
-                      <th className="px-2 py-1.5 text-right">Tax</th>
-                      <th className="px-2 py-1.5 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {receipt.details.lineItems.map((item, idx) => (
-                      <tr key={idx} className="border-b border-primary-50 last:border-0">
-                        <td className="px-2 py-1.5">{item.description}</td>
-                        <td className="px-2 py-1.5 text-right">{item.quantity}</td>
-                        <td className="px-2 py-1.5 text-right">{item.unitPrice}</td>
-                        <td className="px-2 py-1.5 text-right">
-                          {(item as { taxRate?: number }).taxRate != null
-                            ? `${(item as { taxRate?: number }).taxRate}%`
-                            : '—'}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">{item.amount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-1.5 flex justify-between text-xs text-primary-600">
-                <span>Subtotal: {receipt.details.subtotal} {receipt.details.currency}</span>
-                <span className="font-semibold text-primary-900">
-                  Total: {receipt.details.total} {receipt.details.currency}
+          {receipt.details && (
+            <div className="mb-4 flex items-center justify-between rounded-lg bg-accent-50/60 px-3 py-2 ring-1 ring-accent-200/30">
+              <div className="flex items-center gap-2 text-xs text-accent-700">
+                <span className="font-medium">
+                  {receipt.details.lineItems.length} item{receipt.details.lineItems.length !== 1 ? 's' : ''}
                 </span>
+                {receipt.details.currency && (
+                  <>
+                    <span className="text-accent-500">·</span>
+                    <span>{receipt.details.currency}</span>
+                  </>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="flex cursor-pointer items-center gap-1 text-xs font-medium text-accent-600 transition-colors hover:text-accent-800"
+              >
+                {expanded ? 'Hide' : 'Details'}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          )}
+
+          {/* Expandable line items — inside the card, same as invoice-card */}
+          {receipt.details && expanded && (
+            <div className="border-t border-primary-100/60">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-primary-100/60 bg-primary-50/50">
+                    <th className="px-4 py-2 font-medium text-primary-500">Item</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">Price</th>
+                    <th className="px-4 py-2 text-right font-medium text-primary-500">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receipt.details.lineItems.map((item, idx) => (
+                    <tr key={idx} className="border-b border-primary-50/80 last:border-0">
+                      <td className="px-4 py-2 text-primary-800">{item.description}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-primary-700">{item.quantity}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-primary-700">{Number(item.unitPrice).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-900">{Number(item.amount).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-primary-100/60 bg-primary-50/30">
+                    <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Subtotal</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{Number(receipt.details.subtotal).toFixed(2)}</td>
+                  </tr>
+                  {receipt.details.taxAmount > 0 && (
+                    <tr className="bg-primary-50/30">
+                      <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Tax</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{Number(receipt.details.taxAmount).toFixed(2)}</td>
+                    </tr>
+                  )}
+                  <tr className="bg-primary-50/30">
+                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-primary-700">Total</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-bold text-primary-900">{Number(receipt.details.total).toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           )}
 

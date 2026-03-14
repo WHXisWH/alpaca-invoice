@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { AleoAddress, AleoField, AleoTransactionId, Microcredits, InvoiceDetails, LineItem } from '@/lib/types';
+import type { AleoAddress, AleoField, AleoTransactionId, Microcredits, EncryptedPayload } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 
 /**
  * Receipt item aligned with PaymentReceipt (SPEC 1.5).
  * 存储 PaymentRecord 时需同时包含 payment_id 和 settlement_anchor，供审计员 Step 2 从本地收据读取锚点。
+ * Wave 3 §5.5.1: encryptedDetails 持久化到 IndexedDB，仅存密文不存明文 details。
  */
 export type ReceiptItem = {
   /** Chain PaymentRecord.payment_id — 供审计包 buyer 路径使用 */
@@ -12,8 +13,8 @@ export type ReceiptItem = {
   /** Chain PaymentRecord.settlement_anchor — used by auditor Step 2 */
   settlementAnchor?: AleoField;
   invoiceId: AleoField;
-  /** Invoice line-item details fetched from KV (optional, buyer-side enrichment) */
-  details?: InvoiceDetails & { lineItems: (LineItem & { taxRate?: number })[] };
+  /** 加密的发票详情，持久化到 IndexedDB；解密后填入 details */
+  encryptedDetails?: EncryptedPayload | null;
   payer: AleoAddress;
   payee: AleoAddress;
   amount: Microcredits;
@@ -35,20 +36,31 @@ function reviveReceipts(list: any[]): ReceiptItem[] {
     .filter((r) => r.paymentId && r.invoiceId);
 }
 
+/** 持久化时只存密文 */
+function toStoredReceipt(r: ReceiptItem): ReceiptItem {
+  return {
+    ...r,
+    encryptedDetails: r.encryptedDetails ?? null
+  };
+}
+
 type ReceiptState = {
   receipts: ReceiptItem[];
   addReceipt: (r: ReceiptItem) => Promise<void>;
-  /** Wave 3: 按 invoiceId 更新 receipt 字段（如 settlementAnchor，轮询到 PaymentRecord 后写入） */
+  /** Wave 3: 按 invoiceId 更新 receipt 字段（如 settlementAnchor、encryptedDetails） */
   updateReceipt: (
     invoiceId: AleoField,
-    patch: Partial<Pick<ReceiptItem, 'settlementAnchor' | 'txId' | 'blockHeight'>>
+    patch: Partial<Pick<ReceiptItem, 'settlementAnchor' | 'txId' | 'blockHeight' | 'encryptedDetails'>>
+  ) => Promise<void>;
+  /** 按 paymentId 精确更新，避免 invoiceId 命中不稳定 */
+  updateReceiptByPaymentId: (
+    paymentId: AleoField,
+    patch: Partial<Pick<ReceiptItem, 'settlementAnchor' | 'txId' | 'blockHeight' | 'encryptedDetails'>>
   ) => Promise<void>;
   setReceipts: (items: ReceiptItem[]) => Promise<void>;
   getAllReceipts: () => Promise<ReceiptItem[]>;
   clear: () => Promise<void>;
   exportCsv: () => string;
-  /** Update in-memory receipts with enriched details (no persistence needed) */
-  bulkEnrichDetails: (enriched: ReceiptItem[]) => void;
 };
 
 function normalizeField(f: string): string {
@@ -66,7 +78,7 @@ export const useReceiptStore = create<ReceiptState>()(
       const next = [r, ...get().receipts.filter((it) => normalizeField(it.paymentId) !== key)].slice(0, 500);
       set({ receipts: next });
       try {
-        await storageService.addData(RECEIPT_TABLE, key, r);
+        await storageService.addData(RECEIPT_TABLE, key, toStoredReceipt(r));
       } catch (error) {
         console.error('❌ [ReceiptStore.addReceipt] Failed to persist receipt:', error);
       }
@@ -80,18 +92,43 @@ export const useReceiptStore = create<ReceiptState>()(
       try {
         const targets = updated.filter((r) => normalizeField(r.invoiceId) === normalizedInvoiceId);
         await Promise.all(
-          targets.map((r) => storageService.addData(RECEIPT_TABLE, normalizeField(r.paymentId), r))
+          targets.map((r) => storageService.addData(RECEIPT_TABLE, normalizeField(r.paymentId), toStoredReceipt(r)))
         );
       } catch (error) {
         console.error('❌ [ReceiptStore.updateReceipt] Failed to persist receipt patch:', error);
       }
     },
+    updateReceiptByPaymentId: async (paymentId, patch) => {
+      const normalizedPaymentId = normalizeField(paymentId);
+      const updated = get().receipts.map((r) =>
+        normalizeField(r.paymentId) === normalizedPaymentId ? { ...r, ...patch } : r
+      );
+      set({ receipts: updated });
+      try {
+        const target = updated.find((r) => normalizeField(r.paymentId) === normalizedPaymentId);
+        if (target) {
+          await storageService.addData(
+            RECEIPT_TABLE,
+            normalizeField(target.paymentId),
+            toStoredReceipt(target)
+          );
+        }
+      } catch (error) {
+        console.error('❌ [ReceiptStore.updateReceiptByPaymentId] Failed to persist receipt patch:', error);
+      }
+    },
     setReceipts: async (items) => {
-      const revived = reviveReceipts(items);
+      const existingMap = new Map(
+        get().receipts.map((r) => [normalizeField(r.paymentId), r.encryptedDetails ?? null] as const)
+      );
+      const revived = reviveReceipts(items).map((r) => ({
+        ...r,
+        encryptedDetails: r.encryptedDetails ?? existingMap.get(normalizeField(r.paymentId)) ?? null
+      }));
       set({ receipts: revived });
       try {
         await storageService.resetAllData(RECEIPT_TABLE, revived.map((r) => ({
-          ...r,
+          ...toStoredReceipt(r),
           key: normalizeField(r.paymentId)
         })));
       } catch (error) {
@@ -120,9 +157,6 @@ export const useReceiptStore = create<ReceiptState>()(
       } catch (error) {
         console.error('❌ [ReceiptStore.clear] Failed to clear receipts DB:', error);
       }
-    },
-    bulkEnrichDetails: (enriched) => {
-      set({ receipts: enriched });
     },
     exportCsv: () => {
       const rows = [
