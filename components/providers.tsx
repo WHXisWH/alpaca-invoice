@@ -27,7 +27,13 @@ type Props = {
  */
 export default function Providers({ children }: Props) {
   const network = useMemo<Network>(() => getNetworkFromEnv(), []);
-  const programs = useMemo(() => [CREDITS_PROGRAM_ID, PROGRAM_ID, LEGACY_PROGRAM_ID], []);
+  const programs = useMemo(
+    () =>
+      [CREDITS_PROGRAM_ID, PROGRAM_ID, LEGACY_PROGRAM_ID]
+        .map((p) => (typeof p === 'string' ? p.trim() : ''))
+        .filter((p) => p && p !== 'undefined' && p !== 'null'),
+    []
+  );
 
   const wallets = useMemo(
     () => [
@@ -45,7 +51,7 @@ export default function Providers({ children }: Props) {
       decryptPermission={DecryptPermission.OnChainHistory}
       network={network}
       programs={programs}
-      autoConnect={true}
+      autoConnect={false}
       localStorageKey="zk-invoice-wallet"
       onError={(err) => {
         console.error('❌ [AleoWalletProvider] error', err);

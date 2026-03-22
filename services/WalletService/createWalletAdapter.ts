@@ -239,13 +239,44 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         }) => {
           const first = params.transitions?.[0];
           if (!first) throw new Error('No transition specified');
+          const safeProgram =
+            typeof first.program === 'string' ? first.program.trim() : '';
+          const safeFunction =
+            typeof first.functionName === 'string' ? first.functionName.trim() : '';
+
+          if (
+            !safeProgram ||
+            safeProgram === 'undefined' ||
+            safeProgram === 'null'
+          ) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Invalid transaction program id. Please check NEXT_PUBLIC_PROGRAM_ID.',
+              { originalError: { transition: first, network } }
+            );
+          }
+
+          if (!safeFunction) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Invalid transaction function name.',
+              { originalError: { transition: first } }
+            );
+          }
+
+          // Wallet extensions may differ by version:
+          // some read {program,function}, others read {programId,functionName}.
+          // Send both aliases to maximize compatibility.
           const res = await walletContext.executeTransaction!({
-            program: first.program,
-            function: first.functionName,
+            program: safeProgram,
+            function: safeFunction,
+            programId: safeProgram,
+            functionName: safeFunction,
             inputs: first.inputs,
             fee: params.fee,
-            privateFee: params.feePrivate
-          });
+            privateFee: params.feePrivate,
+            feePrivate: params.feePrivate
+          } as any);
           return (res as any)?.transactionId;
         }
       : undefined,

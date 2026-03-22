@@ -84,23 +84,15 @@ export function useTransactionController(): ITxController {
           );
         }
 
-        // Ensure wallet context is actually connected (fixes "No response" when store
-        // was rehydrated from localStorage but the adapter never reconnected this session).
-        // Only reconnect when the adapter explicitly reports disconnected; do NOT check
-        // address equality — React state updates asynchronously and a transient mismatch
-        // is normal right after page load.
-        if (!wallet?.connected) {
-          updateProgress(0, 'Reconnecting wallet...');
-          try {
-            await walletService.connect();
-          } catch (connectErr: any) {
-            if (connectErr instanceof WalletServiceError) throw connectErr;
-            throw new WalletServiceError(
-              WalletError.UNAUTHORIZED,
-              'Wallet session expired or not connected. Please confirm in your wallet and try again.',
-              { originalError: connectErr, hint: connectErr?.message || 'No response' }
-            );
-          }
+        // Do not auto-reconnect during tx submission:
+        // browser popup policies can block extension prompts in async flows.
+        // Require explicit connection from the wallet button first.
+        if (!wallet?.connected || !wallet?.address) {
+          throw new WalletServiceError(
+            WalletError.UNAUTHORIZED,
+            'Wallet not connected. Please click Connect Wallet first, then retry.',
+            { hint: 'Use the top-right Connect Wallet button to establish a session.' }
+          );
         }
 
         // Trigger identity authorization on demand (if masterKey does not exist)

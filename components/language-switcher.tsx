@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter, usePathname } from '@/i18n/navigation';
+import { useLocale } from 'next-intl';
 import { locales, type Locale } from '@/i18n/config';
 import { Globe } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
@@ -22,8 +23,7 @@ export default function LanguageSwitcher() {
   const ref = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
-
-  const currentLocale = (locales.find(l => pathname.startsWith(`/${l}`)) ?? 'en') as Locale;
+  const currentLocale = useLocale() as Locale;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -39,24 +39,8 @@ export default function LanguageSwitcher() {
       return;
     }
 
-    const segments = pathname.split('/');
-    const hasLocalePrefix = locales.includes(segments[1] as Locale);
-
-    if (locale === 'en') {
-      if (hasLocalePrefix) {
-        segments.splice(1, 1);
-      }
-    } else {
-      if (hasLocalePrefix) {
-        segments[1] = locale;
-      } else {
-        segments.splice(1, 0, locale);
-      }
-    }
-    const newPath = segments.join('/') || '/';
-
     document.cookie = `NEXT_LOCALE=${locale};path=/;max-age=31536000`;
-    router.replace(newPath);
+    router.replace(pathname, { locale });
     setOpen(false);
   };
 

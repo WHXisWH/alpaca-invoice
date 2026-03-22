@@ -578,6 +578,31 @@ export class WalletService {
       );
     }
 
+    const normalizedProgramId =
+      typeof programId === 'string' ? programId.trim() : '';
+    const normalizedFunctionName =
+      typeof functionName === 'string' ? functionName.trim() : '';
+
+    if (
+      !normalizedProgramId ||
+      normalizedProgramId === 'undefined' ||
+      normalizedProgramId === 'null'
+    ) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Invalid program id for transaction. Please check NEXT_PUBLIC_PROGRAM_ID.',
+        { originalError: { programId, defaultProgramId: DEFAULT_PROGRAM_ID } }
+      );
+    }
+
+    if (!normalizedFunctionName) {
+      throw new WalletServiceError(
+        WalletError.UNAUTHORIZED,
+        'Invalid function name for transaction.',
+        { originalError: { functionName } }
+      );
+    }
+
     // If chainId is not provided, get it from environment variables
     let finalChainId = chainId;
     if (!finalChainId) {
@@ -593,8 +618,8 @@ export class WalletService {
         address: publicKey,
         chainId: finalChainId,
         transitions: [{
-          program: programId,
-          functionName: functionName,
+          program: normalizedProgramId,
+          functionName: normalizedFunctionName,
           inputs: inputs
         }],
         fee: fee,
@@ -602,6 +627,14 @@ export class WalletService {
       };
 
       console.log('[Wallet requestTransaction request]', transactionRequest);
+      console.log('[Wallet requestTransaction request detail]', {
+        programId: normalizedProgramId,
+        functionName: normalizedFunctionName,
+        chainId: finalChainId,
+        fee,
+        feePrivate: feeRecord !== undefined,
+        inputsCount: Array.isArray(inputs) ? inputs.length : 0
+      });
 
       // Call the wallet adapter's requestTransaction method
       // Note: The wallet adapter will automatically select an appropriate Record to pay the fee based on the feePrivate flag
