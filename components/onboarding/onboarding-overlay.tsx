@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { TourStep } from './onboarding-config';
 
 interface ViewportRect {
@@ -39,6 +40,7 @@ function measureElement(selector: string): ViewportRect | null {
 }
 
 export function TourOverlay({ steps, currentStep, onNext, onPrev, onSkip }: TourOverlayProps) {
+  const t = useTranslations();
   const [rect, setRect] = useState<ViewportRect | null>(null);
   const [mounted, setMounted] = useState(false);
   const scrollingRef = useRef(false);
@@ -181,9 +183,9 @@ export function TourOverlay({ steps, currentStep, onNext, onPrev, onSkip }: Tour
           <X className="h-4 w-4" />
         </button>
         <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-accent-500">
-          {step.title}
+          {t(step.title)}
         </p>
-        <p className="mb-4 text-sm leading-relaxed text-primary-700">{step.description}</p>
+        <p className="mb-4 text-sm leading-relaxed text-primary-700">{t(step.description)}</p>
         <div className="mb-4 flex gap-1.5">
           {steps.map((_, i) => (
             <div
@@ -204,7 +206,7 @@ export function TourOverlay({ steps, currentStep, onNext, onPrev, onSkip }: Tour
             onClick={onSkip}
             className="text-xs font-medium text-primary-400 hover:text-primary-600"
           >
-            Skip tour
+            {t('onboarding.skip')}
           </button>
           <div className="flex gap-2">
             {!isFirst && (
@@ -213,12 +215,12 @@ export function TourOverlay({ steps, currentStep, onNext, onPrev, onSkip }: Tour
                 onClick={onPrev}
                 className="flex items-center gap-1 rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50"
               >
-                <ChevronLeft className="h-3 w-3" /> Back
+                <ChevronLeft className="h-3 w-3" /> {t('common.back')}
               </button>
             )}
             {step.waitForAction ? (
               <span className="rounded-lg bg-primary-100 px-4 py-1.5 text-xs font-medium text-primary-500">
-                Waiting...
+                {t('onboarding.waiting')}
               </span>
             ) : (
               <button
@@ -226,7 +228,7 @@ export function TourOverlay({ steps, currentStep, onNext, onPrev, onSkip }: Tour
                 onClick={onNext}
                 className="flex items-center gap-1 rounded-lg bg-accent-500 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-accent-600"
               >
-                {isLast ? 'Done' : 'Next'} {!isLast && <ChevronRight className="h-3 w-3" />}
+                {isLast ? t('onboarding.done') : t('common.next')} {!isLast && <ChevronRight className="h-3 w-3" />}
               </button>
             )}
           </div>

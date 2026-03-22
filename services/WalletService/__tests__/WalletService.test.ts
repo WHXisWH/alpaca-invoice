@@ -286,10 +286,11 @@ describe('WalletService', () => {
       it('should work with recordPlaintext shape (Provable/Leo wallet format)', async () => {
         mockWallet.connected = true;
         mockWallet.publicKey = mockAddress;
+        const plaintext = '{\n  owner: aleo14u86g3q3r3zmwwr89gjw78krpfv6ad27cneg837rxpxfd7e47cysee7qkz.private,\n  microcredits: 5000000u64.private,\n  _nonce: 6366549752431533238298243962540274543772062915283908425760580959061989746860group.public,\n  _version: 1u8.public\n}';
         const mockRecords = [
           {
             spent: false,
-            recordPlaintext: '{\n  owner: aleo14u86g3q3r3zmwwr89gjw78krpfv6ad27cneg837rxpxfd7e47cysee7qkz.private,\n  microcredits: 5000000u64.private,\n  _nonce: 6366549752431533238298243962540274543772062915283908425760580959061989746860group.public,\n  _version: 1u8.public\n}'
+            recordPlaintext: plaintext
           }
         ];
         mockWallet.requestRecords = vi.fn().mockResolvedValue({ records: mockRecords });
@@ -297,8 +298,7 @@ describe('WalletService', () => {
         const records = await walletService.getFeeRecords(2000000n, mockAddress);
 
         expect(records.length).toBe(1);
-        const parsed = JSON.parse(records[0]);
-        expect(parsed.recordPlaintext).toContain('microcredits: 5000000u64.private');
+        expect(records[0]).toContain('microcredits: 5000000u64.private');
       });
 
       it('should ignore spent Records', async () => {

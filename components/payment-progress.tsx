@@ -1,6 +1,7 @@
 'use client';
 
 import { Shield } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { CurrencyFlag } from '@/lib/types';
 
 export interface PaymentProgressProps {
@@ -24,6 +25,7 @@ export default function PaymentProgress({
   confirmationDepth,
   isComplete
 }: PaymentProgressProps) {
+  const t = useTranslations();
   const isUsdcx = currencyFlag === 1;
   const step1Active = phase === 1 || (isUsdcx && approvalStatus === 'insufficient' && !phase);
   const step2Active = phase === 2;
@@ -44,23 +46,23 @@ export default function PaymentProgress({
           />
         </div>
         <span className="text-xs font-medium text-slate-600">
-          {isComplete ? 'Done' : phase === 3 ? `Confirmations: ${confirmationDepth}` : phase === 2 ? 'Proving' : phase === 1 ? 'Approval' : '…'}
+          {isComplete ? t('payment.progress.done') : phase === 3 ? `${t('payment.progress.confirmations')}: ${confirmationDepth}` : phase === 2 ? t('payment.progress.phase2') : phase === 1 ? t('payment.progress.approval') : '…'}
         </span>
       </div>
 
-      {/* Phase 1: USDCx approval (only when USDCx) */}
+      {/* Phase 1: Token preparation */}
       {isUsdcx && (
         <div
           className={`rounded-lg border px-3 py-2 text-sm ${
             step1Active ? 'border-amber-300 bg-amber-50' : approvalStatus === 'approved' ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-slate-50'
           }`}
         >
-          <span className="font-medium text-slate-800">Phase 1 — Authorization</span>
+          <span className="font-medium text-slate-800">{t('payment.progress.phase1Label')}</span>
           <p className="mt-0.5 text-slate-600">
-            {approvalStatus === 'checking' && 'Checking allowance…'}
-            {approvalStatus === 'insufficient' && 'Insufficient allowance, click "Approve & Pay"'}
-            {approvalStatus === 'approved' && '✓ Authorized'}
-            {approvalStatus === 'idle' && 'Awaiting authorization'}
+            {approvalStatus === 'checking' && t('payment.progress.loadingToken')}
+            {approvalStatus === 'insufficient' && t('payment.progress.noToken')}
+            {approvalStatus === 'approved' && `✓ ${t('payment.progress.tokenReady')}`}
+            {approvalStatus === 'idle' && t('payment.progress.awaitingToken')}
           </p>
         </div>
       )}
@@ -75,9 +77,9 @@ export default function PaymentProgress({
           <Shield className="h-8 w-8 text-blue-600" />
         </div>
         <div>
-          <span className="font-medium text-slate-800">Phase 2 — Proving</span>
+          <span className="font-medium text-slate-800">{t('payment.progress.phase2Label')}</span>
           <p className="mt-0.5 text-slate-600">
-            Generating zero-knowledge proof locally, do not close the browser
+            {t('payment.progress.phase2Desc')}
           </p>
         </div>
       </div>
@@ -88,9 +90,9 @@ export default function PaymentProgress({
           step3Active || isComplete ? 'border-emerald-300 bg-emerald-50/80' : 'border-slate-200 bg-slate-50'
         }`}
       >
-        <span className="font-medium text-slate-800">Phase 3 — Finalizing</span>
+        <span className="font-medium text-slate-800">{t('payment.progress.phase3Label')}</span>
         <p className="mt-0.5 text-slate-600">
-          {isComplete ? '✓ Transaction confirmed' : step3Active ? `Confirming on-chain… (${confirmationDepth} confirmations)` : 'Awaiting on-chain confirmation'}
+          {isComplete ? `✓ ${t('payment.progress.confirmed')}` : step3Active ? t('payment.progress.confirmingOnChain', { depth: confirmationDepth }) : t('payment.progress.awaitingConfirmation')}
         </p>
       </div>
     </div>

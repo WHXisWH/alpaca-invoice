@@ -4,6 +4,7 @@ import type {
   VerifyPhaseResult,
   ValidateAuditPackageResult
 } from '@/services/AuditService/IAuditService';
+import { useTranslations } from 'next-intl';
 import { Check, X, ChevronDown, ChevronRight, FileJson, Key, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
@@ -97,6 +98,7 @@ export default function AuditVerifyFlow({
   onExportReport,
   onExportPdfReport
 }: AuditVerifyFlowProps) {
+  const t = useTranslations();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [fileName, setFileName] = useState<string>('');
 
@@ -117,7 +119,7 @@ export default function AuditVerifyFlow({
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <FileJson className="h-4 w-4" />
-              Audit package JSON
+              {t('audit.verify.packageJson')}
             </label>
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
@@ -127,7 +129,7 @@ export default function AuditVerifyFlow({
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <Upload className="h-4 w-4" />
-                  Select JSON file
+                  {t('audit.verify.selectFile')}
                 </button>
                 {fileName && <span className="text-xs text-slate-500 truncate">{fileName}</span>}
               </div>
@@ -142,7 +144,7 @@ export default function AuditVerifyFlow({
             <textarea
               value={envelopeText}
               onChange={(e) => setEnvelopeText(e.target.value)}
-              placeholder="Paste or upload audit package JSON (envelope format)..."
+              placeholder={t('audit.verify.pastePlaceholder')}
               rows={8}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs focus:border-slate-400 focus:outline-none"
             />
@@ -150,16 +152,16 @@ export default function AuditVerifyFlow({
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <Key className="h-4 w-4" />
-              Audit Key
+              {t('audit.verify.auditKey')}
             </label>
             <p className="text-xs text-slate-500">
-              The 64-character hex key provided by the invoice owner (separately from the package).
+              {t('audit.verify.auditKeyDesc')}
             </p>
             <input
               type="text"
               value={auditKey}
               onChange={(e) => setAuditKey(e.target.value)}
-              placeholder="Paste audit key (64 hex chars)..."
+              placeholder={t('audit.verify.auditKeyPlaceholder')}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:border-slate-400 focus:outline-none"
             />
           </div>
@@ -176,14 +178,14 @@ export default function AuditVerifyFlow({
             disabled={loading || !envelopeText.trim() || !auditKey.trim()}
             className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
-            {loading ? '...' : 'Preview disclosed content'}
+            {loading ? '...' : t('audit.verify.previewDisclosed')}
           </button>
           <button
             type="submit"
             disabled={loading || !envelopeText.trim() || !auditKey.trim()}
             className="rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
           >
-            {loading ? 'Verifying...' : 'Full verification'}
+            {loading ? t('audit.verify.verifying') : t('audit.verify.fullVerification')}
           </button>
         </div>
       </form>
@@ -202,13 +204,13 @@ export default function AuditVerifyFlow({
                 <X className="h-6 w-6 text-red-600" />
               )}
               <span className="font-semibold text-slate-900">
-                {previewResult.valid ? 'Disclosed content decrypted' : previewResult.reason ?? 'Decryption failed'}
+                {previewResult.valid ? t('audit.verify.disclosedDecrypted') : previewResult.reason ?? t('audit.verify.decryptionFailed')}
               </span>
             </div>
           </div>
           {previewResult.valid && previewResult.decrypted?.data && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="mb-2 text-sm font-semibold text-slate-800">Disclosed content (preview only)</h3>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800">{t('audit.verify.disclosedPreview')}</h3>
               <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
                 {JSON.stringify(previewResult.decrypted.data, null, 2)}
               </pre>
@@ -231,7 +233,7 @@ export default function AuditVerifyFlow({
                 <X className="h-6 w-6 text-red-600" />
               )}
               <span className="font-semibold text-slate-900">
-                {result.overallValid ? 'Audit package valid' : 'Audit package invalid'}
+                {result.overallValid ? t('audit.verify.packageValid') : t('audit.verify.packageInvalid')}
               </span>
             </div>
             {result.overallValid && (
@@ -241,7 +243,7 @@ export default function AuditVerifyFlow({
                   onClick={onExportReport}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Export JSON
+                  {t('audit.verify.exportJson')}
                 </button>
                 {onExportPdfReport && (
                   <button
@@ -249,7 +251,7 @@ export default function AuditVerifyFlow({
                     onClick={onExportPdfReport}
                     className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
                   >
-                    Export compliance report (PDF)
+                    {t('audit.verify.exportPdf')}
                   </button>
                 )}
               </div>
@@ -257,19 +259,19 @@ export default function AuditVerifyFlow({
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">Verification (3-step pipeline)</h3>
-            <PhaseCard title="Step 1: Identity anchor" phase={result.phase1} defaultExpanded={true} />
-            <PhaseCard title="Step 2: Money flow (asset verification)" phase={result.phase2} defaultExpanded={true} />
+            <h3 className="text-sm font-semibold text-slate-700">{t('audit.verify.pipelineTitle')}</h3>
+            <PhaseCard title={t('audit.verify.step1')} phase={result.phase1} defaultExpanded={true} />
+            <PhaseCard title={t('audit.verify.step2')} phase={result.phase2} defaultExpanded={true} />
             <div className="space-y-2">
-              <PhaseCard title="Step 3a: Audit authorization" phase={result.phase3} defaultExpanded={false} />
-              <PhaseCard title="Step 3b: Chain anchoring" phase={result.phase4} defaultExpanded={false} />
-              <PhaseCard title="Step 3c: Tax / trustless verification" phase={result.phase5} defaultExpanded={false} />
+              <PhaseCard title={t('audit.verify.step3a')} phase={result.phase3} defaultExpanded={false} />
+              <PhaseCard title={t('audit.verify.step3b')} phase={result.phase4} defaultExpanded={false} />
+              <PhaseCard title={t('audit.verify.step3c')} phase={result.phase5} defaultExpanded={false} />
             </div>
           </div>
 
           {result.decrypted && result.overallValid && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="mb-2 text-sm font-semibold text-slate-800">Decrypted data (disclosed fields)</h3>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800">{t('audit.verify.decryptedData')}</h3>
               <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
                 {JSON.stringify(result.decrypted.data, null, 2)}
               </pre>

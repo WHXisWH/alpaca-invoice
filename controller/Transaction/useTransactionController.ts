@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
 import { getChainIdFromNetwork, getNetworkFromEnv } from '@/lib/network';
-import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice, CurrencyFlag } from '@/lib/types';
+import { CreateInvoiceParams, AleoTransactionId, AleoField, AleoAddress, Invoice, CurrencyFlag, InvoiceStatus } from '@/lib/types';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
@@ -16,9 +16,10 @@ import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
 import { toRecordInputString } from '@/lib/recordParser';
+import { FreezeListService, serializeMerkleProofsForContract } from '@/services/FreezeListService/FreezeListServiceImpl';
 
-// Initialize service instance (used inside the hook)
 const cryptoService = new CryptoService();
+const freezeListService = new FreezeListService();
 
 /**
  * Transaction Controller Hook
@@ -481,11 +482,73 @@ export function useTransactionController(): ITxController {
               'No USDCx Token record found in wallet.'
             );
           }
-          // TODO: fetch freeze-list proofs from network once API is available
-          throw new WalletServiceError(
-            WalletError.UNAUTHORIZED,
-            'USDCx private transfer requires freeze-list proofs; not implemented yet.'
+
+          updateProgress(36, 'Fetching freeze-list proofs...');
+          const merkleProofs = await freezeListService.getMerkleProofs(
+            publicKey,
+            invoice.seller
           );
+
+          const tokenRecordStr = toRecordInputString(tokenRecord);
+          const usdcxInvoiceRecordStr = toRecordInputString(invoiceRecord);
+
+          const usdcxNowSec = Math.floor(Date.now() / 1000);
+          const usdcxDueDateSec = Math.floor(invoice.dueDate.getTime() / 1000);
+          const usdcxPaidAtSec = Math.min(usdcxNowSec, usdcxDueDateSec);
+          const usdcxPaidAt = `${usdcxPaidAtSec}u32`;
+          const usdcxPaymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
+          const proofsStr = serializeMerkleProofsForContract(merkleProofs);
+
+          updateProgress(50, 'Submitting pay_invoice_usdcx...');
+          const usdcxRequestId = await walletService.requestTransaction({
+            functionName: 'pay_invoice_usdcx',
+            inputs: [tokenRecordStr, usdcxInvoiceRecordStr, usdcxPaymentNonce, usdcxPaidAt, proofsStr],
+            publicKey,
+            programId: PROGRAM_ID,
+            fee: 500_000,
+            chainId,
+          });
+
+          updateProgress(70, 'Transaction submitted, awaiting confirmation...');
+
+          const protocolService = new AleoProtocolService();
+          const expectedOutputs = protocolService.getExpectedOutputCountForFunction('pay_invoice_usdcx');
+
+          const usdcxTxResult = await protocolService.verifyRecordOnChain(
+            usdcxRequestId as AleoTransactionId,
+            { programId: PROGRAM_ID, functionName: 'pay_invoice_usdcx', expectedOutputsCount: expectedOutputs }
+          );
+
+          updateProgress(85, 'Payment confirmed. Updating local records...');
+
+          const usdcxInvoice: Invoice = {
+            ...invoice,
+            status: InvoiceStatus.PAID,
+            metadata: {
+              confirmationStatus: 'SENDING' as const,
+              lastUpdated: new Date(),
+              dataSource: 'local' as const,
+              action: 'pay' as const,
+            },
+          };
+          invoiceStore.updateInvoice(invoice.invoiceHash, usdcxInvoice, masterKey ? { masterKey, persistFull: true } : undefined);
+          invoiceStore.markInvoiceSending(invoice.invoiceHash);
+
+          const usdcxReceipt = {
+            paymentId: `${usdcxRequestId}field` as AleoField,
+            invoiceId: invoice.id,
+            payer: publicKey as AleoAddress,
+            payee: invoice.seller,
+            amount: payAmount,
+            paidAt: new Date(usdcxPaidAtSec * 1000),
+            txId: usdcxRequestId as AleoTransactionId,
+            settlementAnchor: usdcxPaymentNonce as AleoField,
+          };
+          receiptStore.addReceipt(usdcxReceipt);
+
+          updateProgress(100, 'USDCx payment complete!');
+          completeTx();
+          return usdcxRequestId as AleoTransactionId;
         }
 
         // Credits path: use getFeeRecords to select optimal credits record(s); pay_invoice_credits_private accepts a single record
@@ -753,6 +816,255 @@ export function useTransactionController(): ITxController {
       updateProgress(100, '✓ Audit authorization submitted');
       completeTx();
       return requestId as AleoTransactionId;
-    }
+    },
+
+    // Wave 4: Dispute methods
+    executeRaiseDispute: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const nowSec = Math.floor(Date.now() / 1000);
+      const deadlineSec = nowSec + params.resolutionDeadlineDays * 86400;
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching invoice record...');
+        const { rawRecord } = await scanInvoiceRecord(params.invoice.invoiceHash, params.invoice.id);
+        if (!rawRecord) { throw new Error('Invoice record not found on chain.'); }
+
+        const arbiter = params.arbiter ?? params.invoice.seller;
+        updateProgress(50, 'Submitting raise_dispute...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'raise_dispute',
+          inputs: [
+            params.invoice.id,
+            `${params.invoice.status}u8`,
+            params.invoice.buyer,
+            params.invoice.seller,
+            arbiter,
+            params.reasonHash,
+            params.evidenceHash,
+            `${nowSec}u32`,
+            `${deadlineSec}u32`,
+          ],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Dispute raised');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
+
+    executeResolveDispute: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const resolutionHash = await cryptoService.hashObjectToField(`RESOLVE-${Date.now()}`);
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching dispute record...');
+        const { records: disputeRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
+        const disputeRecord = disputeRecords?.find((r: any) =>
+          r?.data?.dispute_id === params.dispute.disputeId ||
+          r?.dispute_id === params.dispute.disputeId
+        );
+        if (!disputeRecord) {
+          throw new Error('Dispute record not found in wallet. Ensure you are the arbiter.');
+        }
+        const disputeRecordStr = toRecordInputString(disputeRecord);
+
+        updateProgress(50, 'Submitting resolve_dispute...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'resolve_dispute',
+          inputs: [disputeRecordStr, `${params.resolution}u8`, resolutionHash],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Dispute resolved');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
+
+    executeSubmitEvidence: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching dispute record...');
+        const { records: disputeRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
+        const disputeRecord = disputeRecords?.find((r: any) =>
+          r?.data?.dispute_id === params.dispute.disputeId ||
+          r?.dispute_id === params.dispute.disputeId
+        );
+        if (!disputeRecord) {
+          throw new Error('Dispute record not found in wallet.');
+        }
+        const disputeRecordStr = toRecordInputString(disputeRecord);
+
+        updateProgress(50, 'Submitting evidence...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'submit_evidence',
+          inputs: [disputeRecordStr, params.newEvidenceHash],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Evidence submitted');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
+
+    // Wave 4: Escrow methods
+    executeEscrowPayment: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const payAmount = params.invoice.totalAmount ?? params.invoice.amount;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const deadlineSec = Math.floor(params.escrowConfig.deliveryDeadline.getTime() / 1000);
+      const arbiter = params.escrowConfig.arbiter ?? params.invoice.seller;
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Selecting payment record...');
+
+        const recordStrings = await walletService.getFeeRecords(payAmount, publicKey);
+        if (recordStrings.length === 0) {
+          throw new WalletServiceError(WalletError.INSUFFICIENT_FEE, 'No credits record available.');
+        }
+        const payRecordStr = recordStrings[0];
+
+        updateProgress(50, 'Submitting escrow_payment_credits...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'escrow_payment_credits',
+          inputs: [
+            payRecordStr,
+            params.invoice.id,
+            params.invoice.seller,
+            `${payAmount.toString()}u64`,
+            `${deadlineSec}u32`,
+            arbiter,
+            `${nowSec}u32`,
+          ],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Payment locked in escrow');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
+
+    executeConfirmDelivery: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const nowSec = Math.floor(Date.now() / 1000);
+      const paymentNonce = await cryptoService.hashObjectToField(`DELIVERY-${Date.now()}-${Math.random()}`);
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching escrow record...');
+        const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
+        const escrowRecord = escrowRecords?.find((r: any) =>
+          r?.data?.escrow_id === params.escrow.escrowId ||
+          r?.escrow_id === params.escrow.escrowId
+        );
+        if (!escrowRecord) {
+          throw new Error('Escrow record not found in wallet. Ensure you are the payer.');
+        }
+        const escrowRecordStr = toRecordInputString(escrowRecord);
+
+        updateProgress(50, 'Submitting confirm_delivery...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'confirm_delivery',
+          inputs: [escrowRecordStr, paymentNonce, `${nowSec}u32`],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Delivery confirmed, funds released');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
+
+    executeTimeoutRefund: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching escrow record...');
+        const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
+        const escrowRecord = escrowRecords?.find((r: any) =>
+          r?.data?.escrow_id === params.escrow.escrowId ||
+          r?.escrow_id === params.escrow.escrowId
+        );
+        if (!escrowRecord) {
+          throw new Error('Escrow record not found in wallet.');
+        }
+        const escrowRecordStr = toRecordInputString(escrowRecord);
+
+        updateProgress(50, 'Submitting timeout_refund...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'timeout_refund',
+          inputs: [escrowRecordStr, `${nowSec}u32`],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Refund processed');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
   };
 }

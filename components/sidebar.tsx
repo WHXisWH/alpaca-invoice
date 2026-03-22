@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import {
   LayoutDashboard,
   FileText,
@@ -13,18 +14,20 @@ import {
   ShieldCheck,
   BookOpen,
   HelpCircle,
+  AlertTriangle,
   X,
 } from 'lucide-react';
 import { useSidebar } from '@/components/sidebar-context';
 import { useOnboarding } from '@/components/onboarding/onboarding-provider';
 
 const navItems = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'Invoices', href: '/invoices', icon: FileText },
-  { title: 'Create Invoice', href: '/invoices/create', icon: FilePlus },
-  { title: 'Receipts', href: '/receipts', icon: Receipt },
-  { title: 'Audit Center', href: '/audit', icon: ShieldCheck },
-  { title: 'Documentation', href: '/docs', icon: BookOpen },
+  { titleKey: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
+  { titleKey: 'invoices' as const, href: '/invoices', icon: FileText },
+  { titleKey: 'createInvoice' as const, href: '/invoices/create', icon: FilePlus },
+  { titleKey: 'receipts' as const, href: '/receipts', icon: Receipt },
+  { titleKey: 'disputes' as const, href: '/disputes', icon: AlertTriangle },
+  { titleKey: 'auditCenter' as const, href: '/audit', icon: ShieldCheck },
+  { titleKey: 'documentation' as const, href: '/docs', icon: BookOpen },
 ];
 
 export default function Sidebar() {
@@ -33,6 +36,7 @@ export default function Sidebar() {
   const { isOpen, close } = useSidebar();
   const { restart: restartGuide } = useOnboarding();
   const [helpVisible, setHelpVisible] = useState(true);
+  const t = useTranslations('nav');
   const handleRestartGuide = () => {
     restartGuide();
     close();
@@ -106,6 +110,7 @@ export default function Sidebar() {
               if (item.href === '/invoices/create') {
                 return p === '/invoices/create' || p === '/invoice/create';
               }
+              if (item.href === '/disputes') return p === '/disputes' || p.startsWith('/disputes/');
               if (item.href === '/audit') return p === '/audit' || p.startsWith('/audit/');
               if (item.href === '/docs') return p.startsWith('/docs');
               return p === item.href;
@@ -124,7 +129,7 @@ export default function Sidebar() {
                 )}
               >
                 <Icon className="h-5 w-5" />
-                {item.title}
+                {t(item.titleKey)}
               </Link>
             );
           })}
@@ -146,22 +151,22 @@ export default function Sidebar() {
                   <HelpCircle className="h-5 w-5 text-accent-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-white">Need Help?</p>
-                  <p className="text-xs text-primary-400">Check our docs</p>
+                  <p className="text-sm font-medium text-white">{t('helpTitle')}</p>
+                  <p className="text-xs text-primary-400">{t('helpDescription')}</p>
                 </div>
               </div>
               <Link
                 href="/docs"
                 className="block w-full cursor-pointer rounded-lg bg-white/10 py-2 text-center text-xs font-medium text-primary-200 transition-colors hover:bg-white/20 hover:text-white"
               >
-                Documentation
+                {t('documentation')}
               </Link>
               <button
                 type="button"
                 onClick={handleRestartGuide}
                 className="mt-2 block w-full cursor-pointer rounded-lg border border-white/15 bg-transparent py-2 text-center text-xs font-medium text-primary-200 transition-colors hover:bg-white/10 hover:text-white"
               >
-                Restart guide
+                {t('restartGuide')}
               </button>
             </div>
           </div>

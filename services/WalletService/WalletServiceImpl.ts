@@ -445,12 +445,19 @@ export class WalletService {
         }, SIGN_MESSAGE_TIMEOUT_MS);
       });
 
-      const signature = await Promise.race([
+      const rawSignature: unknown = await Promise.race([
         this.wallet.signMessage(message),
         timeoutPromise
       ]);
 
       if (timeoutId) clearTimeout(timeoutId);
+
+      const signature: string =
+        rawSignature instanceof Uint8Array
+          ? new TextDecoder().decode(rawSignature)
+          : typeof rawSignature === 'string'
+            ? rawSignature
+            : String(rawSignature ?? '');
 
       if (!signature || signature.trim() === '') {
         throw new WalletServiceError(

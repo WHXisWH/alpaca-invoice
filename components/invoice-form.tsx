@@ -1,10 +1,12 @@
 'use client';
 
 import { Plus, Trash2, Lock, ShieldCheck, RefreshCw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import JctPdfPreview from '@/components/jct-pdf-preview';
 import { useInvoiceForm, type LineItemRow } from '@/controller/Invoice/useInvoiceForm';
 
 export default function InvoiceForm() {
+  const t = useTranslations();
   const form = useInvoiceForm();
   const { audit } = form;
 
@@ -16,17 +18,17 @@ export default function InvoiceForm() {
       {/* ── Seller (auto, read-only) ── */}
       <div className="space-y-1">
         <label className="text-sm font-medium text-slate-800">
-          Seller address <span className="text-xs text-slate-400">(current wallet)</span>
+          {t('invoice.create.sellerAddress')} <span className="text-xs text-slate-400">{t('invoice.create.currentWallet')}</span>
         </label>
         <div className="rounded-lg border border-primary-200/60 bg-primary-50/70 px-3 py-2 text-sm text-slate-700">
-          {form.publicKey || 'Not connected'}
+          {form.publicKey || t('invoice.create.notConnected')}
         </div>
       </div>
 
       {/* ── T number (JCT registration) ── */}
       <div className="space-y-1">
         <label className="text-sm font-medium text-slate-800">
-          T number (JCT registration) <span className="text-red-500">*</span>
+          {t('invoice.create.tNumberRegistration')} <span className="text-red-500">*</span>
         </label>
         <div className="relative">
           <input
@@ -37,22 +39,22 @@ export default function InvoiceForm() {
             value={form.tNumber}
             onChange={(e) => form.setTNumber(e.target.value)}
             className="input-field font-mono"
-            placeholder="13 digits"
+            placeholder={t('invoice.create.tNumberPlaceholder')}
           />
           {form.tNumber.length === 13 && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600" title="Format OK">
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600" title={t('invoice.create.tNumberVerified')}>
               <ShieldCheck className="h-5 w-5" />
             </span>
           )}
         </div>
         {form.errors.tNumber && <p className="text-xs text-red-500">{form.errors.tNumber}</p>}
         <p className="text-xs text-slate-400">
-          13-digit registration number (T+13). Required for JCT-compliant invoices.
+          {t('invoice.create.tNumberHint')}
         </p>
         {form.tNumber.length === 13 && (
           <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs">
             <p className="text-amber-800">
-              Format valid. For official verification, confirm with NTA or use the check below.
+              {t('invoice.create.formatValid')}
             </p>
             <button
               type="button"
@@ -61,14 +63,14 @@ export default function InvoiceForm() {
               className="mt-1.5 rounded border border-amber-300 bg-white px-2 py-1 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
             >
               {form.ntaCheck === 'checking'
-                ? 'Checking…'
+                ? t('invoice.create.ntaChecking')
                 : form.ntaCheck === 'ok'
-                ? '✓ NTA verified'
-                : 'Verify with NTA (if API configured)'}
+                ? `✓ ${t('invoice.create.ntaVerified')}`
+                : t('invoice.create.ntaVerifyButton')}
             </button>
             {form.ntaCheck === 'unavailable' && (
               <p className="mt-1 text-amber-700">
-                For demo purposes, any 13-digit value is accepted. Configure NTA API in production for official verification.
+                {t('invoice.create.ntaDemoNote')}
               </p>
             )}
           </div>
@@ -78,7 +80,7 @@ export default function InvoiceForm() {
       {/* ── Buyer ── */}
       <div className="space-y-1">
         <label className="text-sm font-medium text-slate-800">
-          Buyer address <span className="text-red-500">*</span>
+          {t('invoice.create.buyerAddress')} <span className="text-red-500">*</span>
         </label>
         <input
           type="text"
@@ -86,7 +88,7 @@ export default function InvoiceForm() {
           value={form.buyer}
           onChange={(e) => form.setBuyer(e.target.value)}
           className="input-field"
-          placeholder="aleo1..."
+          placeholder={t('invoice.create.buyerPlaceholder')}
         />
         {form.errors.buyer && <p className="text-xs text-red-500">{form.errors.buyer}</p>}
       </div>
@@ -95,25 +97,25 @@ export default function InvoiceForm() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium text-slate-800">
-            Line items <span className="text-red-500">*</span>
+            {t('invoice.create.lineItems')} <span className="text-red-500">*</span>
           </label>
           <button
             type="button"
             onClick={form.addLineItem}
             className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
           >
-            <Plus className="h-3.5 w-3.5" /> Add line item
+            <Plus className="h-3.5 w-3.5" /> {t('invoice.create.addItem')}
           </button>
         </div>
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full min-w-[520px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium text-slate-600">
-                <th className="px-3 py-2">Description</th>
-                <th className="w-20 px-3 py-2">Qty</th>
-                <th className="w-24 px-3 py-2">Unit price</th>
-                <th className="w-20 px-3 py-2">Amount</th>
-                <th className="w-24 px-3 py-2">Tax (JCT)</th>
+                <th className="px-3 py-2">{t('invoice.create.description')}</th>
+                <th className="w-20 px-3 py-2">{t('invoice.create.quantity')}</th>
+                <th className="w-24 px-3 py-2">{t('invoice.create.unitPrice')}</th>
+                <th className="w-20 px-3 py-2">{t('invoice.create.amount')}</th>
+                <th className="w-24 px-3 py-2">{t('invoice.create.taxJct')}</th>
                 <th className="w-10 px-2 py-2" />
               </tr>
             </thead>
@@ -131,7 +133,7 @@ export default function InvoiceForm() {
                         value={row.description}
                         onChange={(e) => form.updateLineItem(row.id, 'description', e.target.value)}
                         className="input-field min-w-0 py-1.5"
-                        placeholder="Service, product, etc."
+                        placeholder={t('invoice.create.descriptionPlaceholder')}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -181,7 +183,7 @@ export default function InvoiceForm() {
                         type="button"
                         onClick={() => form.removeLineItem(row.id)}
                         disabled={form.lineItems.length <= 1}
-                        title="Remove line"
+                        title={t('invoice.create.removeLine')}
                         className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -200,13 +202,13 @@ export default function InvoiceForm() {
       {/* ── Subtotal + tax summary ── */}
       <div className="space-y-1">
         <label className="text-sm font-medium text-slate-800">
-          Subtotal (Amount) <span className="text-xs text-slate-400">(from line items)</span>
+          {t('invoice.create.subtotalLabel')} <span className="text-xs text-slate-400">{t('invoice.create.fromLineItems')}</span>
         </label>
         <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800">
-          {form.parsedAmount.toFixed(2)} credits
+          {form.parsedAmount.toFixed(2)} {t('invoice.create.credits')}
         </div>
         <p className="text-xs text-slate-400">
-          Tax (per-line): {form.taxAmount.toFixed(2)} · Total: {form.total.toFixed(2)} credits
+          {t('invoice.create.taxPerLine')}: {form.taxAmount.toFixed(2)} · {t('invoice.create.total')}: {form.total.toFixed(2)} {t('invoice.create.credits')}
         </p>
       </div>
 
@@ -214,7 +216,7 @@ export default function InvoiceForm() {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">
-            Due date <span className="text-red-500">*</span>
+            {t('invoice.create.dueDate')} <span className="text-red-500">*</span>
           </label>
           <input
             type="date"
@@ -228,7 +230,7 @@ export default function InvoiceForm() {
         </div>
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">
-            Payment currency <span className="text-red-500">*</span>
+            {t('invoice.create.paymentCurrency')} <span className="text-red-500">*</span>
           </label>
           <select
             value={form.currency}
@@ -238,7 +240,7 @@ export default function InvoiceForm() {
             <option value="CREDITS">CREDITS</option>
             <option value="USDCx">USDCx</option>
           </select>
-          <p className="text-xs text-slate-400">Invoice can be paid in Aleo Credits or USDCx only.</p>
+          <p className="text-xs text-slate-400">{t('invoice.create.currencyNote')}</p>
           {form.errors.currency && <p className="text-xs text-red-500">{form.errors.currency}</p>}
         </div>
       </div>
@@ -247,27 +249,27 @@ export default function InvoiceForm() {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">
-            Order ID <span className="text-xs text-slate-400">(optional)</span>
+            {t('invoice.create.orderId')}
           </label>
           <input
             type="text"
             value={form.orderId}
             onChange={(e) => form.setOrderId(e.target.value)}
             className="input-field"
-            placeholder="PO-12345 or leave blank"
+            placeholder={t('invoice.create.orderIdPlaceholder')}
           />
-          <p className="text-xs text-slate-400">Auto-generated if empty.</p>
+          <p className="text-xs text-slate-400">{t('invoice.create.orderIdAutoGenerate')}</p>
         </div>
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">
-            Memo <span className="text-xs text-slate-400">(optional)</span>
+            {t('invoice.create.memo')}
           </label>
           <input
             type="text"
             value={form.notes}
             onChange={(e) => form.setNotes(e.target.value)}
             className="input-field"
-            placeholder="Payment terms, notes, etc."
+            placeholder={t('invoice.create.memoPlaceholder')}
           />
         </div>
       </div>
@@ -275,7 +277,7 @@ export default function InvoiceForm() {
       {/* ── Audit authorization ── */}
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Audit authorization</div>
+          <div className="text-sm font-semibold text-slate-900">{t('invoice.create.auditAuthorization')}</div>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input
               type="checkbox"
@@ -283,13 +285,13 @@ export default function InvoiceForm() {
               onChange={(e) => audit.setEnableAuditAuth(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
             />
-            Enable
+            {t('invoice.create.enable')}
           </label>
         </div>
         {audit.enableAuditAuth && (
           <div className="space-y-2">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-700">Audit key</label>
+              <label className="text-xs font-medium text-slate-700">{t('invoice.create.auditKey')}</label>
               <div className="flex items-center gap-2">
                 <code className="flex-1 truncate rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">
                   {audit.auditKey || '—'}
@@ -297,19 +299,19 @@ export default function InvoiceForm() {
                 <button
                   type="button"
                   onClick={() => audit.generateAuditKey()}
-                  title="Generate audit key"
+                  title={t('invoice.create.generateAuditKey')}
                   className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 >
                   <RefreshCw className="h-4 w-4" />
                 </button>
               </div>
               <p className="text-xs text-slate-500">
-                Click the icon to generate. Store it securely; share only with the auditor.
+                {t('invoice.create.auditKeyHint')}
               </p>
               {form.errors.auditKey && <p className="text-xs text-red-500">{form.errors.auditKey}</p>}
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-700">Expiry</label>
+              <label className="text-xs font-medium text-slate-700">{t('invoice.create.expiry')}</label>
               <input
                 type="date"
                 value={audit.expiresAt}
@@ -319,7 +321,7 @@ export default function InvoiceForm() {
               />
             </div>
             <div className="space-y-1">
-              <div className="text-xs font-medium text-slate-700">Scopes</div>
+              <div className="text-xs font-medium text-slate-700">{t('invoice.create.scopes')}</div>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 {[
                   'amount', 'tax_amount', 'due_date',
@@ -346,7 +348,7 @@ export default function InvoiceForm() {
       {form.isProcessing && (
         <div className="space-y-2 rounded-lg border border-blue-200/60 bg-blue-50/70 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-900">Processing...</span>
+            <span className="text-sm font-medium text-blue-900">{t('invoice.create.processing')}</span>
             <span className="text-sm text-blue-700">{form.currentProgress}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
@@ -365,7 +367,7 @@ export default function InvoiceForm() {
         disabled={form.isProcessing}
         className="w-full cursor-pointer rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {form.isProcessing ? 'Processing...' : 'Create Invoice'}
+        {form.isProcessing ? t('invoice.create.processing') : t('invoice.create.submitButton')}
       </button>
     </form>
   );

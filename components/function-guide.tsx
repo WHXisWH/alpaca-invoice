@@ -1,85 +1,90 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
+
 export default function FunctionGuide() {
+  const t = useTranslations();
   const functions = [
     {
       name: 'create_invoice',
       icon: '✏️',
-      desc: 'Create invoice',
+      desc: t('functionGuide.createInvoice.desc'),
       params: [
-        { name: 'buyer', desc: 'Buyer address' },
-        { name: 'amount', desc: 'Amount (microcredits)' },
-        { name: 'due_date', desc: 'Due date timestamp' },
-        { name: 'invoice_hash', desc: 'Invoice content hash' },
-        { name: 'nonce', desc: 'Unique identifier' }
+        { name: 'buyer', desc: t('functionGuide.createInvoice.buyerParam') },
+        { name: 'amount', desc: t('functionGuide.createInvoice.amountParam') },
+        { name: 'due_date', desc: t('functionGuide.createInvoice.dueDateParam') },
+        { name: 'invoice_hash', desc: t('functionGuide.createInvoice.invoiceHashParam') },
+        { name: 'nonce', desc: t('functionGuide.createInvoice.nonceParam') }
       ],
-      returns: '2 InvoiceRecords (one for seller, one for buyer)',
+      returns: t('functionGuide.createInvoice.returns'),
       role: 'Seller'
     },
     {
       name: 'verify_invoice',
       icon: '✅',
-      desc: 'Verify invoice hash',
+      desc: t('functionGuide.verifyInvoice.desc'),
       params: [
-        { name: 'invoice', desc: 'InvoiceRecord' },
-        { name: 'expected_hash', desc: 'Expected hash value' }
+        { name: 'invoice', desc: t('functionGuide.verifyInvoice.invoiceParam') },
+        { name: 'expected_hash', desc: t('functionGuide.verifyInvoice.expectedHashParam') }
       ],
-      returns: 'boolean (match status)',
+      returns: t('functionGuide.verifyInvoice.returns'),
       role: 'Anyone'
     },
     {
       name: 'pay_invoice_credits_private',
       icon: '💰',
-      desc: 'Pay invoice (Credits / JCT public path)',
+      desc: t('functionGuide.payInvoice.desc'),
       params: [
-        { name: 'invoice', desc: 'InvoiceRecord' },
-        { name: 'payment_nonce', desc: 'Payment identifier' },
-        { name: 'paid_at', desc: 'Payment timestamp (u32)' },
-        { name: 'tx_id_hash', desc: 'Hash of transfer tx id (field)' }
+        { name: 'invoice', desc: t('functionGuide.payInvoice.invoiceParam') },
+        { name: 'payment_nonce', desc: t('functionGuide.payInvoice.paymentNonceParam') },
+        { name: 'paid_at', desc: t('functionGuide.payInvoice.paidAtParam') },
+        { name: 'tx_id_hash', desc: t('functionGuide.payInvoice.txIdHashParam') }
       ],
-      returns: 'PaymentRecord + 2 InvoiceRecords (PAID) + Future',
+      returns: t('functionGuide.payInvoice.returns'),
       role: 'Buyer',
-      note: 'Credits transfer to seller in same tx or prior; currency_flag must be Credits'
+      note: t('functionGuide.payInvoice.note')
     },
     {
       name: 'create_seller_receipt',
       icon: '🧾',
-      desc: 'Generate seller receipt',
+      desc: t('functionGuide.createSellerReceipt.desc'),
       params: [
-        { name: 'invoice_id', desc: 'Invoice ID' },
-        { name: 'payer', desc: 'Payer address' },
-        { name: 'payee', desc: 'Payee address' },
-        { name: 'amount', desc: 'Amount' },
-        { name: 'payment_nonce', desc: 'Payment identifier' }
+        { name: 'invoice_id', desc: t('functionGuide.createSellerReceipt.invoiceIdParam') },
+        { name: 'payer', desc: t('functionGuide.createSellerReceipt.payerParam') },
+        { name: 'payee', desc: t('functionGuide.createSellerReceipt.payeeParam') },
+        { name: 'amount', desc: t('functionGuide.createSellerReceipt.amountParam') },
+        { name: 'payment_nonce', desc: t('functionGuide.createSellerReceipt.paymentNonceParam') }
       ],
-      returns: 'PaymentRecord (seller receipt)',
+      returns: t('functionGuide.createSellerReceipt.returns'),
       role: 'Seller'
     },
     {
       name: 'cancel_invoice',
       icon: '❌',
-      desc: 'Cancel invoice',
+      desc: t('functionGuide.cancelInvoice.desc'),
       params: [
-        { name: 'invoice', desc: 'InvoiceRecord' }
+        { name: 'invoice', desc: t('functionGuide.cancelInvoice.invoiceParam') }
       ],
-      returns: 'Updated InvoiceRecord (status=CANCELLED)',
+      returns: t('functionGuide.cancelInvoice.returns'),
       role: 'Seller',
-      note: 'Only for PENDING status invoices'
+      note: t('functionGuide.cancelInvoice.note')
     },
     {
       name: 'verify_payment',
       icon: '🔍',
-      desc: 'Verify payment match',
+      desc: t('functionGuide.verifyPayment.desc'),
       params: [
-        { name: 'receipt', desc: 'PaymentRecord' },
-        { name: 'invoice', desc: 'InvoiceRecord' }
+        { name: 'receipt', desc: t('functionGuide.verifyPayment.receiptParam') },
+        { name: 'invoice', desc: t('functionGuide.verifyPayment.invoiceParam') }
       ],
-      returns: 'boolean (match status)',
+      returns: t('functionGuide.verifyPayment.returns'),
       role: 'Anyone'
     }
   ];
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-slate-900">Contract Functions</h2>
+      <h2 className="text-xl font-bold text-slate-900">{t('functionGuide.title')}</h2>
       <div className="grid gap-4 md:grid-cols-2">
         {functions.map((fn) => (
           <div
@@ -103,7 +108,7 @@ export default function FunctionGuide() {
 
             <div className="space-y-2 text-xs">
               <div>
-                <div className="font-semibold text-slate-700 mb-1">Parameters:</div>
+                <div className="font-semibold text-slate-700 mb-1">{t('functionGuide.parameters')}</div>
                 <ul className="space-y-1 pl-3">
                   {fn.params.map((p) => (
                     <li key={p.name} className="text-slate-600">
@@ -114,13 +119,13 @@ export default function FunctionGuide() {
               </div>
 
               <div>
-                <div className="font-semibold text-slate-700 mb-1">Returns:</div>
+                <div className="font-semibold text-slate-700 mb-1">{t('functionGuide.returnsLabel')}</div>
                 <p className="text-slate-600 pl-3">{fn.returns}</p>
               </div>
 
               {fn.note && (
                 <div className="bg-amber-50 border border-amber-200 rounded p-2 mt-2">
-                  <span className="font-semibold text-amber-700">Note: </span>
+                  <span className="font-semibold text-amber-700">{t('functionGuide.noteLabel')} </span>
                   <span className="text-slate-600">{fn.note}</span>
                 </div>
               )}
