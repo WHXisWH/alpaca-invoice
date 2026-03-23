@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
 
     await Promise.all(ops);
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
+    const isConfigError = err?.message?.includes('not configured');
+    if (isConfigError) {
+      console.warn('[POST /api/invoice-details] Redis not configured – skipping server-side storage.');
+      return NextResponse.json({ error: 'Redis not configured', details: null }, { status: 503 });
+    }
     console.error('[POST /api/invoice-details]', err);
     return NextResponse.json({ error: 'Failed to save details' }, { status: 500 });
   }
@@ -59,7 +64,12 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ details: details ?? null });
-  } catch (err) {
+  } catch (err: any) {
+    const isConfigError = err?.message?.includes('not configured');
+    if (isConfigError) {
+      console.warn('[GET /api/invoice-details] Redis not configured – returning null.');
+      return NextResponse.json({ details: null });
+    }
     console.error('[GET /api/invoice-details]', err);
     return NextResponse.json({ error: 'Failed to fetch details' }, { status: 500 });
   }
