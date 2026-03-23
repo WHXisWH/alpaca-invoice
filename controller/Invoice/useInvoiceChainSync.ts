@@ -4,7 +4,7 @@ import { useInvoiceStore as useNewInvoiceStore } from '@/stores/Invoice/useInovi
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { AleoInvoiceRecord, AleoPaymentRecord } from '@/services/CryptoService/ICryptoService';
-import { AleoField, Invoice } from '@/lib/types';
+import { AleoField, Invoice, InvoiceStatus } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { fetchAndMergeKvDetails } from './useInvoiceKvSync';
 import { toast } from 'sonner';
@@ -34,8 +34,8 @@ export function useInvoiceChainSync(
   const { handleError } = useErrorHandler();
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
-  // Use shared polling core for record-to-invoice mapping
-  const { buildUpdatedInvoice } = useInvoicePollingCore();
+  // Use shared polling core for record-to-invoice mapping + public mapping reconciliation
+  const { buildUpdatedInvoice, reconcilePendingWithMapping } = useInvoicePollingCore();
   
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
 
@@ -200,14 +200,22 @@ export function useInvoiceChainSync(
       // Scan on-chain records via useInvoiceChainScan
       const { invoiceRecord, paymentRecord } = await scanInvoiceRecord(invoiceHash, latestInvoice.id);
 
-      if (!invoiceRecord && !paymentRecord) {
-        toast.error('No matching on-chain record found', { id: 'sync-status' });
-        return;
-      }
-
       // Only update invoice from paid InvoiceRecord (never PaymentRecord — amount must stay pre-tax)
       if (invoiceRecord) {
         const updatedInvoice = buildUpdatedInvoice(latestInvoice, invoiceRecord);
+
+        // If the Record still shows PENDING, cross-check against the public mapping.
+        // This catches cases where the counterparty changed the status (e.g. seller
+        // cancelled) but the current user's private Record was not updated by the contract.
+        if (updatedInvoice.status === InvoiceStatus.PENDING) {
+          const [reconciled] = await reconcilePendingWithMapping([updatedInvoice]);
+          if (reconciled) {
+            await confirmInvoice(reconciled, invoiceRecord);
+            toast.success('Status sync successful', { id: 'sync-status' });
+            return;
+          }
+        }
+
         await confirmInvoice(updatedInvoice, invoiceRecord);
 
         // §3.9: if the confirmed invoice has no details, try fetching from KV
@@ -219,6 +227,22 @@ export function useInvoiceChainSync(
         }
 
         toast.success('Status sync successful', { id: 'sync-status' });
+      } else if (!invoiceRecord && !paymentRecord) {
+        // No private Record found at all — fall back to public mapping lookup.
+        // This can happen for the buyer after the seller cancelled (buyer's Record
+        // is still the old PENDING one which may fail to scan in some edge cases).
+        if (latestInvoice.status === InvoiceStatus.PENDING) {
+          const reconciled = await reconcilePendingWithMapping([latestInvoice]);
+          if (reconciled.length > 0) {
+            await updateInvoice(reconciled[0].id, reconciled[0], {
+              masterKey: masterKey || undefined,
+              persistFull: !!masterKey
+            });
+            toast.success('Status sync successful', { id: 'sync-status' });
+            return;
+          }
+        }
+        toast.error('No matching on-chain record found', { id: 'sync-status' });
       } else {
         toast.info('Payment detected but invoice record not yet available. Try again shortly.', { id: 'sync-status' });
       }
@@ -232,7 +256,7 @@ export function useInvoiceChainSync(
     } finally {
       setIsSyncingStatus(false);
     }
-  }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, handleError]);
+  }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, reconcilePendingWithMapping, updateInvoice, handleError]);
 
   return {
     isSyncingStatus,

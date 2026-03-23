@@ -7,7 +7,12 @@ export enum InvoiceStatus {
   PENDING = 0,
   PAID = 1,
   CANCELLED = 2,
-  EXPIRED = 3
+  EXPIRED = 3,
+  DISPUTED = 4,
+  RESOLVED_CANCELLED = 5,
+  RESOLVED_PAID = 6,
+  ESCROWED = 7,
+  REFUNDED = 8
 }
 
 /** 发票结算货币类型（对应合约 currency_flag: u8） */
@@ -261,4 +266,133 @@ export interface ChainVerificationResult {
   invoiceExistsOnChain: boolean;
   hashMatchesChain: boolean;
   chainStatus: InvoiceStatus | null;
+}
+
+// ──────────────────────────────────────────────
+// Wave 4: Dispute Resolution types
+// ──────────────────────────────────────────────
+
+export enum DisputeStatus {
+  OPEN = 0,
+  RESOLVED_CANCEL = 1,
+  RESOLVED_PAY = 2
+}
+
+export interface DisputeRecord {
+  disputeId: AleoField;
+  invoiceId: AleoField;
+  disputant: AleoAddress;
+  arbiter: AleoAddress;
+  reasonHash: AleoField;
+  evidenceHash: AleoField;
+  status: DisputeStatus;
+  createdAt: Date;
+  resolutionDeadline: Date;
+}
+
+export interface RaiseDisputeParams {
+  invoice: Invoice;
+  reasonHash: AleoField;
+  evidenceHash: AleoField;
+  arbiter?: AleoAddress;
+  resolutionDeadlineDays: number;
+}
+
+export interface ResolveDisputeParams {
+  dispute: DisputeRecord;
+  invoice: Invoice;
+  resolution: DisputeStatus.RESOLVED_CANCEL | DisputeStatus.RESOLVED_PAY;
+}
+
+export interface SubmitEvidenceParams {
+  dispute: DisputeRecord;
+  newEvidenceHash: AleoField;
+}
+
+// ──────────────────────────────────────────────
+// Wave 4: Escrow / Conditional Payment types
+// ──────────────────────────────────────────────
+
+export enum EscrowStatus {
+  LOCKED = 0,
+  RELEASED = 1,
+  REFUNDED = 2
+}
+
+export interface EscrowConfig {
+  deliveryDeadline: Date;
+  autoRelease: boolean;
+  arbiter?: AleoAddress;
+  releaseConditionHash: AleoField;
+}
+
+export interface EscrowRecord {
+  escrowId: AleoField;
+  invoiceId: AleoField;
+  payer: AleoAddress;
+  payee: AleoAddress;
+  amount: Microcredits;
+  currencyFlag: CurrencyFlag;
+  deliveryDeadline: Date;
+  arbiter: AleoAddress;
+  status: EscrowStatus;
+}
+
+export interface EscrowPaymentParams {
+  invoice: Invoice;
+  escrowConfig: EscrowConfig;
+}
+
+export interface ConfirmDeliveryParams {
+  escrow: EscrowRecord;
+  invoice: Invoice;
+}
+
+export interface TimeoutRefundParams {
+  escrow: EscrowRecord;
+  invoice: Invoice;
+}
+
+// ──────────────────────────────────────────────
+// Wave 4: ZK Credit Proof types
+// ──────────────────────────────────────────────
+
+export enum CreditClaimType {
+  ON_TIME_RATE = 0,
+  VOLUME = 1,
+  AMOUNT_RANGE = 2,
+  ACCOUNT_AGE = 3,
+  DISPUTE_RATE = 4
+}
+
+export interface CreditClaim {
+  claimType: CreditClaimType;
+  threshold: number;
+  periodStart: Date;
+  periodEnd: Date;
+}
+
+export interface CreditProofToken {
+  proofId: AleoField;
+  claimHash: AleoField;
+  dataCommitment: AleoField;
+  isValid: boolean;
+  generatedAt: Date;
+  expiresAt: Date;
+}
+
+export interface CreditMetrics {
+  totalInvoices: number;
+  paidOnTime: number;
+  onTimeRate: number;
+  totalPaidAmount: bigint;
+  firstInvoiceDate: number;
+  disputeCount: number;
+}
+
+export interface CreditVerifyResult {
+  isValid: boolean;
+  claim: CreditClaim | null;
+  proofId: AleoField | null;
+  error?: string;
 }

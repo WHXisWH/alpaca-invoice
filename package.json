@@ -10,6 +10,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@provablehq/aleo-types": "0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-core": "^0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-fox": "^0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-leo": "^0.3.0-alpha.3",
@@ -17,6 +18,7 @@
     "@provablehq/aleo-wallet-adaptor-react": "^0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-react-ui": "^0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-shield": "^0.3.0-alpha.3",
+    "@provablehq/aleo-wallet-standard": "0.3.0-alpha.3",
     "@provablehq/sdk": "^0.9.14",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@upstash/redis": "^1.36.3",
@@ -28,6 +30,7 @@
     "idb": "^8.0.0",
     "lucide-react": "^0.562.0",
     "next": "14.2.0",
+    "next-intl": "^4.8.3",
     "next-themes": "^0.4.6",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

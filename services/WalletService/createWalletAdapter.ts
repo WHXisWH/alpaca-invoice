@@ -38,15 +38,6 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         return;
       }
 
-      // 3) Selected wallet sanity check
-      console.log('🔍 [WalletAdapter] Wallet state check:', {
-        wallet: walletContext.wallet,
-        walletsCount: walletContext.wallets.length,
-        wallets: walletContext.wallets.map((w: any) => `${w.adapter?.name || 'unknown'} (${w.readyState})`),
-        connected: walletContext.connected,
-        address: walletContext.address
-      });
-
       // Do NOT auto-select a wallet; user must choose via WalletMultiButton
       if (!walletContext.wallet || !walletContext.wallet.adapter?.name) {
         throw new WalletServiceError(
@@ -95,16 +86,6 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
 
         if (timeoutId) clearTimeout(timeoutId);
 
-        console.log('✅ [WalletAdapter] walletContext.connect() resolved', {
-          connected: walletContext.connected,
-          address: walletContext.address,
-          wallet: walletContext.wallet?.adapter?.name,
-          durationMs: Math.round(Date.now() - start),
-          readyState: walletContext.wallet?.readyState,
-          network,
-          programs
-        });
-
         // If user closed the modal or refused, the connection stays false → treat as rejection
         if (!walletContext.connected || !walletContext.address) {
           throw new WalletServiceError(
@@ -114,25 +95,6 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
           );
         }
       } catch (error: any) {
-        // Detailed log for diagnosis
-        console.error('❌ [WalletAdapter] walletContext.connect() raw error:', {
-          error,
-          errorType: error?.constructor?.name,
-          message: error?.message,
-          code: error?.code,
-          errorCode: error?.error?.code,
-          name: error?.name,
-          stack: error?.stack,
-          stringified: String(error),
-          walletContext: {
-            wallet: walletContext.wallet,
-            walletName: walletContext.wallet?.adapter?.name,
-            wallets: walletContext.wallets.map(w => w.adapter.name),
-            connected: walletContext.connected,
-            address: walletContext.address
-          }
-        });
-        
         // Improved user-rejection detection
         const errorMessage = error?.message?.toLowerCase() || '';
         const errorString = String(error).toLowerCase();
@@ -208,19 +170,29 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         }
       : undefined,
     
-    // Forward requestRecords — request with plaintext (true) so records can be used as tx inputs (prover expects Leo plaintext)
+    // Forward requestRecords with resilient fallback for different wallet implementations
     requestRecords: walletContext.requestRecords
       ? async (program: string) => {
-          const records = await walletContext.requestRecords!(program, true);
-          return { records: records as any[] };
+          try {
+            const records = await walletContext.requestRecords!(program, true);
+            return { records: records as any[] };
+          } catch {
+            const records = await walletContext.requestRecords!(program);
+            return { records: (Array.isArray(records) ? records : (records as any)?.records ?? []) as any[] };
+          }
         }
       : undefined,
-    
-    // Forward requestRecordPlaintexts via requestRecords(includePlaintext=true)
+
+    // Forward requestRecordPlaintexts via requestRecords
     requestRecordPlaintexts: walletContext.requestRecords
       ? async (program: string) => {
-          const records = await walletContext.requestRecords!(program, true);
-          return { records: records as any[] };
+          try {
+            const records = await walletContext.requestRecords!(program, true);
+            return { records: records as any[] };
+          } catch {
+            const records = await walletContext.requestRecords!(program);
+            return { records: (Array.isArray(records) ? records : (records as any)?.records ?? []) as any[] };
+          }
         }
       : undefined,
     
@@ -239,13 +211,44 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
         }) => {
           const first = params.transitions?.[0];
           if (!first) throw new Error('No transition specified');
+          const safeProgram =
+            typeof first.program === 'string' ? first.program.trim() : '';
+          const safeFunction =
+            typeof first.functionName === 'string' ? first.functionName.trim() : '';
+
+          if (
+            !safeProgram ||
+            safeProgram === 'undefined' ||
+            safeProgram === 'null'
+          ) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Invalid transaction program id. Please check NEXT_PUBLIC_PROGRAM_ID.',
+              { originalError: { transition: first, network } }
+            );
+          }
+
+          if (!safeFunction) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'Invalid transaction function name.',
+              { originalError: { transition: first } }
+            );
+          }
+
+          // Wallet extensions may differ by version:
+          // some read {program,function}, others read {programId,functionName}.
+          // Send both aliases to maximize compatibility.
           const res = await walletContext.executeTransaction!({
-            program: first.program,
-            function: first.functionName,
+            program: safeProgram,
+            function: safeFunction,
+            programId: safeProgram,
+            functionName: safeFunction,
             inputs: first.inputs,
             fee: params.fee,
-            privateFee: params.feePrivate
-          });
+            privateFee: params.feePrivate,
+            feePrivate: params.feePrivate
+          } as any);
           return (res as any)?.transactionId;
         }
       : undefined,

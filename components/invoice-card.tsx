@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { CreditCard, X, Eye, Copy, Loader2, ExternalLink, ChevronDown, Package } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   Tooltip,
   TooltipContent,
@@ -29,11 +30,16 @@ interface InvoiceCardProps {
   onCancel?: (invoice: Invoice) => void;
 }
 
-const statusBarColors = {
+const statusBarColors: Record<InvoiceStatus, string> = {
   [InvoiceStatus.PENDING]: 'bg-warning-400',
   [InvoiceStatus.PAID]: 'bg-success-500',
   [InvoiceStatus.CANCELLED]: 'bg-primary-400',
   [InvoiceStatus.EXPIRED]: 'bg-error-500',
+  [InvoiceStatus.DISPUTED]: 'bg-amber-500',
+  [InvoiceStatus.RESOLVED_CANCELLED]: 'bg-red-400',
+  [InvoiceStatus.RESOLVED_PAID]: 'bg-emerald-400',
+  [InvoiceStatus.ESCROWED]: 'bg-blue-500',
+  [InvoiceStatus.REFUNDED]: 'bg-orange-400',
 };
 
 export default function InvoiceCard({
@@ -48,6 +54,7 @@ export default function InvoiceCard({
   onPay,
   onCancel,
 }: InvoiceCardProps) {
+  const t = useTranslations();
   const [expanded, setExpanded] = useState(false);
   const details = invoice.details;
   const truncateAddress = (addr: string) =>
@@ -68,7 +75,7 @@ export default function InvoiceCard({
             {/* Header: ID + Status */}
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <p className="mb-1 text-xs font-medium text-primary-500">Invoice ID</p>
+                <p className="mb-1 text-xs font-medium text-primary-500">{t('invoice.detail.invoiceId')}</p>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2">
@@ -94,17 +101,17 @@ export default function InvoiceCard({
             {(isProcessing || isSyncing) && (
               <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-50/70 px-3 py-2 text-xs text-primary-700 ring-1 ring-primary-200/40">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{isProcessing ? 'Processing transaction...' : 'Syncing chain records...'}</span>
+                <span>{isProcessing ? t('invoice.card.processingTransaction') : t('invoice.detail.syncing')}</span>
               </div>
             )}
 
             {/* Amount */}
             <div className="mb-4">
-              <p className="mb-1 text-xs font-medium text-primary-500">Amount</p>
+              <p className="mb-1 text-xs font-medium text-primary-500">{t('invoice.detail.amount')}</p>
               <p className="text-2xl font-bold text-primary-900">
                 {(Number(invoice.amount) / 1_000_000).toFixed(2)}
                 <span className="ml-1.5 text-sm font-normal text-primary-500">
-                  credits
+                  {t('invoice.card.credits')}
                 </span>
               </p>
             </div>
@@ -112,7 +119,7 @@ export default function InvoiceCard({
             {/* Details Grid */}
             <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="mb-0.5 text-xs text-primary-500">Buyer</p>
+                <p className="mb-0.5 text-xs text-primary-500">{t('invoice.detail.buyer')}</p>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <code className="block truncate rounded bg-primary-50 px-2 py-1 text-xs text-primary-700">
@@ -125,7 +132,7 @@ export default function InvoiceCard({
                 </Tooltip>
               </div>
               <div>
-                <p className="mb-0.5 text-xs text-primary-500">Due Date</p>
+                <p className="mb-0.5 text-xs text-primary-500">{t('invoice.detail.dueDate')}</p>
                 <p className="font-medium text-primary-800">
                   {format(invoice.dueDate, 'MMM dd, yyyy')}
                 </p>
@@ -139,7 +146,7 @@ export default function InvoiceCard({
                   <Package className="h-3.5 w-3.5" />
                   <span className="font-medium">{details.invoiceNumber}</span>
                   <span className="text-accent-500">·</span>
-                  <span>{details.lineItems.length} item{details.lineItems.length !== 1 ? 's' : ''}</span>
+                  <span>{details.lineItems.length} {details.lineItems.length !== 1 ? t('invoice.card.items') : t('invoice.card.item')}</span>
                   {details.currency && (
                     <>
                       <span className="text-accent-500">·</span>
@@ -155,7 +162,7 @@ export default function InvoiceCard({
                   }}
                   className="flex cursor-pointer items-center gap-1 text-xs font-medium text-accent-600 transition-colors hover:text-accent-800"
                 >
-                  {expanded ? 'Hide' : 'Details'}
+                  {expanded ? t('invoice.card.hide') : t('invoice.card.details')}
                   <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
                 </button>
               </div>
@@ -168,7 +175,7 @@ export default function InvoiceCard({
                 className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-primary-200/60 bg-white/70 px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-white"
               >
                 <Eye className="h-4 w-4" />
-                View
+                {t('invoice.card.view')}
               </Link>
               {explorerTxUrl && (
                 <a
@@ -179,7 +186,7 @@ export default function InvoiceCard({
                   title="View transaction on Aleo Explorer"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  Explorer
+                  {t('invoice.card.explorer')}
                 </a>
               )}
 
@@ -194,12 +201,12 @@ export default function InvoiceCard({
                       {isProcessing ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          Processing...
+                          {t('invoice.card.processing')}
                         </>
                       ) : (
                         <>
                           <CreditCard className="h-4 w-4" />
-                          Pay
+                          {t('invoice.card.pay')}
                         </>
                       )}
                     </button>
@@ -213,12 +220,12 @@ export default function InvoiceCard({
                       {isProcessing ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          Cancelling...
+                          {t('invoice.card.cancelling')}
                         </>
                       ) : (
                         <>
                           <X className="h-4 w-4" />
-                          Cancel
+                          {t('common.cancel')}
                         </>
                       )}
                     </button>
@@ -234,10 +241,10 @@ export default function InvoiceCard({
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-primary-100/60 bg-primary-50/50">
-                    <th className="px-4 py-2 font-medium text-primary-500">Item</th>
-                    <th className="px-3 py-2 text-right font-medium text-primary-500">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium text-primary-500">Price</th>
-                    <th className="px-4 py-2 text-right font-medium text-primary-500">Amount</th>
+                    <th className="px-4 py-2 font-medium text-primary-500">{t('invoice.card.item')}</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">{t('invoice.card.qty')}</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">{t('invoice.card.price')}</th>
+                    <th className="px-4 py-2 text-right font-medium text-primary-500">{t('invoice.detail.amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,17 +259,17 @@ export default function InvoiceCard({
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-primary-100/60 bg-primary-50/30">
-                    <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Subtotal</td>
+                    <td colSpan={3} className="px-3 py-2 text-right text-primary-500">{t('invoice.create.subtotal')}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{details.subtotal.toFixed(2)}</td>
                   </tr>
                   {details.taxAmount > 0 && (
                     <tr className="bg-primary-50/30">
-                      <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Tax</td>
+                      <td colSpan={3} className="px-3 py-2 text-right text-primary-500">{t('invoice.card.tax')}</td>
                       <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{details.taxAmount.toFixed(2)}</td>
                     </tr>
                   )}
                   <tr className="bg-primary-50/30">
-                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-primary-700">Total</td>
+                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-primary-700">{t('invoice.create.total')}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-bold text-primary-900">{details.total.toFixed(2)}</td>
                   </tr>
                 </tfoot>

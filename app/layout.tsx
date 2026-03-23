@@ -16,7 +16,7 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-primary-50 text-foreground antialiased bg-[radial-gradient(60%_40%_at_10%_0%,rgba(245,158,11,0.12),transparent),radial-gradient(50%_35%_at_90%_10%,rgba(139,92,246,0.12),transparent)]">
         <Providers>
           <ErrorHandler />
@@ -37,4 +37,3 @@ export default function RootLayout({
     </html>
   );
 }
-
