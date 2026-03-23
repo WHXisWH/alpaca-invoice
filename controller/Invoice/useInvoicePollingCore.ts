@@ -187,11 +187,63 @@ export function useInvoicePollingCore() {
     }
   }, [registry]);
 
+  /**
+   * Cross-reference PENDING invoices against the public `invoice_status` mapping.
+   *
+   * The cancel_invoice contract only produces a new Record for the seller;
+   * the buyer's private Record stays PENDING.  By checking the public mapping
+   * we can detect status changes (CANCELLED / PAID / …) that the buyer's
+   * wallet Records alone cannot reveal.
+   *
+   * @returns invoices whose on-chain mapping status differs from local PENDING
+   */
+  const reconcilePendingWithMapping = useCallback(async (
+    invoices: Invoice[]
+  ): Promise<Invoice[]> => {
+    const pending = invoices.filter(inv => inv.status === InvoiceStatus.PENDING);
+    if (pending.length === 0) return [];
+
+    const reconciled: Invoice[] = [];
+
+    const results = await Promise.allSettled(
+      pending.map(inv =>
+        registry.getInvoiceStatus(inv.id).then(status => ({ inv, status }))
+      )
+    );
+
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue;
+      const { inv, status } = result.value;
+      if (status !== null && status !== InvoiceStatus.PENDING) {
+        console.log(
+          `🔄 [PollingCore] Mapping reconciliation: ${inv.id} local=PENDING → chain=${InvoiceStatus[status]}`
+        );
+        reconciled.push({
+          ...inv,
+          status,
+          metadata: {
+            confirmationStatus: 'CONFIRMED',
+            dataSource: 'chain',
+            lastUpdated: new Date(),
+            action: inv.metadata?.action
+          }
+        });
+      }
+    }
+
+    if (reconciled.length > 0) {
+      console.log(`✅ [PollingCore] Reconciled ${reconciled.length} invoice(s) via public mapping`);
+    }
+
+    return reconciled;
+  }, [registry]);
+
   return {
     createPollingService,
     getLatestInvoice,
     buildUpdatedInvoice,
     buildRolledBackInvoice,
-    fetchChainAnchors
+    fetchChainAnchors,
+    reconcilePendingWithMapping
   };
 }

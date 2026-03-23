@@ -13,6 +13,7 @@ import { useInvoiceListInitialize } from './useInvoiceListInitialize';
 import { useTransactionController } from '@/controller/Transaction/useTransactionController';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { fetchAndMergeKvDetails } from './useInvoiceKvSync';
+import { useInvoicePollingCore } from './useInvoicePollingCore';
 import { toast } from 'sonner';
 
 /**
@@ -46,6 +47,7 @@ export function useInvoices(): IInvoices {
     markInvoiceSending  // Marks invoice as SENDING (triggers AutoPoller)
   } = useInvoiceStore();
   const { scanAllInvoiceRecords, scanInvoiceRecord } = useInvoiceChainScan();
+  const { reconcilePendingWithMapping } = useInvoicePollingCore();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // 1. Initialization (polling managed globally)
@@ -306,6 +308,21 @@ export function useInvoices(): IInvoices {
         if (!alreadySynced && inv.metadata?.confirmationStatus === 'SENDING') {
           syncedInvoices.push(inv);
         }
+      }
+
+      // Reconcile: for invoices still showing PENDING after Record scan,
+      // cross-check against the public invoice_status mapping.
+      // This catches counterparty-driven changes (e.g. seller cancelled)
+      // that the current wallet's private Records cannot reflect.
+      const reconciledInvoices = await reconcilePendingWithMapping(syncedInvoices);
+      if (reconciledInvoices.length > 0) {
+        for (let i = 0; i < syncedInvoices.length; i++) {
+          const match = reconciledInvoices.find(r => r.id === syncedInvoices[i].id);
+          if (match) {
+            syncedInvoices[i] = { ...syncedInvoices[i], ...match };
+          }
+        }
+        console.log(`🔄 [SyncAll] Reconciled ${reconciledInvoices.length} PENDING invoice(s) via public mapping`);
       }
 
       // Reset store with synced invoices (rebuilds sending index automatically)
