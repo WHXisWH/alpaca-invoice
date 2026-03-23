@@ -29,6 +29,7 @@ import type { IInvoiceRegistryService } from '@/services/InvoiceRegistryService/
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 
 // Contract tag mapping (commit_field tag values) — used by buildFieldCommitments
+// Wave 3: includes tax_tag (tag=10) and jct_registration (tag=11)
 const FIELD_TAGS = {
   amount: 1n,
   tax_amount: 2n,
@@ -38,10 +39,13 @@ const FIELD_TAGS = {
   currency: 6n,
   items_hash: 7n,
   memo_hash: 8n,
-  order_id: 9n
+  order_id: 9n,
+  tax_tag: 10n,
+  jct_registration: 11n
 } as const;
 
 // Map snake_case (from buildFieldCommitments) to camelCase (for commitments JSON)
+// Wave 3: includes tax_tag and jct_registration
 const SNAKE_TO_CAMEL: Record<string, keyof AuditPackageV2_2['commitments']> = {
   amount: 'amount',
   tax_amount: 'taxAmount',
@@ -51,7 +55,9 @@ const SNAKE_TO_CAMEL: Record<string, keyof AuditPackageV2_2['commitments']> = {
   currency: 'currency',
   items_hash: 'itemsHash',
   memo_hash: 'memoHash',
-  order_id: 'orderId'
+  order_id: 'orderId',
+  tax_tag: 'taxTag',
+  jct_registration: 'jctRegistration'
 };
 
 const CAMEL_TO_SNAKE: Record<string, string> = {
@@ -63,7 +69,9 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   currency: 'currency',
   itemsHash: 'items_hash',
   memoHash: 'memo_hash',
-  orderId: 'order_id'
+  orderId: 'order_id',
+  taxTag: 'tax_tag',
+  jctRegistration: 'jct_registration'
 };
 
 // Permissions -> which commitment fields to include
@@ -314,17 +322,19 @@ export class AuditService implements IAuditService {
 
     if (useChainAnchored && chainCommitmentRoot) {
       root = chainCommitmentRoot;
-      fieldsSnake = (chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 9)
+      // Wave 3: default 11 fields for chain-anchored mode
+      fieldsSnake = (chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 11)
         ? { ...chainFieldCommitments } as Record<string, AleoField>
         : {
             amount: '0field', tax_amount: '0field', due_date: '0field', buyer: '0field', seller: '0field',
-            currency: '0field', items_hash: '0field', memo_hash: '0field', order_id: '0field'
+            currency: '0field', items_hash: '0field', memo_hash: '0field', order_id: '0field',
+            tax_tag: '0field', jct_registration: '0field'
           } as Record<string, AleoField>;
-    } else if (chainCommitmentRoot && chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 9) {
+    } else if (chainCommitmentRoot && chainFieldCommitments && Object.keys(chainFieldCommitments).length >= 11) {
       root = chainCommitmentRoot;
       fieldsSnake = { ...chainFieldCommitments } as Record<string, AleoField>;
     } else {
-      const invExt = invoice as Invoice & { taxAmount?: bigint; currency?: AleoField; itemsHash?: AleoField; memoHash?: AleoField; orderId?: AleoField };
+      const invExt = invoice as Invoice & { taxAmount?: bigint; currency?: AleoField; itemsHash?: AleoField; memoHash?: AleoField; orderId?: AleoField; taxTag?: AleoField; jctRegistration?: AleoField };
       const { root: r, fields } = await this.buildFieldCommitments({
         amount: invoice.amount,
         taxAmount: invExt.taxAmount ?? BigInt(Math.round(Number(invoice.details?.taxAmount ?? 0))),
@@ -335,7 +345,10 @@ export class AuditService implements IAuditService {
         itemsHash: invExt.itemsHash ?? ('0field' as AleoField),
         memoHash: invExt.memoHash ?? ('0field' as AleoField),
         orderId: invExt.orderId ?? ('0field' as AleoField),
-        nonce: invoiceNonce!
+        nonce: invoiceNonce!,
+        // Wave 3: JCT fields
+        taxTag: invExt.taxTag ?? ('0field' as AleoField),
+        jctRegistration: invExt.jctRegistration ?? ('0field' as AleoField)
       });
       root = r;
       fieldsSnake = fields as Record<string, AleoField>;
@@ -351,6 +364,9 @@ export class AuditService implements IAuditService {
       items_hash: fieldsSnake.items_hash ?? ('0field' as AleoField),
       memo_hash: fieldsSnake.memo_hash ?? ('0field' as AleoField),
       order_id: fieldsSnake.order_id ?? ('0field' as AleoField),
+      // Wave 3: JCT fields
+      tax_tag: fieldsSnake.tax_tag ?? ('0field' as AleoField),
+      jct_registration: fieldsSnake.jct_registration ?? ('0field' as AleoField),
       root
     };
 
@@ -651,6 +667,9 @@ export class AuditService implements IAuditService {
     fields.items_hash = commitField(input.itemsHash, salt, `${FIELD_TAGS.items_hash}field` as AleoField);
     fields.memo_hash = commitField(input.memoHash, salt, `${FIELD_TAGS.memo_hash}field` as AleoField);
     fields.order_id = commitField(input.orderId, salt, `${FIELD_TAGS.order_id}field` as AleoField);
+    // Wave 3: JCT fields
+    fields.tax_tag = commitField(input.taxTag, salt, `${FIELD_TAGS.tax_tag}field` as AleoField);
+    fields.jct_registration = commitField(input.jctRegistration, salt, `${FIELD_TAGS.jct_registration}field` as AleoField);
 
     const root = computeCommitmentRoot(fields);
     return { root, fields };

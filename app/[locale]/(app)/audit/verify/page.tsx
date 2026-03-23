@@ -52,6 +52,7 @@ export default function AuditVerifyPage() {
         auditKey={controller.auditKey}
         setAuditKey={controller.setAuditKey}
         result={controller.result}
+        v3Result={controller.verificationResult}
         previewResult={controller.previewResult}
         loading={controller.loading}
         error={controller.error}

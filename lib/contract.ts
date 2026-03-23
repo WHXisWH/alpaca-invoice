@@ -40,11 +40,21 @@ export const ZERO_ADDRESS = 'aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
 
 /** Wave 3 mapping names for zk_invoice_v3_1.aleo */
 export const MAPPINGS = {
+  // Core invoice mappings
   invoice_status: 'invoice_status',
   invoice_registry: 'invoice_registry',
+  invoice_count: 'invoice_count',
+  // JCT compliance mappings
   invoice_tax_tag: 'invoice_tax_tag',
   invoice_jct_reg: 'invoice_jct_reg',
-  payment_commitments: 'payment_commitments'
+  // Payment mappings
+  payment_commitments: 'payment_commitments',
+  // Audit mappings (required for Phase 3-5 verification)
+  invoice_commitment: 'invoice_commitment',
+  invoice_field_commitments: 'invoice_field_commitments',
+  invoice_rules_result: 'invoice_rules_result',
+  audit_authorization: 'audit_authorization',
+  audit_counter: 'audit_counter'
 } as const;
 
 /** Wave 4 mapping names for zk_invoice_v4.aleo (superset of Wave 3) */

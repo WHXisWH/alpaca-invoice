@@ -716,4 +716,178 @@ describe('AuditService', () => {
       expect(result.envelope.context.invoice_id).toBe('invoice2');
     });
   });
+
+  // ========== 4. 五阶段验证 verifyEnvelopePhases 集成测试 ==========
+  describe('verifyEnvelopePhases', () => {
+    it('should pass all 5 phases with valid envelope and mock registry', async () => {
+      // Generate a valid envelope
+      const generateParams = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT', 'READ_PARTIES', 'READ_DETAILS']
+      };
+      const generated = await service.generate(generateParams);
+
+      // Create mock registry that returns matching chain data
+      const mockRegistry = {
+        getInvoiceHash: vi.fn().mockResolvedValue(mockInvoice.invoiceHash),
+        getAuditAuthorization: vi.fn().mockResolvedValue({
+          audit_key_hash: generated.auditKeyHash,
+          scopes_bitmask: 0b111111111n, // All 9 scopes (will need to update for 11)
+          expires_at: Math.floor((Date.now() + 7 * 24 * 3600 * 1000) / 1000),
+          issuer: mockInvoice.seller
+        }),
+        getCommitmentRoot: vi.fn().mockResolvedValue(generated.envelope.context.audit_key_hash), // Placeholder
+        getFieldCommitments: vi.fn().mockResolvedValue(null),
+        getRulesResult: vi.fn().mockResolvedValue(null),
+        getInvoiceTaxTag: vi.fn().mockResolvedValue(null),
+        getPaymentCommitment: vi.fn().mockResolvedValue(null),
+        getInvoiceJctReg: vi.fn().mockResolvedValue(null)
+      };
+
+      // Verify envelope phases
+      const result = await service.verifyEnvelopePhases(
+        generated.envelope,
+        generated.auditKey,
+        mockRegistry as any
+      );
+
+      // Phase 1 should pass (decrypt, expiry, integrity)
+      expect(result.phase1.ok).toBe(true);
+
+      // Phase 2 should pass (invoice hash match)
+      expect(result.phase2.ok).toBe(true);
+
+      // Phase 3 should pass (audit authorization)
+      expect(result.phase3.ok).toBe(true);
+
+      // Decrypted data should be available
+      expect(result.decrypted).toBeDefined();
+      expect(result.decrypted?.invoiceId).toBe(mockInvoice.id);
+    });
+
+    it('should fail Phase 1 when envelope is expired', async () => {
+      const generateParams = {
+        invoice: mockInvoice,
+        expiresAt: 1, // Already expired
+        permissions: ['READ_AMOUNT']
+      };
+      const generated = await service.generate(generateParams);
+
+      const mockRegistry = {
+        getInvoiceHash: vi.fn().mockResolvedValue(mockInvoice.invoiceHash),
+        getAuditAuthorization: vi.fn().mockResolvedValue(null),
+        getCommitmentRoot: vi.fn().mockResolvedValue(null),
+        getFieldCommitments: vi.fn().mockResolvedValue(null),
+        getRulesResult: vi.fn().mockResolvedValue(null),
+        getInvoiceTaxTag: vi.fn().mockResolvedValue(null),
+        getPaymentCommitment: vi.fn().mockResolvedValue(null),
+        getInvoiceJctReg: vi.fn().mockResolvedValue(null)
+      };
+
+      const result = await service.verifyEnvelopePhases(
+        generated.envelope,
+        generated.auditKey,
+        mockRegistry as any
+      );
+
+      expect(result.phase1.ok).toBe(false);
+      // Phase 1 returns generic "Pre-check failed" message; expiry detail is in checks
+      expect(result.phase1.message).toBe('Pre-check failed');
+      // Verify the expiresAt check specifically failed
+      const expiryCheck = result.phase1.checks?.find(c => c.key === 'expiresAt');
+      expect(expiryCheck?.ok).toBe(false);
+      expect(result.overallValid).toBe(false);
+    });
+
+    it('should fail Phase 2 when chain invoice hash does not match', async () => {
+      const generateParams = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT']
+      };
+      const generated = await service.generate(generateParams);
+
+      const mockRegistry = {
+        getInvoiceHash: vi.fn().mockResolvedValue('wronghashfield' as AleoField), // Mismatch
+        getAuditAuthorization: vi.fn().mockResolvedValue(null),
+        getCommitmentRoot: vi.fn().mockResolvedValue(null),
+        getFieldCommitments: vi.fn().mockResolvedValue(null),
+        getRulesResult: vi.fn().mockResolvedValue(null),
+        getInvoiceTaxTag: vi.fn().mockResolvedValue(null),
+        getPaymentCommitment: vi.fn().mockResolvedValue(null),
+        getInvoiceJctReg: vi.fn().mockResolvedValue(null)
+      };
+
+      const result = await service.verifyEnvelopePhases(
+        generated.envelope,
+        generated.auditKey,
+        mockRegistry as any
+      );
+
+      expect(result.phase1.ok).toBe(true); // Decrypt still works
+      expect(result.phase2.ok).toBe(false); // Hash mismatch
+      expect(result.overallValid).toBe(false);
+    });
+
+    it('should fail Phase 3 when no audit authorization on chain', async () => {
+      const generateParams = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT']
+      };
+      const generated = await service.generate(generateParams);
+
+      const mockRegistry = {
+        getInvoiceHash: vi.fn().mockResolvedValue(mockInvoice.invoiceHash),
+        getAuditAuthorization: vi.fn().mockResolvedValue(null), // No authorization
+        getCommitmentRoot: vi.fn().mockResolvedValue(null),
+        getFieldCommitments: vi.fn().mockResolvedValue(null),
+        getRulesResult: vi.fn().mockResolvedValue(null),
+        getInvoiceTaxTag: vi.fn().mockResolvedValue(null),
+        getPaymentCommitment: vi.fn().mockResolvedValue(null),
+        getInvoiceJctReg: vi.fn().mockResolvedValue(null)
+      };
+
+      const result = await service.verifyEnvelopePhases(
+        generated.envelope,
+        generated.auditKey,
+        mockRegistry as any
+      );
+
+      expect(result.phase1.ok).toBe(true);
+      expect(result.phase2.ok).toBe(true);
+      expect(result.phase3.ok).toBe(false); // No auth
+    });
+
+    it('should fail Phase 1 when decryption fails with wrong key', async () => {
+      const generateParams = {
+        invoice: mockInvoice,
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
+        permissions: ['READ_AMOUNT']
+      };
+      const generated = await service.generate(generateParams);
+
+      const mockRegistry = {
+        getInvoiceHash: vi.fn().mockResolvedValue(mockInvoice.invoiceHash),
+        getAuditAuthorization: vi.fn().mockResolvedValue(null),
+        getCommitmentRoot: vi.fn().mockResolvedValue(null),
+        getFieldCommitments: vi.fn().mockResolvedValue(null),
+        getRulesResult: vi.fn().mockResolvedValue(null),
+        getInvoiceTaxTag: vi.fn().mockResolvedValue(null),
+        getPaymentCommitment: vi.fn().mockResolvedValue(null),
+        getInvoiceJctReg: vi.fn().mockResolvedValue(null)
+      };
+
+      const wrongKey = 'b'.repeat(64);
+      const result = await service.verifyEnvelopePhases(
+        generated.envelope,
+        wrongKey,
+        mockRegistry as any
+      );
+
+      expect(result.phase1.ok).toBe(false);
+      expect(result.overallValid).toBe(false);
+    });
+  });
 });

@@ -13,6 +13,7 @@ const FIELD_BITS = 256;
 
 /**
  * Contract-aligned field order for commitment root. Matches main.leo FieldCommitments struct.
+ * Wave 3: includes tax_tag (tag=10) and jct_registration (tag=11).
  */
 export const COMMITMENT_FIELD_ORDER = [
   'amount',
@@ -23,7 +24,9 @@ export const COMMITMENT_FIELD_ORDER = [
   'currency',
   'items_hash',
   'memo_hash',
-  'order_id'
+  'order_id',
+  'tax_tag',
+  'jct_registration'
 ] as const;
 
 export type CommitmentFieldKey = (typeof COMMITMENT_FIELD_ORDER)[number];

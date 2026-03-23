@@ -53,7 +53,10 @@ describe('CryptoService audit package helpers', () => {
       itemsHash: '11111field',
       memoHash: '0field',
       orderId: '0field',
-      nonce: '99999field'
+      nonce: '99999field',
+      // Wave 3: JCT compliance fields
+      taxTag: '0field',
+      jctRegistration: '0field'
     });
 
     const rules = await cryptoService.evaluateAuditRules({

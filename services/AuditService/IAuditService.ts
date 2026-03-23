@@ -38,6 +38,7 @@ export interface AuditPackageV2 {
 
 /**
  * V2.2: nonce + commitments (for auditor to recompute and verify against chain)
+ * Wave 3: includes taxTag and jctRegistration for JCT compliance.
  */
 export interface AuditPackageV2_2 {
   version: '2.2';
@@ -59,6 +60,10 @@ export interface AuditPackageV2_2 {
     itemsHash?: AleoField;
     memoHash?: AleoField;
     orderId?: AleoField;
+    /** Wave 3: BHP256 hash of TaxGroups struct */
+    taxTag?: AleoField;
+    /** Wave 3: BHP256 hash of T-number (13-digit JCT registration) */
+    jctRegistration?: AleoField;
   };
   cipherHash: string;
   signature: string;
@@ -146,6 +151,7 @@ export interface AuditVerifyAdapter {
 
 /**
  * Input for building field commitments.
+ * Wave 3: includes taxTag and jctRegistration for JCT compliance.
  */
 export interface BuildFieldCommitmentsInput {
   amount: bigint;
@@ -158,6 +164,10 @@ export interface BuildFieldCommitmentsInput {
   memoHash: AleoField;
   orderId: AleoField;
   nonce: AleoField;
+  /** Wave 3: BHP256 hash of TaxGroups struct */
+  taxTag: AleoField;
+  /** Wave 3: BHP256 hash of T-number (13-digit JCT registration) */
+  jctRegistration: AleoField;
 }
 
 /**

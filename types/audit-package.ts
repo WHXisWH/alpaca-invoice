@@ -51,7 +51,9 @@ export interface AuditPackageV22 {
 
 export type AuditPackage = AuditPackageV22;
 
-/** All 9 commitment field names (snake_case, matches contract). */
+/** All 11 commitment field names (snake_case, matches contract FieldCommitments struct).
+ * Wave 3: includes tax_tag (tag=10) and jct_registration (tag=11).
+ */
 export const COMMITMENT_FIELD_KEYS = [
   'amount',
   'tax_amount',
@@ -61,7 +63,9 @@ export const COMMITMENT_FIELD_KEYS = [
   'currency',
   'items_hash',
   'memo_hash',
-  'order_id'
+  'order_id',
+  'tax_tag',
+  'jct_registration'
 ] as const;
 
 /**
@@ -99,7 +103,9 @@ export interface DecryptedAuditPayload {
     [key: string]: unknown;
     hidden_masks: string[];
   };
-  /** Field order matches contract FieldCommitments and commitmentUtils.COMMITMENT_FIELD_ORDER; used for comparison with chain commitment_root / field_commitments. */
+  /** Field order matches contract FieldCommitments and commitmentUtils.COMMITMENT_FIELD_ORDER; used for comparison with chain commitment_root / field_commitments.
+   * Wave 3: includes tax_tag and jct_registration.
+   */
   commitments: {
     amount: AleoField;
     tax_amount: AleoField;
@@ -110,6 +116,8 @@ export interface DecryptedAuditPayload {
     items_hash: AleoField;
     memo_hash: AleoField;
     order_id: AleoField;
+    tax_tag: AleoField;
+    jct_registration: AleoField;
     root: AleoField;
   };
   integrity: {
