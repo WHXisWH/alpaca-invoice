@@ -465,25 +465,62 @@ export function useTransactionController(): ITxController {
               'USDCx payment requires NEXT_PUBLIC_USDCX_PROGRAM_ID to be set.'
             );
           }
+
+          // --- Fetch & validate USDCx Token record ---
           updateProgress(32, 'Fetching USDCx token record...');
           const { records: tokenRecords } = await walletService.requestRecords(USDCX_PROGRAM_ID);
-          const tokenRecord = tokenRecords?.[0];
-          if (!tokenRecord) {
+
+          const unspentTokens = (tokenRecords ?? []).filter((r: any) => {
+            if (r.spent === true || r.spent === 'true') return false;
+            return true;
+          });
+
+          if (unspentTokens.length === 0) {
             throw new WalletServiceError(
               WalletError.DECRYPTION_FAILED,
-              'No USDCx Token record found in wallet.'
+              'No USDCx Token record found in wallet. Please ensure you have USDCx tokens.'
             );
           }
 
+          // Extract token amount (u128) and pick the first record that covers payAmount
+          const parseTokenAmount = (record: any): bigint => {
+            const plain = record?.plaintext ?? record?.recordPlaintext ?? record?.record_plaintext ?? '';
+            if (typeof plain === 'string') {
+              const m = plain.match(/amount:\s*(\d+)u128/);
+              if (m) return BigInt(m[1]);
+            }
+            const raw = record?.data?.amount ?? record?.amount;
+            const val = typeof raw === 'object' && raw != null && 'value' in raw ? raw.value : raw;
+            if (val != null) {
+              const s = String(val).replace(/u128\.private|u128/g, '').trim();
+              if (s && /^\d+$/.test(s)) return BigInt(s);
+            }
+            return 0n;
+          };
+
+          const suitableToken = unspentTokens.find((r: any) => parseTokenAmount(r) >= payAmount);
+          if (!suitableToken) {
+            const maxAvailable = unspentTokens.reduce((max: bigint, r: any) => {
+              const amt = parseTokenAmount(r);
+              return amt > max ? amt : max;
+            }, 0n);
+            throw new WalletServiceError(
+              WalletError.INSUFFICIENT_FEE,
+              `Insufficient USDCx balance. Required: ${payAmount.toString()}, largest record: ${maxAvailable.toString()}.`
+            );
+          }
+
+          // --- Freeze-list compliance proofs ---
           updateProgress(36, 'Fetching freeze-list proofs...');
           const merkleProofs = await freezeListService.getMerkleProofs(
             publicKey,
             invoice.seller
           );
 
-          const tokenRecordStr = toRecordInputString(tokenRecord);
+          const tokenRecordStr = toRecordInputString(suitableToken);
           const usdcxInvoiceRecordStr = toRecordInputString(invoiceRecord);
 
+          // --- Payment nonce & paid_at ---
           const usdcxNowSec = Math.floor(Date.now() / 1000);
           const usdcxDueDateSec = Math.floor(invoice.dueDate.getTime() / 1000);
           const usdcxPaidAtSec = Math.min(usdcxNowSec, usdcxDueDateSec);
@@ -491,54 +528,69 @@ export function useTransactionController(): ITxController {
           const usdcxPaymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
           const proofsStr = serializeMerkleProofsForContract(merkleProofs);
 
+          // --- Submit transaction ---
           updateProgress(50, 'Submitting pay_invoice_usdcx...');
           const usdcxRequestId = await walletService.requestTransaction({
             functionName: 'pay_invoice_usdcx',
             inputs: [tokenRecordStr, usdcxInvoiceRecordStr, usdcxPaymentNonce, usdcxPaidAt, proofsStr],
             publicKey,
             programId: PROGRAM_ID,
-            fee: 500_000,
+            fee: 1_000_000,
             chainId,
           });
 
-          updateProgress(70, 'Transaction submitted, awaiting confirmation...');
+          if (!usdcxRequestId) {
+            throw new WalletServiceError(
+              WalletError.UNAUTHORIZED,
+              'USDCx payment transaction failed - no response from wallet'
+            );
+          }
 
-          const protocolService = new AleoProtocolService();
-          const expectedOutputs = protocolService.getExpectedOutputCountForFunction('pay_invoice_usdcx');
+          // --- Local receipt & settlement anchor (async, mirrors Credits path) ---
+          try {
+            void receiptStore.addReceipt({
+              paymentId: usdcxRequestId as AleoField,
+              invoiceId: invoice.id,
+              payer: invoice.buyer,
+              payee: invoice.seller,
+              amount: payAmount,
+              paidAt: new Date(usdcxPaidAtSec * 1000),
+              txId: usdcxRequestId as AleoTransactionId
+            });
+            protocolService.computeSettlementAnchorOffline({
+              invoiceId: invoice.id,
+              amount: payAmount,
+              nonce: usdcxPaymentNonce
+            }).then((anchor) => {
+              void receiptStore.updateReceipt(invoice.id, { settlementAnchor: anchor });
+            }).catch((err) => {
+              console.warn('⚠️ [executePay/usdcx] Failed to compute settlement_anchor locally:', err);
+            });
+          } catch (err) {
+            console.warn('⚠️ [executePay/usdcx] Failed to add receipt locally:', err);
+          }
 
-          const usdcxTxResult = await protocolService.verifyRecordOnChain(
-            usdcxRequestId as AleoTransactionId,
-            { programId: PROGRAM_ID, functionName: 'pay_invoice_usdcx', expectedOutputsCount: expectedOutputs }
-          );
+          // --- Update invoice metadata to SENDING (let AutoPoller confirm) ---
+          if (invoiceStore?.updateInvoice && masterKey) {
+            try {
+              await invoiceStore.updateInvoice(invoice.id, {
+                metadata: {
+                  confirmationStatus: 'SENDING',
+                  dataSource: 'local',
+                  action: 'pay'
+                }
+              } as any, {
+                masterKey: masterKey,
+                persistFull: true
+              });
+              console.log('✅ [executePay/usdcx] Updated invoice metadata to SENDING:', invoice.id);
+            } catch (error) {
+              console.error('❌ [executePay/usdcx] Failed to update invoice metadata:', error);
+            }
+          }
 
-          updateProgress(85, 'Payment confirmed. Updating local records...');
-
-          const usdcxInvoice: Invoice = {
-            ...invoice,
-            status: InvoiceStatus.PAID,
-            metadata: {
-              confirmationStatus: 'SENDING' as const,
-              lastUpdated: new Date(),
-              dataSource: 'local' as const,
-              action: 'pay' as const,
-            },
-          };
-          invoiceStore.updateInvoice(invoice.invoiceHash, usdcxInvoice, masterKey ? { masterKey, persistFull: true } : undefined);
-          invoiceStore.markInvoiceSending(invoice.invoiceHash);
-
-          const usdcxReceipt = {
-            paymentId: `${usdcxRequestId}field` as AleoField,
-            invoiceId: invoice.id,
-            payer: publicKey as AleoAddress,
-            payee: invoice.seller,
-            amount: payAmount,
-            paidAt: new Date(usdcxPaidAtSec * 1000),
-            txId: usdcxRequestId as AleoTransactionId,
-            settlementAnchor: usdcxPaymentNonce as AleoField,
-          };
-          receiptStore.addReceipt(usdcxReceipt);
-
-          updateProgress(100, 'USDCx payment complete!');
+          updateProgress(90, 'USDCx payment transaction submitted successfully');
+          updateProgress(100, '✓ USDCx payment completed!');
           completeTx();
           return usdcxRequestId as AleoTransactionId;
         }
