@@ -58,7 +58,7 @@ describe('InvoiceStatusValidatorAdapter', () => {
       expect(mockValidator.validateRecord).not.toHaveBeenCalled();
     });
 
-    it('应该优先使用 paymentRecord 进行验证', () => {
+    it('应该优先使用 invoiceRecord 进行验证（invoice 包含 status/amount 权威数据）', () => {
       // Arrange
       const paymentRecord: AleoPaymentRecord = {
         owner: 'aleo1test',
@@ -102,9 +102,9 @@ describe('InvoiceStatusValidatorAdapter', () => {
       // Act
       const result = adapter(scanResult);
 
-      // Assert
+      // Assert — adapter prioritizes invoiceRecord (authoritative source for status)
       expect(mockValidator.validateRecord).toHaveBeenCalledWith(
-        paymentRecord,
+        invoiceRecord,
         'create',
         InvoiceStatus.PENDING
       );

@@ -2,6 +2,10 @@ import { ServiceError } from '@/lib/service-errors';
 import { WalletError } from '@/services/WalletService/IWalletService';
 import { ProtocolError } from '@/services/AleoProtocolService/IAleoProtocolService';
 import { AuditError } from '@/services/AuditService/IAuditService';
+import { FreezeListError } from '@/services/FreezeListService/IFreezeListService';
+import { DisputeError } from '@/services/DisputeService/IDisputeService';
+import { EscrowError } from '@/services/EscrowService/IEscrowService';
+import { CreditError } from '@/services/CreditService/ICreditService';
 
 /**
  * User-friendly error types (for the UI layer)
@@ -25,6 +29,25 @@ export enum ErrorType {
   INVOICE_ALREADY_PAID = 'INVOICE_ALREADY_PAID',
   INVOICE_CANCELLED = 'INVOICE_CANCELLED',
   INVALID_INVOICE_DATA = 'INVALID_INVOICE_DATA',
+
+  // Dispute related
+  DISPUTE_FAILED = 'DISPUTE_FAILED',
+  DISPUTE_NOT_FOUND = 'DISPUTE_NOT_FOUND',
+  DISPUTE_ALREADY_RESOLVED = 'DISPUTE_ALREADY_RESOLVED',
+
+  // Escrow related
+  ESCROW_FAILED = 'ESCROW_FAILED',
+  ESCROW_NOT_FOUND = 'ESCROW_NOT_FOUND',
+  DELIVERY_NOT_EXPIRED = 'DELIVERY_NOT_EXPIRED',
+
+  // Credit Proof related
+  CREDIT_PROOF_FAILED = 'CREDIT_PROOF_FAILED',
+  CREDIT_CLAIM_NOT_MET = 'CREDIT_CLAIM_NOT_MET',
+  CREDIT_PROOF_EXPIRED = 'CREDIT_PROOF_EXPIRED',
+
+  // Freeze list related
+  ADDRESS_FROZEN = 'ADDRESS_FROZEN',
+  FREEZE_LIST_ERROR = 'FREEZE_LIST_ERROR',
 
   // System errors
   NETWORK_ERROR = 'NETWORK_ERROR',
@@ -116,6 +139,50 @@ export const ERROR_MESSAGES: Record<ErrorType, { title: string; description: str
     title: 'Decryption Failed',
     description: 'Unable to decrypt data. Please check your private key'
   },
+  [ErrorType.DISPUTE_FAILED]: {
+    title: 'Dispute Failed',
+    description: 'Failed to process the dispute. Please try again'
+  },
+  [ErrorType.DISPUTE_NOT_FOUND]: {
+    title: 'Dispute Not Found',
+    description: 'The specified dispute was not found'
+  },
+  [ErrorType.DISPUTE_ALREADY_RESOLVED]: {
+    title: 'Dispute Already Resolved',
+    description: 'This dispute has already been resolved'
+  },
+  [ErrorType.ESCROW_FAILED]: {
+    title: 'Escrow Failed',
+    description: 'Failed to process the escrow operation. Please try again'
+  },
+  [ErrorType.ESCROW_NOT_FOUND]: {
+    title: 'Escrow Not Found',
+    description: 'The specified escrow was not found'
+  },
+  [ErrorType.DELIVERY_NOT_EXPIRED]: {
+    title: 'Delivery Not Expired',
+    description: 'The delivery deadline has not yet passed. Cannot claim refund'
+  },
+  [ErrorType.CREDIT_PROOF_FAILED]: {
+    title: 'Credit Proof Failed',
+    description: 'Failed to generate or verify the credit proof'
+  },
+  [ErrorType.CREDIT_CLAIM_NOT_MET]: {
+    title: 'Credit Claim Not Met',
+    description: 'Your transaction history does not meet the claimed threshold'
+  },
+  [ErrorType.CREDIT_PROOF_EXPIRED]: {
+    title: 'Credit Proof Expired',
+    description: 'This credit proof has expired and is no longer valid'
+  },
+  [ErrorType.ADDRESS_FROZEN]: {
+    title: 'Address Frozen',
+    description: 'One of the addresses involved is on the freeze list'
+  },
+  [ErrorType.FREEZE_LIST_ERROR]: {
+    title: 'Freeze List Error',
+    description: 'Failed to fetch or verify freeze list proofs'
+  },
   [ErrorType.UNKNOWN_ERROR]: {
     title: 'Unknown Error',
     description: 'An unexpected error occurred. Please try again later'
@@ -151,6 +218,30 @@ const SERVICE_ERROR_MAPPINGS: Record<string, Record<string, ErrorType>> = {
     [AuditError.GENERATION_FAILED]: ErrorType.UNKNOWN_ERROR,
     [AuditError.VALIDATION_FAILED]: ErrorType.INVALID_INVOICE_DATA,
     [AuditError.SIGN_NOT_SUPPORTED]: ErrorType.WALLET_CONNECTION_FAILED
+  },
+  FreezeListService: {
+    [FreezeListError.TREE_FETCH_FAILED]: ErrorType.FREEZE_LIST_ERROR,
+    [FreezeListError.PROOF_BUILD_FAILED]: ErrorType.FREEZE_LIST_ERROR,
+    [FreezeListError.ADDRESS_FROZEN]: ErrorType.ADDRESS_FROZEN
+  },
+  DisputeService: {
+    [DisputeError.INVOICE_NOT_PENDING]: ErrorType.INVALID_INVOICE_DATA,
+    [DisputeError.NOT_BUYER]: ErrorType.WALLET_CONNECTION_FAILED,
+    [DisputeError.DISPUTE_EXPIRED]: ErrorType.DISPUTE_ALREADY_RESOLVED,
+    [DisputeError.NOT_ARBITER]: ErrorType.WALLET_CONNECTION_FAILED,
+    [DisputeError.ALREADY_RESOLVED]: ErrorType.DISPUTE_ALREADY_RESOLVED
+  },
+  EscrowService: {
+    [EscrowError.NOT_ESCROWED]: ErrorType.ESCROW_NOT_FOUND,
+    [EscrowError.DELIVERY_NOT_EXPIRED]: ErrorType.DELIVERY_NOT_EXPIRED,
+    [EscrowError.ALREADY_RELEASED]: ErrorType.ESCROW_FAILED,
+    [EscrowError.INSUFFICIENT_TOKEN]: ErrorType.INSUFFICIENT_BALANCE
+  },
+  CreditService: {
+    [CreditError.INSUFFICIENT_DATA]: ErrorType.CREDIT_PROOF_FAILED,
+    [CreditError.CLAIM_NOT_MET]: ErrorType.CREDIT_CLAIM_NOT_MET,
+    [CreditError.PROOF_EXPIRED]: ErrorType.CREDIT_PROOF_EXPIRED,
+    [CreditError.PROOF_NOT_FOUND]: ErrorType.CREDIT_PROOF_FAILED
   }
 };
 
