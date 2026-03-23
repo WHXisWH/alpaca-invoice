@@ -167,7 +167,7 @@ export function buildInvoiceFromRecord(
     inv.totalAmount = BigInt(cleanAleoNumber(record.total_amount)) as any;
   }
   if (record.currency_flag != null) {
-    inv.currencyFlag = record.currency_flag as CurrencyFlag;
+    inv.currencyFlag = Number(cleanAleoNumber(record.currency_flag)) as CurrencyFlag;
   }
   return inv;
 }
@@ -255,7 +255,7 @@ export function updateInvoiceFromInvoiceRecord(
     partial.totalAmount = BigInt(cleanAleoNumber(invoiceRecord.total_amount)) as any;
   }
   if (invoiceRecord.currency_flag != null) {
-    partial.currencyFlag = invoiceRecord.currency_flag as CurrencyFlag;
+    partial.currencyFlag = Number(cleanAleoNumber(invoiceRecord.currency_flag)) as CurrencyFlag;
   }
   return partial;
 }
