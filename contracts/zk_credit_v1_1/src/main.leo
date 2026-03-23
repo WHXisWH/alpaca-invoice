@@ -4,7 +4,7 @@
 // without revealing sensitive transaction data. Third parties can verify claims
 // on-chain using the proof_id.
 
-program zk_credit_v1.aleo {
+program zk_credit_v1_1.aleo {
 
     @noupgrade
     async constructor() {}

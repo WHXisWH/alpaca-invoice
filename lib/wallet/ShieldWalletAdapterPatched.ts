@@ -65,6 +65,35 @@ export class ShieldWalletAdapterPatched extends ShieldWalletAdapter {
 
     throw lastError;
   }
+
+  /**
+   * Shield extension may occasionally throw "Receiving end does not exist"
+   * during disconnect (e.g. extension reloaded / background channel lost).
+   * Treat it as already disconnected to avoid crashing the app UI.
+   */
+  async disconnect() {
+    try {
+      await super.disconnect();
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : String(error ?? '');
+      const lower = msg.toLowerCase();
+      const isMissingReceiver =
+        lower.includes('receiving end does not exist') ||
+        (lower.includes('could not establish connection') &&
+          lower.includes('receiving end'));
+
+      if (isMissingReceiver) {
+        console.warn(
+          '[ShieldAdapterPatched] disconnect ignored (extension channel missing):',
+          msg
+        );
+        return;
+      }
+
+      throw error;
+    }
+  }
 }
 
 export default ShieldWalletAdapterPatched;

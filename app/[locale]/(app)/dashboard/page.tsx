@@ -5,8 +5,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import InvoiceCard from '@/components/invoice-card';
+import CreditDashboardCard from '@/components/credit-dashboard-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
+import { useCreditProof } from '@/controller/Credit/useCreditProof';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { InvoiceStatus } from '@/lib/types';
 import type { AuditKey } from '@/lib/types';
@@ -56,6 +58,8 @@ export default function DashboardPage() {
   useEffect(() => {
     listAuditKeys().then(setAuditKeys).catch(() => setAuditKeys([]));
   }, []);
+
+  const creditProof = useCreditProof();
   
   // Subscribe to sendingInvoiceHashes in the store (real-time updates)
   const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
@@ -327,6 +331,15 @@ export default function DashboardPage() {
         {auditKeys.length > 10 && (
           <p className="mt-2 text-xs text-slate-500">Showing 10 of {auditKeys.length}</p>
         )}
+      </MotionItem>
+
+      {/* Credit Score Card */}
+      <MotionItem>
+        <CreditDashboardCard
+          metrics={creditProof.metrics}
+          onCollect={creditProof.collectLocalMetrics}
+          isLoading={creditProof.isProcessing}
+        />
       </MotionItem>
 
       {/* Quick Actions */}

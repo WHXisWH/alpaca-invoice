@@ -19,7 +19,7 @@ export type CreditServiceError = InstanceType<typeof CreditServiceError>;
 
 /**
  * Service for computing local credit metrics and querying
- * on-chain credit proof data from zk_credit_v1.aleo.
+ * on-chain credit proof data from zk_credit_v1_1.aleo.
  */
 export interface ICreditService {
   /**

@@ -6,3 +6,5 @@ coverage
 .DS_Store
 .env.env.local
 .env
+# 合约部署私钥文件（永远不要提交）
+contracts/**/.env

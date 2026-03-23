@@ -7,9 +7,6 @@ import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoField } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
-import { useCreditProof } from '@/controller/Credit/useCreditProof';
-import CreditProofGenerator from '@/components/credit-proof-generator';
-import CreditProofVerifier from '@/components/credit-proof-verifier';
 import { useTranslations } from 'next-intl';
 
 const SCOPE_KEYS = [
@@ -32,8 +29,6 @@ export default function SettingsPage() {
   const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
   const cryptoService = useMemo(() => new CryptoService(), []);
   const { handleError } = useErrorHandler();
-  const creditProof = useCreditProof();
-  const [activeTab, setActiveTab] = useState<'audit' | 'credit'>('audit');
 
   const [invoiceId, setInvoiceId] = useState('');
   const [auditKey, setAuditKey] = useState('');
@@ -138,52 +133,6 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold text-slate-900">{t('settings.title')}</h1>
 
-      <div className="flex gap-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setActiveTab('audit')}
-          className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'audit'
-              ? 'border-b-2 border-blue-600 text-blue-700'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          {t('settings.auditAuth')}
-        </button>
-        <button
-          onClick={() => setActiveTab('credit')}
-          className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'credit'
-              ? 'border-b-2 border-blue-600 text-blue-700'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          {t('settings.creditProof')}
-        </button>
-      </div>
-
-      {activeTab === 'credit' && (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4">{t('credit.generate')}</h2>
-            <CreditProofGenerator
-              metrics={creditProof.metrics}
-              onCollectMetrics={creditProof.collectLocalMetrics}
-              onGenerateProof={creditProof.generateProof}
-              isProcessing={creditProof.isProcessing}
-            />
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4">{t('credit.verify')}</h2>
-            <CreditProofVerifier
-              onVerify={creditProof.verifyProof}
-              isProcessing={creditProof.isProcessing}
-            />
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'audit' && (
-      <>
       <form onSubmit={submit} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">{t('invoice.detail.invoiceId')}</label>
@@ -276,8 +225,6 @@ export default function SettingsPage() {
           {currentAuth ? JSON.stringify(currentAuth, null, 2) : 'N/A'}
         </pre>
       </div>
-      </>
-      )}
     </div>
   );
 }

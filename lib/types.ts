@@ -374,6 +374,7 @@ export interface CreditClaim {
 
 export interface CreditProofToken {
   proofId: AleoField;
+  transactionId: string;
   claimHash: AleoField;
   dataCommitment: AleoField;
   isValid: boolean;
@@ -395,4 +396,20 @@ export interface CreditVerifyResult {
   claim: CreditClaim | null;
   proofId: AleoField | null;
   error?: string;
+}
+
+export type CreditGradeLetter = 'A+' | 'A' | 'B' | 'C' | 'D';
+
+export interface CreditDimensionScores {
+  onTimeRate: number;
+  volume: number;
+  amount: number;
+  accountAge: number;
+  disputeResistance: number;
+}
+
+export interface CreditGrade {
+  letter: CreditGradeLetter;
+  score: number;
+  dimensions: CreditDimensionScores;
 }

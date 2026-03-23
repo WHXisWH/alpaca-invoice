@@ -29,7 +29,7 @@ export const PROGRAM_ID_V4 = resolveProgramId(
 /** ZK Credit Proof standalone contract */
 export const CREDIT_PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_CREDIT_PROGRAM_ID,
-  'zk_credit_v1.aleo'
+  'zk_credit_v1_1.aleo'
 );
 
 /** Aleo field literal for zero (non-JCT / unused) */
