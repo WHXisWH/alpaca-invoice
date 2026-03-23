@@ -2,10 +2,12 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import AuditCenterV3 from '@/components/audit-center-v3';
 import { ShieldCheck, FileSearch } from 'lucide-react';
 
 export default function AuditPage() {
+  const t = useTranslations();
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-6">
@@ -15,10 +17,9 @@ export default function AuditPage() {
               <ShieldCheck className="h-5 w-5 text-info-600" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-primary-900">Audit Center</h1>
+              <h1 className="text-xl font-semibold text-primary-900">{t('audit.center.title')}</h1>
               <p className="text-sm text-primary-500">
-                Select an invoice from your local list (including chain-synced invoices without nonce), then
-                generate an audit package and key for selective disclosure to auditors.
+                {t('audit.center.description')}
               </p>
             </div>
           </div>
@@ -45,10 +46,9 @@ export default function AuditPage() {
           <FileSearch className="h-5 w-5 text-emerald-600" />
         </div>
         <div>
-          <div className="font-semibold text-slate-900">Verify Audit Package</div>
+          <div className="font-semibold text-slate-900">{t('audit.verify.linkTitle')}</div>
           <div className="text-sm text-slate-500">
-            Paste the package JSON and Audit Key on the verify page to preview disclosed content or run full
-            verification.
+            {t('audit.verify.linkDescription')}
           </div>
         </div>
       </Link>

@@ -1,9 +1,11 @@
 'use client';
 
 import { Download, RefreshCw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useReceipts } from '@/controller/Receipt/useReceipts';
 
 export default function ReceiptViewer() {
+  const t = useTranslations();
   const { receipts, isSyncing, handleSyncAllReceipts, exportCsv } = useReceipts();
   const hasData = receipts.length > 0;
 
@@ -21,7 +23,7 @@ export default function ReceiptViewer() {
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-900">Payment receipts</div>
+        <div className="text-sm font-semibold text-slate-900">{t('receipt.paymentReceipts')}</div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleSyncAllReceipts}
@@ -29,40 +31,40 @@ export default function ReceiptViewer() {
             disabled={isSyncing}
           >
             <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Syncing...' : 'Sync'}
+            {isSyncing ? t('common.syncing') : t('common.sync')}
           </button>
           <button
             onClick={handleExport}
             className="inline-flex items-center gap-1 rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             disabled={!hasData}
           >
-            <Download className="h-4 w-4" /> Export CSV
+            <Download className="h-4 w-4" /> {t('receipt.exportCsv')}
           </button>
         </div>
       </div>
-      {!hasData && <p className="text-sm text-slate-500">No receipts yet.</p>}
+      {!hasData && <p className="text-sm text-slate-500">{t('receipt.emptyTitle')}</p>}
       <div className="space-y-3">
         {receipts.map((r) => (
           <div key={r.paymentId} className="rounded-lg border border-slate-100 p-3">
-            <div className="text-xs text-slate-500">Payment ID: {r.paymentId}</div>
+            <div className="text-xs text-slate-500">{t('receipt.paymentId')}: {r.paymentId}</div>
             <div className="text-sm text-slate-700">
-              Amount: {(Number(r.amount) / 1_000_000).toFixed(2)} credits
+              {t('receipt.amount')}: {(Number(r.amount) / 1_000_000).toFixed(2)} {t('receipt.credits')}
             </div>
             <div className="text-xs text-slate-500">
-              Buyer: {r.payer.slice(0, 12)}... → Seller: {r.payee.slice(0, 12)}...
+              {t('receipt.buyer')}: {r.payer.slice(0, 12)}... → {t('receipt.seller')}: {r.payee.slice(0, 12)}...
             </div>
             <div className="text-xs text-slate-500">
-              Invoice: {r.invoiceId}
+              {t('receipt.invoiceLabel')}: {r.invoiceId}
             </div>
             <div className="text-xs text-slate-500">
-              Paid at: {r.paidAt.toLocaleString()}
+              {t('receipt.paidAt')}: {r.paidAt.toLocaleString()}
             </div>
             <div className="text-xs text-slate-500">
-              Tx: {r.txId}
+              {t('receipt.tx')}: {r.txId}
             </div>
             {r.blockHeight != null && (
               <div className="text-xs text-slate-500">
-                Block Height: {r.blockHeight}
+                {t('receipt.blockHeight')}: {r.blockHeight}
               </div>
             )}
           </div>

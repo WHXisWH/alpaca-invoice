@@ -6,14 +6,8 @@ import { MessageCircle, X, Send, Trash2, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import { useChatStore } from '@/stores/Chat/useChatStore';
-
-const PRESET_QUESTIONS = [
-  'What is Alpaca Invoice?',
-  'How do I create an invoice?',
-  'How does the audit system work?',
-  'What wallets are supported?',
-];
 
 function TypingIndicator() {
   return (
@@ -31,6 +25,7 @@ function TypingIndicator() {
 }
 
 export default function ChatBot() {
+  const t = useTranslations();
   const {
     messages,
     isLoading,
@@ -41,6 +36,13 @@ export default function ChatBot() {
     setLoading,
     toggleOpen,
   } = useChatStore();
+
+  const PRESET_QUESTIONS = [
+    t('chatbot.presetQ1'),
+    t('chatbot.presetQ2'),
+    t('chatbot.presetQ3'),
+    t('chatbot.presetQ4'),
+  ];
 
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -197,7 +199,7 @@ export default function ChatBot() {
                 <div>
                   <h3 className="text-sm font-semibold text-white">Paca</h3>
                   <p className="text-[11px] text-primary-300">
-                    Alpaca Invoice Assistant
+                    {t('chatbot.title')}
                   </p>
                 </div>
               </div>
@@ -205,14 +207,14 @@ export default function ChatBot() {
                 <button
                   onClick={clearMessages}
                   className="rounded-lg p-1.5 text-primary-400 transition-colors hover:bg-white/10 hover:text-white"
-                  title="Clear chat"
+                  title={t('chatbot.clearChat')}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
                 <button
                   onClick={toggleOpen}
                   className="rounded-lg p-1.5 text-primary-400 transition-colors hover:bg-white/10 hover:text-white"
-                  title="Close"
+                  title={t('common.close')}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -228,10 +230,10 @@ export default function ChatBot() {
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-primary-800">
-                      Hi! I&apos;m Paca
+                      {t('chatbot.greeting')}
                     </p>
                     <p className="mt-1 text-xs text-primary-500">
-                      Ask me anything about Alpaca Invoice
+                      {t('chatbot.greetingSub')}
                     </p>
                   </div>
                   <div className="mt-2 flex flex-col gap-2 w-full max-w-[280px]">
@@ -297,7 +299,7 @@ export default function ChatBot() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask something..."
+                  placeholder={t('chatbot.placeholder')}
                   rows={1}
                   className="max-h-24 min-h-[36px] flex-1 resize-none rounded-xl border border-primary-200 bg-primary-50/50 px-3 py-2 text-sm text-primary-800 placeholder:text-primary-400 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/50"
                 />
@@ -314,7 +316,7 @@ export default function ChatBot() {
                 </button>
               </div>
               <p className="mt-1.5 text-center text-[10px] text-primary-400">
-                Powered by DeepSeek · Alpaca Invoice AI
+                {t('chatbot.poweredBy')}
               </p>
             </form>
           </motion.div>

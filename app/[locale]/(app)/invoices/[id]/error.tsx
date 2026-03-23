@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, RotateCcw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export default function InvoiceDetailError({
   error,
@@ -11,6 +12,7 @@ export default function InvoiceDetailError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTranslations();
   useEffect(() => {
     console.error('[InvoiceDetail] Uncaught error:', error);
   }, [error]);
@@ -24,7 +26,7 @@ export default function InvoiceDetailError({
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <h2 className="text-xl font-bold text-slate-900">Invoice Detail</h2>
+        <h2 className="text-xl font-bold text-slate-900">{t('invoice.detail.title')}</h2>
       </div>
 
       <div className="rounded-2xl border border-red-200 bg-white p-8 shadow-sm text-center">
@@ -32,10 +34,10 @@ export default function InvoiceDetailError({
           <AlertTriangle className="h-6 w-6 text-red-600" />
         </div>
         <h3 className="text-lg font-semibold text-slate-900 mb-2">
-          Something went wrong
+          {t('errors.somethingWentWrong')}
         </h3>
         <p className="text-sm text-slate-600 mb-1">
-          Failed to load invoice details.
+          {t('errors.failedToLoadInvoice')}
         </p>
         <p className="text-xs text-slate-400 mb-6 font-mono break-all max-w-md mx-auto">
           {error.message}
@@ -46,14 +48,14 @@ export default function InvoiceDetailError({
             className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
           >
             <RotateCcw className="h-4 w-4" />
-            Try Again
+            {t('common.retry')}
           </button>
           <Link
             href="/invoices"
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Invoices
+            {t('invoice.detail.backToInvoices')}
           </Link>
         </div>
       </div>

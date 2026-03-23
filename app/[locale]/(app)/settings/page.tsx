@@ -7,6 +7,10 @@ import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoField } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { useCreditProof } from '@/controller/Credit/useCreditProof';
+import CreditProofGenerator from '@/components/credit-proof-generator';
+import CreditProofVerifier from '@/components/credit-proof-verifier';
+import { useTranslations } from 'next-intl';
 
 const SCOPE_KEYS = [
   'amount',
@@ -21,12 +25,15 @@ const SCOPE_KEYS = [
 ] as const;
 
 export default function SettingsPage() {
+  const t = useTranslations();
   const { executeSetAuditAuthorization, isProcessing, currentProgress, currentLog } =
     useTransactionController();
   const protocolService = useMemo(() => new AleoProtocolService(), []);
   const registry = useMemo(() => createInvoiceRegistryService(protocolService), [protocolService]);
   const cryptoService = useMemo(() => new CryptoService(), []);
   const { handleError } = useErrorHandler();
+  const creditProof = useCreditProof();
+  const [activeTab, setActiveTab] = useState<'audit' | 'credit'>('audit');
 
   const [invoiceId, setInvoiceId] = useState('');
   const [auditKey, setAuditKey] = useState('');
@@ -47,7 +54,7 @@ export default function SettingsPage() {
     try {
       const auth = await registry.getAuditAuthorization(invoiceId as AleoField);
       setCurrentAuth(auth);
-      if (!auth) setMessage('No authorization found for this invoice.');
+      if (!auth) setMessage(t('settings.noAuthFound'));
     } catch (e: any) {
       handleError(e);
     } finally {
@@ -95,7 +102,7 @@ export default function SettingsPage() {
         scopesBitmask,
         expiresSec
       );
-      setMessage('Authorization submitted. Wait for chain confirmation.');
+      setMessage(t('settings.authSubmitted'));
     } catch (err) {
       handleError(err);
     }
@@ -121,7 +128,7 @@ export default function SettingsPage() {
         0n,
         expiresSec
       );
-      setMessage('Authorization revoked (scopes_bitmask=0). Wait for chain confirmation.');
+      setMessage(t('settings.authRevoked'));
     } catch (err) {
       handleError(err);
     }
@@ -129,31 +136,77 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-slate-900">Settings / Audit Authorization</h1>
+      <h1 className="text-xl font-semibold text-slate-900">{t('settings.title')}</h1>
 
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActiveTab('audit')}
+          className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'audit'
+              ? 'border-b-2 border-blue-600 text-blue-700'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          {t('settings.auditAuth')}
+        </button>
+        <button
+          onClick={() => setActiveTab('credit')}
+          className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'credit'
+              ? 'border-b-2 border-blue-600 text-blue-700'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          {t('settings.creditProof')}
+        </button>
+      </div>
+
+      {activeTab === 'credit' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">{t('credit.generate')}</h2>
+            <CreditProofGenerator
+              metrics={creditProof.metrics}
+              onCollectMetrics={creditProof.collectLocalMetrics}
+              onGenerateProof={creditProof.generateProof}
+              isProcessing={creditProof.isProcessing}
+            />
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">{t('credit.verify')}</h2>
+            <CreditProofVerifier
+              onVerify={creditProof.verifyProof}
+              isProcessing={creditProof.isProcessing}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'audit' && (
+      <>
       <form onSubmit={submit} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="space-y-1">
-          <label className="text-sm font-medium text-slate-800">Invoice ID</label>
+          <label className="text-sm font-medium text-slate-800">{t('invoice.detail.invoiceId')}</label>
           <input
             className="input-field"
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
-            placeholder="invoice_id field"
+            placeholder={t('settings.invoiceIdPlaceholder')}
             required
           />
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-800">Audit key</label>
+            <label className="text-sm font-medium text-slate-800">{t('settings.auditKey')}</label>
             <input
               className="input-field"
               value={auditKey}
               onChange={(e) => setAuditKey(e.target.value)}
-              placeholder="Random string or hex"
+              placeholder={t('settings.auditKeyPlaceholder')}
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-800">Expiry</label>
+            <label className="text-sm font-medium text-slate-800">{t('settings.expiry')}</label>
             <input
               type="date"
               className="input-field"
@@ -163,7 +216,7 @@ export default function SettingsPage() {
           </div>
         </div>
         <div className="space-y-1">
-          <div className="text-sm font-medium text-slate-800">Scopes</div>
+          <div className="text-sm font-medium text-slate-800">{t('settings.scopes')}</div>
           <div className="grid grid-cols-2 gap-2 text-xs">
             {SCOPE_KEYS.map((s) => (
               <label key={s} className="flex items-center gap-2">
@@ -182,7 +235,7 @@ export default function SettingsPage() {
         {isProcessing && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
             <div className="flex items-center justify-between">
-              <span>Submitting...</span>
+              <span>{t('common.submitting')}</span>
               <span>{currentProgress}%</span>
             </div>
             {currentLog && <div className="mt-1 text-xs">{currentLog}</div>}
@@ -195,7 +248,7 @@ export default function SettingsPage() {
             disabled={isProcessing}
             className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            Set authorization
+            {t('settings.setAuthorization')}
           </button>
           <button
             type="button"
@@ -203,7 +256,7 @@ export default function SettingsPage() {
             disabled={isProcessing || !invoiceId}
             className="rounded border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
           >
-            Revoke
+            {t('settings.revoke')}
           </button>
           <button
             type="button"
@@ -211,18 +264,20 @@ export default function SettingsPage() {
             disabled={loadingAuth}
             className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
           >
-            {loadingAuth ? 'Loading...' : 'Fetch current'}
+            {loadingAuth ? t('common.loading') : t('settings.fetchCurrent')}
           </button>
         </div>
         {message && <div className="text-xs text-slate-700">{message}</div>}
       </form>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-sm text-slate-900">
-        <div className="font-semibold">Current authorization</div>
+        <div className="font-semibold">{t('settings.currentAuthorization')}</div>
         <pre className="mt-2 max-h-64 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
           {currentAuth ? JSON.stringify(currentAuth, null, 2) : 'N/A'}
         </pre>
       </div>
+      </>
+      )}
     </div>
   );
 }

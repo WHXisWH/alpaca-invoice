@@ -7,6 +7,7 @@ import ReceiptCard from '@/components/receipt-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import type { AleoTransactionId } from '@/lib/types';
+import { useTranslations } from 'next-intl';
 
 function buildExplorerTxUrl(transactionId?: AleoTransactionId): string | null {
   if (!transactionId) return null;
@@ -16,6 +17,7 @@ function buildExplorerTxUrl(transactionId?: AleoTransactionId): string | null {
 }
 
 export default function ReceiptsPage() {
+  const t = useTranslations();
   const { receipts, isSyncing, showWalletPrompt, handleSyncAllReceipts, exportCsv } = useReceipts();
   const hasData = receipts.length > 0;
 
@@ -38,8 +40,8 @@ export default function ReceiptsPage() {
           <MotionItem className="surface-card p-8">
             <EmptyState
               icon={Receipt}
-              title="Connect Wallet"
-              description="Connect your Aleo wallet to view payment receipts"
+              title={t('wallet.connect')}
+              description={t('wallet.connectPrompt')}
             />
           </MotionItem>
         </MotionContainer>
@@ -58,9 +60,9 @@ export default function ReceiptsPage() {
                 <Receipt className="h-5 w-5 text-success-600" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-primary-900">Receipts</h1>
+                <h1 className="text-xl font-semibold text-primary-900">{t('receipt.title')}</h1>
                 <p className="text-sm text-primary-500">
-                  View payment receipts and transaction history
+                  {t('receipt.description')}
                 </p>
               </div>
             </div>
@@ -68,7 +70,7 @@ export default function ReceiptsPage() {
           <div className="relative hidden h-20 w-20 md:block">
             <Image
               src="/images/mascot/mascot-happy.png"
-              alt="Receipts"
+              alt={t('receipt.title')}
               fill
               className="object-contain"
               onError={(e) => {
@@ -84,19 +86,19 @@ export default function ReceiptsPage() {
             onClick={handleSyncAllReceipts}
             disabled={isSyncing}
             className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-primary-200/60 bg-white/70 px-4 py-2.5 text-sm font-medium text-primary-700 shadow-sm transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-            title="Sync receipts from chain"
+            title={t('common.sync')}
           >
             <RefreshCw className={isSyncing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-            {isSyncing ? 'Syncing...' : 'Sync'}
+            {isSyncing ? t('common.syncing') : t('common.sync')}
           </button>
           <button
             onClick={handleExport}
             disabled={!hasData}
             className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Export receipts to CSV"
+            title={t('invoice.list.exportCsv')}
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            {t('invoice.list.exportCsv')}
           </button>
         </MotionItem>
 
@@ -106,8 +108,8 @@ export default function ReceiptsPage() {
             <EmptyState
               icon={FileText}
               mascot="sleeping"
-              title="No receipts yet"
-              description="Payment receipts will appear here after you pay an invoice"
+              title={t('receipt.emptyTitle')}
+              description={t('receipt.emptyDescription')}
             />
           </MotionItem>
         ) : (

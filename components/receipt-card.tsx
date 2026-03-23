@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ChevronDown, Copy, ExternalLink } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 type ReceiptCardDetails = InvoiceDetails & { lineItems: (LineItem & { taxRate?: number })[] };
 type ReceiptCardItem = ReceiptItem & { details?: ReceiptCardDetails };
@@ -21,6 +22,7 @@ interface ReceiptCardProps {
 }
 
 export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCardProps) {
+  const t = useTranslations();
   const truncateAddress = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-6)}`;
   const [expanded, setExpanded] = useState(false);
 
@@ -34,7 +36,7 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
           {/* Header: Payment ID */}
           <div className="mb-4 flex items-start justify-between">
             <div>
-              <p className="mb-1 text-xs font-medium text-primary-500">Payment ID</p>
+              <p className="mb-1 text-xs font-medium text-primary-500">{t('receipt.paymentId')}</p>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2">
@@ -55,23 +57,23 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
               </Tooltip>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full bg-success-100/80 px-2.5 py-1 text-xs font-semibold text-success-700 ring-1 ring-white/60">
-              Paid
+              {t('invoice.status.paid')}
             </span>
           </div>
 
           {/* Amount */}
           <div className="mb-4">
-            <p className="mb-1 text-xs font-medium text-primary-500">Amount</p>
+            <p className="mb-1 text-xs font-medium text-primary-500">{t('receipt.amount')}</p>
             <p className="text-2xl font-bold text-primary-900">
               {(Number(receipt.amount) / 1_000_000).toFixed(2)}
-              <span className="ml-1.5 text-sm font-normal text-primary-500">credits</span>
+              <span className="ml-1.5 text-sm font-normal text-primary-500">{t('invoice.card.credits')}</span>
             </p>
           </div>
 
           {/* Details grid */}
           <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
             <div>
-              <p className="mb-0.5 text-xs text-primary-500">Payer</p>
+              <p className="mb-0.5 text-xs text-primary-500">{t('receipt.payer')}</p>
               <div className="flex items-center gap-1.5">
                 <code className="min-w-0 flex-1 truncate rounded bg-primary-50 px-2 py-1 text-xs text-primary-700">
                   {truncateAddress(receipt.payer)}
@@ -79,14 +81,14 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 <button
                   onClick={() => navigator.clipboard.writeText(receipt.payer)}
                   className="shrink-0 cursor-pointer rounded p-1 text-primary-400 hover:bg-primary-100 hover:text-primary-600"
-                  title="Copy payer address"
+                  title={t('receipt.copyPayer')}
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
             <div>
-              <p className="mb-0.5 text-xs text-primary-500">Payee</p>
+              <p className="mb-0.5 text-xs text-primary-500">{t('receipt.payee')}</p>
               <div className="flex items-center gap-1.5">
                 <code className="min-w-0 flex-1 truncate rounded bg-primary-50 px-2 py-1 text-xs text-primary-700">
                   {truncateAddress(receipt.payee)}
@@ -94,20 +96,20 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 <button
                   onClick={() => navigator.clipboard.writeText(receipt.payee)}
                   className="shrink-0 cursor-pointer rounded p-1 text-primary-400 hover:bg-primary-100 hover:text-primary-600"
-                  title="Copy payee address"
+                  title={t('receipt.copyPayee')}
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
             <div>
-              <p className="mb-0.5 text-xs text-primary-500">Paid at</p>
+              <p className="mb-0.5 text-xs text-primary-500">{t('receipt.paidAt')}</p>
               <p className="font-medium text-primary-800">
                 {format(receipt.paidAt, 'MMM dd, yyyy HH:mm')}
               </p>
             </div>
             <div>
-              <p className="mb-0.5 text-xs text-primary-500">Invoice ID</p>
+              <p className="mb-0.5 text-xs text-primary-500">{t('receipt.invoiceId')}</p>
               <div className="flex items-center gap-1.5">
                 <code className="min-w-0 flex-1 truncate rounded bg-primary-50 px-2 py-1 text-xs text-primary-700">
                   {String(receipt.invoiceId).slice(0, 12)}...
@@ -115,7 +117,7 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 <button
                   onClick={() => navigator.clipboard.writeText(String(receipt.invoiceId))}
                   className="shrink-0 cursor-pointer rounded p-1 text-primary-400 hover:bg-primary-100 hover:text-primary-600"
-                  title="Copy invoice ID"
+                  title={t('receipt.copyInvoiceId')}
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </button>
@@ -127,7 +129,7 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
             <div className="mb-4 flex items-center justify-between rounded-lg bg-accent-50/60 px-3 py-2 ring-1 ring-accent-200/30">
               <div className="flex items-center gap-2 text-xs text-accent-700">
                 <span className="font-medium">
-                  {receipt.details.lineItems.length} item{receipt.details.lineItems.length !== 1 ? 's' : ''}
+                  {receipt.details.lineItems.length} {receipt.details.lineItems.length !== 1 ? t('invoice.card.items') : t('invoice.card.item')}
                 </span>
                 {receipt.details.currency && (
                   <>
@@ -141,7 +143,7 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 onClick={() => setExpanded((v) => !v)}
                 className="flex cursor-pointer items-center gap-1 text-xs font-medium text-accent-600 transition-colors hover:text-accent-800"
               >
-                {expanded ? 'Hide' : 'Details'}
+                {expanded ? t('invoice.card.hide') : t('invoice.card.details')}
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </button>
             </div>
@@ -153,10 +155,10 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-primary-100/60 bg-primary-50/50">
-                    <th className="px-4 py-2 font-medium text-primary-500">Item</th>
-                    <th className="px-3 py-2 text-right font-medium text-primary-500">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium text-primary-500">Price</th>
-                    <th className="px-4 py-2 text-right font-medium text-primary-500">Amount</th>
+                    <th className="px-4 py-2 font-medium text-primary-500">{t('invoice.card.item')}</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">{t('invoice.card.qty')}</th>
+                    <th className="px-3 py-2 text-right font-medium text-primary-500">{t('invoice.card.price')}</th>
+                    <th className="px-4 py-2 text-right font-medium text-primary-500">{t('receipt.amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -171,17 +173,17 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-primary-100/60 bg-primary-50/30">
-                    <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Subtotal</td>
+                    <td colSpan={3} className="px-3 py-2 text-right text-primary-500">{t('invoice.create.subtotal')}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{Number(receipt.details.subtotal).toFixed(2)}</td>
                   </tr>
                   {receipt.details.taxAmount > 0 && (
                     <tr className="bg-primary-50/30">
-                      <td colSpan={3} className="px-3 py-2 text-right text-primary-500">Tax</td>
+                      <td colSpan={3} className="px-3 py-2 text-right text-primary-500">{t('invoice.card.tax')}</td>
                       <td className="px-4 py-2 text-right tabular-nums font-medium text-primary-800">{Number(receipt.details.taxAmount).toFixed(2)}</td>
                     </tr>
                   )}
                   <tr className="bg-primary-50/30">
-                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-primary-700">Total</td>
+                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-primary-700">{t('invoice.create.total')}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-bold text-primary-900">{Number(receipt.details.total).toFixed(2)}</td>
                   </tr>
                 </tfoot>
@@ -199,7 +201,7 @@ export default function ReceiptCard({ receipt, explorerTxUrl = null }: ReceiptCa
                 title="View transaction on explorer"
               >
                 <ExternalLink className="h-4 w-4" />
-                Explorer
+                {t('invoice.card.explorer')}
               </a>
             </div>
           )}

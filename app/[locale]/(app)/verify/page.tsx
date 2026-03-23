@@ -5,26 +5,12 @@ import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocol
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
 import { InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
+import { useTranslations } from 'next-intl';
 
 const protocolService = new AleoProtocolService();
 
-function formatStatus(status: InvoiceStatus | null): string {
-  if (status === null || status === undefined) return 'Unknown';
-  switch (status) {
-    case InvoiceStatus.PENDING:
-      return 'PENDING';
-    case InvoiceStatus.PAID:
-      return 'PAID';
-    case InvoiceStatus.CANCELLED:
-      return 'CANCELLED';
-    case InvoiceStatus.EXPIRED:
-      return 'EXPIRED';
-    default:
-      return 'Unknown';
-  }
-}
-
 export default function VerifyPage() {
+  const t = useTranslations();
   const [invoiceId, setInvoiceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
@@ -34,6 +20,22 @@ export default function VerifyPage() {
     rulesResult?: string | null;
     error?: string;
   } | null>(null);
+
+  const formatStatus = (status: InvoiceStatus | null): string => {
+    if (status === null || status === undefined) return t('verify.unknown');
+    switch (status) {
+      case InvoiceStatus.PENDING:
+        return t('invoice.status.pending');
+      case InvoiceStatus.PAID:
+        return t('invoice.status.paid');
+      case InvoiceStatus.CANCELLED:
+        return t('invoice.status.cancelled');
+      case InvoiceStatus.EXPIRED:
+        return t('invoice.status.expired');
+      default:
+        return t('verify.unknown');
+    }
+  };
 
   const handleCheck = async () => {
     setLoading(true);
@@ -65,41 +67,41 @@ export default function VerifyPage() {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Verify Invoice (Walletless)</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t('verify.title')}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Enter an invoice_id to check its on-chain anchor in {PROGRAM_ID}. No wallet required.
+          {t('verify.description', { programId: PROGRAM_ID })}
         </p>
 
         <div className="mt-4 space-y-3">
-          <label className="text-sm font-medium text-slate-800">invoice_id (field)</label>
+          <label className="text-sm font-medium text-slate-800">{t('verify.invoiceIdLabel')}</label>
           <input
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-            placeholder="e.g., 12345field"
+            placeholder={t('verify.placeholder')}
           />
           <button
             onClick={handleCheck}
             disabled={loading}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
           >
-            {loading ? 'Checking...' : 'Check on-chain'}
+            {loading ? t('verify.checking') : t('verify.checkOnChain')}
           </button>
         </div>
 
         {result && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
-            {result.error && <div className="text-red-600">Error: {result.error}</div>}
+            {result.error && <div className="text-red-600">{t('common.error')}: {result.error}</div>}
             {!result.error && (
               <>
-                <div>Exists: {result.exists ? 'Yes' : 'No'}</div>
-                <div>Hash: {result.hash ?? 'N/A'}</div>
-                <div>Status: {formatStatus(result.status ?? null)}</div>
+                <div>{t('verify.exists')}: {result.exists ? t('verify.yes') : t('verify.no')}</div>
+                <div>{t('verify.hash')}: {result.hash ?? 'N/A'}</div>
+                <div>{t('verify.status')}: {formatStatus(result.status ?? null)}</div>
                 <div className="mt-2 pt-2 border-t border-slate-200">
-                  <span className="font-medium text-slate-700">Data compliance (rules_result):</span>{' '}
+                  <span className="font-medium text-slate-700">{t('verify.rulesResult')}:</span>{' '}
                   {result.rulesResult ?? 'N/A'}
                   <p className="mt-1 text-xs text-slate-500">
-                    Chain anchor for R1–R5 compliance at creation time.
+                    {t('verify.rulesDescription')}
                   </p>
                 </div>
               </>

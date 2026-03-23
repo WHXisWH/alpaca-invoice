@@ -17,29 +17,30 @@ import {
   FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'paid', label: 'Paid' },
-  { key: 'cancelled', label: 'Cancelled' }
-];
-
-const roleTabs: Array<{ key: 'all' | 'sent' | 'received'; label: string }> = [
-  { key: 'all', label: 'All roles' },
-  { key: 'sent', label: 'Sent' },
-  { key: 'received', label: 'Received' }
-];
+import { useTranslations } from 'next-intl';
 
 export default function InvoicesPage() {
+  const t = useTranslations();
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading invoices...</div>}>
+    <Suspense fallback={<div className="p-8 text-sm text-slate-500">{t('invoice.list.loading')}</div>}>
       <InvoicesPageInner />
     </Suspense>
   );
 }
 
 function InvoicesPageInner() {
+  const t = useTranslations();
+  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
+    { key: 'all', label: t('invoice.list.filterAll') },
+    { key: 'pending', label: t('invoice.list.filterPending') },
+    { key: 'paid', label: t('invoice.list.filterPaid') },
+    { key: 'cancelled', label: t('invoice.list.filterCancelled') },
+  ];
+  const roleTabs: Array<{ key: 'all' | 'sent' | 'received'; label: string }> = [
+    { key: 'all', label: t('invoice.list.roleAll') },
+    { key: 'sent', label: t('invoice.list.roleSent') },
+    { key: 'received', label: t('invoice.list.roleReceived') },
+  ];
   const { isAuthRequired, handleUnlock } = useAuthCheck();
   const {
     displayInvoices,
@@ -83,9 +84,9 @@ function InvoicesPageInner() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40">
             <Shield className="h-6 w-6 text-accent-600" />
           </div>
-          <h3 className="text-lg font-semibold text-primary-900">Unlock Private Data</h3>
+          <h3 className="text-lg font-semibold text-primary-900">{t('wallet.unlockTitle')}</h3>
           <p className="mt-2 text-sm text-primary-500">
-            Signature required to decrypt invoice data
+            {t('wallet.unlockDescription')}
           </p>
           <button
             onClick={handleUnlock}
@@ -95,10 +96,10 @@ function InvoicesPageInner() {
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Processing...
+                {t('common.loading')}
               </>
             ) : (
-              'Unlock'
+              t('wallet.unlock')
             )}
           </button>
           </MotionItem>
@@ -127,7 +128,7 @@ function InvoicesPageInner() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-100/80 ring-1 ring-primary-200/40">
             <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
           </div>
-          <p className="text-sm text-primary-500">Loading invoices...</p>
+          <p className="text-sm text-primary-500">{t('invoice.list.loading')}</p>
           </MotionItem>
         </MotionContainer>
       </div>
@@ -142,8 +143,8 @@ function InvoicesPageInner() {
           <MotionItem className="surface-card p-8">
             <EmptyState
               icon={Wallet}
-              title="Connect Wallet"
-              description="Connect your Aleo wallet to view and manage invoices"
+              title={t('wallet.connect')}
+              description={t('wallet.connectPrompt')}
             />
           </MotionItem>
         </MotionContainer>
@@ -182,24 +183,24 @@ function InvoicesPageInner() {
           className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-accent-600"
         >
           <FilePlus className="h-4 w-4" />
-          Create Invoice
+          {t('invoice.list.createFirst')}
         </Link>
         <button
           onClick={handleSyncAll}
           disabled={isSyncing || isLoading}
           className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-primary-200/60 bg-white/70 px-4 py-2.5 text-sm font-medium text-primary-700 shadow-sm transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-          title="Sync status from chain"
+          title={t('common.sync')}
         >
           <RefreshCw className={cn('h-4 w-4', isSyncing && 'animate-spin')} />
-          {isSyncing ? 'Syncing...' : 'Sync'}
+          {isSyncing ? t('common.syncing') : t('common.sync')}
         </button>
         <button
           onClick={exportCsv}
           disabled={!displayInvoices.length}
           className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Export current list to CSV"
+          title={t('invoice.list.exportCsv')}
         >
-          Export CSV
+          {t('invoice.list.exportCsv')}
         </button>
       </MotionItem>
 
@@ -226,7 +227,7 @@ function InvoicesPageInner() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by ID, hash, or address..."
+          placeholder={t('invoice.list.searchPlaceholder')}
           className="w-full max-w-md rounded-lg border border-primary-200/60 bg-white/80 px-4 py-2.5 text-sm text-primary-900 placeholder:text-primary-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
         />
       </MotionItem>
@@ -237,8 +238,8 @@ function InvoicesPageInner() {
           <EmptyState
             icon={FileText}
             mascot="sleeping"
-            title="No invoices found"
-            description={search ? 'Try adjusting your search terms' : 'Create your first invoice to get started'}
+            title={t('invoice.list.emptyTitle')}
+            description={search ? t('invoice.list.emptySearchDescription') : t('invoice.list.emptyDescription')}
             action={
               !search && (
                 <Link
@@ -246,7 +247,7 @@ function InvoicesPageInner() {
                   className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-accent-600"
                 >
                   <FilePlus className="h-4 w-4" />
-                  Create Invoice
+                  {t('invoice.list.createFirst')}
                 </Link>
               )
             }
@@ -256,14 +257,13 @@ function InvoicesPageInner() {
         <MotionContainer className="grid gap-4 md:grid-cols-2" stagger={0.06}>
           {displayInvoices.map(({ invoice, role, chainStatus, statusConfig }) => {
             const isProcessing = isInvoiceProcessing(invoice.id);
-            // Unified architecture: determine directly from sendingInvoiceHashes (Single Source of Truth)
             const isSyncingInvoice = isInvoiceSyncing(invoice);
 
             return (
               <MotionItem key={invoice.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium text-primary-500">
-                    {role === 'BOTH' ? 'Buyer & Seller' : role === 'SELLER' ? 'As Seller' : 'As Buyer'}
+                    {role === 'BOTH' ? t('invoice.detail.roleBoth') : role === 'SELLER' ? t('invoice.detail.roleAsSeller') : t('invoice.detail.roleAsBuyer')}
                   </div>
                   <span
                     className={cn(
@@ -273,7 +273,7 @@ function InvoicesPageInner() {
                         : 'bg-warning-50/80 text-warning-700'
                     )}
                   >
-                    {chainStatus === 'CONFIRMED' ? 'Confirmed' : 'Sending'}
+                    {chainStatus === 'CONFIRMED' ? t('invoice.detail.confirmed') : t('invoice.detail.sending')}
                   </span>
                 </div>
                 <InvoiceCard

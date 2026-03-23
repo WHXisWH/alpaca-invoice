@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 
 export function useCreateInvoicePage() {
+  const t = useTranslations();
   return useMemo(() => ({
-    title: 'Create Invoice',
-    description: 'Data is encrypted locally before on-chain commitment',
+    title: t('invoice.create.title'),
+    description: t('invoice.create.pageDescription'),
     mascotSrc: '/images/mascot/mascot-writing.png',
-    mascotAlt: 'Creating invoice'
-  }), []);
+    mascotAlt: t('invoice.create.mascotAlt')
+  }), [t]);
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useTranslations } from 'next-intl';
 import InvoiceCard from '@/components/invoice-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
@@ -34,6 +35,7 @@ function formatMicrocredits(n: bigint): string {
 }
 
 export default function DashboardPage() {
+  const t = useTranslations();
   const {
     receivedInvoices,
     sentInvoices,
@@ -87,7 +89,7 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <div className="flex min-h-[40vh] flex-col items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
-          <p className="mt-4 text-sm text-primary-500">Loading invoices...</p>
+          <p className="mt-4 text-sm text-primary-500">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -113,9 +115,9 @@ export default function DashboardPage() {
             <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40 mb-4">
               <Wallet className="h-6 w-6 text-accent-600" />
             </div>
-            <h2 className="text-xl font-bold text-primary-900">Connect Wallet</h2>
+            <h2 className="text-xl font-bold text-primary-900">{t('wallet.connect')}</h2>
             <p className="mt-2 text-sm text-primary-500 max-w-xs">
-              Connect your Aleo wallet to view and manage your invoices
+              {t('wallet.connectPrompt')}
             </p>
           </MotionItem>
         </MotionContainer>
@@ -134,11 +136,11 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-primary-900">{stats.totalSent}</p>
-              <p className="text-sm text-primary-500">Sent</p>
+              <p className="text-sm text-primary-500">{t('invoice.list.roleSent')}</p>
             </div>
           </div>
           <p className="mt-3 text-xs text-primary-400">
-            Pending: {stats.pendingSent} · Paid: {stats.paidSent}
+            {t('dashboard.stats.pendingCount')}: {stats.pendingSent} · {t('dashboard.stats.paidCount')}: {stats.paidSent}
           </p>
         </MotionItem>
 
@@ -149,11 +151,11 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-primary-900">{stats.totalReceived}</p>
-              <p className="text-sm text-primary-500">Received</p>
+              <p className="text-sm text-primary-500">{t('invoice.list.roleReceived')}</p>
             </div>
           </div>
           <p className="mt-3 text-xs text-primary-400">
-            Pending: {stats.pendingReceived} · Paid: {stats.paidReceived}
+            {t('dashboard.stats.pendingCount')}: {stats.pendingReceived} · {t('dashboard.stats.paidCount')}: {stats.paidReceived}
           </p>
         </MotionItem>
         
@@ -166,11 +168,11 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-info-900">{stats.totalSending}</p>
-                <p className="text-sm text-info-700">Syncing</p>
+                <p className="text-sm text-info-700">{t('invoice.detail.syncing')}</p>
               </div>
             </div>
             <p className="mt-3 text-xs text-info-600">
-              Confirming on-chain...
+              {t('dashboard.syncStatus')}
             </p>
           </MotionItem>
         )}
@@ -182,10 +184,10 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-warning-900">{stats.totalPending}</p>
-              <p className="text-sm text-warning-700">Pending</p>
+              <p className="text-sm text-warning-700">{t('dashboard.stats.pendingCount')}</p>
             </div>
           </div>
-          <p className="mt-3 text-xs text-warning-600">Requires action</p>
+          <p className="mt-3 text-xs text-warning-600">{t('invoice.status.pending')}</p>
         </MotionItem>
 
         <MotionItem className="surface-card-muted card-hover p-5">
@@ -195,29 +197,29 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-success-900">{stats.totalComplete}</p>
-              <p className="text-sm text-success-700">Completed</p>
+              <p className="text-sm text-success-700">{t('dashboard.stats.paidCount')}</p>
             </div>
           </div>
-          <p className="mt-3 text-xs text-success-600">Paid invoices</p>
+          <p className="mt-3 text-xs text-success-600">{t('invoice.status.paid')}</p>
         </MotionItem>
       </MotionContainer>
 
       {/* Wave 3 核心财务磁贴 */}
       <MotionItem className="surface-card p-6">
-        <h2 className="mb-4 text-lg font-semibold text-primary-900">Financial Overview</h2>
+        <h2 className="mb-4 text-lg font-semibold text-primary-900">{t('dashboard.financialOverview')}</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-            <p className="text-xs font-medium text-amber-800">Account Payable (AP)</p>
+            <p className="text-xs font-medium text-amber-800">{t('dashboard.stats.accountsPayable')}</p>
             <p className="mt-1 text-xl font-bold text-amber-900">{formatMicrocredits(totalAccountPayable)}</p>
             <p className="text-xs text-amber-700">PENDING incoming invoices total</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-            <p className="text-xs font-medium text-emerald-800">Total Paid (this month)</p>
+            <p className="text-xs font-medium text-emerald-800">{t('dashboard.stats.totalPaid')}</p>
             <p className="mt-1 text-xl font-bold text-emerald-900">{formatMicrocredits(totalPaidThisMonth)}</p>
             <p className="text-xs text-emerald-700">Credits / USDCx settled</p>
           </div>
           <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
-            <p className="text-xs font-medium text-blue-800">JCT Deductible</p>
+            <p className="text-xs font-medium text-blue-800">{t('dashboard.stats.jctDeductible')}</p>
             <p className="mt-1 text-xl font-bold text-blue-900">{formatMicrocredits(jctDeductibleAmount)}</p>
             <p className="text-xs text-blue-700">Input tax (tax_tag verified)</p>
           </div>
@@ -329,7 +331,7 @@ export default function DashboardPage() {
 
       {/* Quick Actions */}
       <MotionItem className="surface-card p-6">
-        <h2 className="mb-4 text-lg font-semibold text-primary-900">Quick Actions</h2>
+        <h2 className="mb-4 text-lg font-semibold text-primary-900">{t('dashboard.quickActions')}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-tour="dashboard-stats">
           <Link
             href="/invoices/create"
@@ -339,8 +341,8 @@ export default function DashboardPage() {
               <FilePlus className="h-5 w-5 text-accent-600" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-primary-900">Create Invoice</div>
-              <div className="text-xs text-primary-500">Issue new invoice</div>
+              <div className="text-sm font-semibold text-primary-900">{t('nav.createInvoice')}</div>
+              <div className="text-xs text-primary-500">{t('dashboard.createNew')}</div>
             </div>
           </Link>
 
@@ -352,8 +354,8 @@ export default function DashboardPage() {
               <CreditCard className="h-5 w-5 text-warning-600" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-primary-900">Pending</div>
-              <div className="text-xs text-primary-500">View pending invoices</div>
+              <div className="text-sm font-semibold text-primary-900">{t('dashboard.stats.pendingCount')}</div>
+              <div className="text-xs text-primary-500">{t('invoice.status.pending')}</div>
             </div>
           </Link>
 
@@ -365,8 +367,8 @@ export default function DashboardPage() {
               <Receipt className="h-5 w-5 text-success-600" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-primary-900">Receipts</div>
-              <div className="text-xs text-primary-500">View payment receipts</div>
+              <div className="text-sm font-semibold text-primary-900">{t('nav.receipts')}</div>
+              <div className="text-xs text-primary-500">{t('receipt.emptyDescription')}</div>
             </div>
           </Link>
 
@@ -378,8 +380,8 @@ export default function DashboardPage() {
               <Search className="h-5 w-5 text-info-600" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-primary-900">Audit</div>
-              <div className="text-xs text-primary-500">Generate audit keys</div>
+              <div className="text-sm font-semibold text-primary-900">{t('nav.auditCenter')}</div>
+              <div className="text-xs text-primary-500">{t('audit.center.downloadKey')}</div>
             </div>
           </Link>
         </div>
@@ -388,12 +390,12 @@ export default function DashboardPage() {
       {/* Sent Invoices */}
       <MotionItem className="surface-card p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-primary-900">Sent Invoices</h2>
+          <h2 className="text-lg font-semibold text-primary-900">{t('invoice.list.roleSent')} {t('nav.invoices')}</h2>
           <Link
             href="/invoices/create"
             className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
-            Create New
+            {t('dashboard.createNew')}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -401,15 +403,15 @@ export default function DashboardPage() {
         {sentInvoices.length === 0 ? (
           <EmptyState
             mascot="sleeping"
-            title="No sent invoices"
-            description="Create your first invoice to get started"
+            title={t('invoice.list.emptyTitle')}
+            description={t('invoice.list.emptyDescription')}
             action={
               <Link
                 href="/invoices/create"
                 className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-accent-600"
               >
                 <FilePlus className="h-4 w-4" />
-                Create Invoice
+                {t('nav.createInvoice')}
               </Link>
             }
           />
@@ -434,7 +436,7 @@ export default function DashboardPage() {
               href="/invoices?filter=sent"
             className="inline-flex cursor-pointer items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
-              View All {sentInvoices.length} Invoices
+              {t('common.viewAll')} ({sentInvoices.length})
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -444,12 +446,12 @@ export default function DashboardPage() {
       {/* Received Invoices */}
       <MotionItem className="surface-card p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-primary-900">Received Invoices</h2>
+          <h2 className="text-lg font-semibold text-primary-900">{t('invoice.list.roleReceived')} {t('nav.invoices')}</h2>
           <Link
             href="/invoices?filter=received"
             className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-accent-600 transition-colors hover:text-accent-700"
           >
-            View All
+            {t('common.viewAll')}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -457,8 +459,8 @@ export default function DashboardPage() {
         {receivedInvoices.length === 0 ? (
           <EmptyState
             mascot="sleeping"
-            title="No received invoices"
-            description="Invoices sent to you will appear here"
+            title={t('invoice.list.emptyTitle')}
+            description={t('invoice.list.emptyDescription')}
           />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
@@ -481,7 +483,7 @@ export default function DashboardPage() {
               href="/invoices?filter=received"
             className="inline-flex cursor-pointer items-center gap-1 text-sm text-primary-600 hover:text-primary-800"
             >
-              View All {receivedInvoices.length} Invoices
+              {t('common.viewAll')} ({receivedInvoices.length})
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>

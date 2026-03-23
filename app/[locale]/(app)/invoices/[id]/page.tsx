@@ -12,8 +12,10 @@ import { AleoField, InvoiceStatus } from '@/lib/types';
 import { getTaxRateLabelFromTaxGroups } from '@/lib/invoice';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 
 export default function InvoiceDetailPage() {
+  const t = useTranslations();
   const params = useParams();
   const invoiceHash = useMemo(
     () => (Array.isArray(params?.id) ? params.id[0] : (params?.id as string)) as AleoField | null,
@@ -42,24 +44,23 @@ export default function InvoiceDetailPage() {
     handleDownloadPackage
   } = useInvoiceDetailPage(invoiceHash);
 
-  // Display authorization overlay
   if (isAuthRequired) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+        <h2 className="text-xl font-bold text-slate-900">{t('invoice.detail.title')}</h2>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
           <div className="mb-4">
             <div className="text-lg font-semibold text-slate-900 mb-2">
-              Unlock Private Data
+              {t('wallet.unlockTitle')}
             </div>
             <p className="text-sm text-slate-600 mb-4">
-              Authorization required to access your private invoice data
+              {t('wallet.unlockDescription')}
             </p>
             <button
               onClick={handleUnlock}
               className="rounded-lg bg-amber-600 px-6 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
             >
-              Unlock
+              {t('wallet.unlock')}
             </button>
           </div>
         </div>
@@ -67,29 +68,27 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // Display loading state (loading from IndexedDB)
   if (isLoadingInvoice) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+        <h2 className="text-xl font-bold text-slate-900">{t('invoice.detail.title')}</h2>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-          <div className="text-sm text-slate-600">Loading invoice data...</div>
+          <div className="text-sm text-slate-600">{t('invoice.detail.loadingData')}</div>
         </div>
       </div>
     );
   }
 
-  // Invoice not found - display a user-friendly message (may still be processing on-chain)
   if (!invoice) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+        <h2 className="text-xl font-bold text-slate-900">{t('invoice.detail.title')}</h2>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
           <p className="text-sm text-slate-600 mb-2">
-            Invoice not found: {invoiceHash}
+            {t('errors.invoiceNotFound')}: {invoiceHash}
           </p>
           <p className="text-xs text-slate-500">
-            This invoice may still be processing on the blockchain. Please wait a moment and refresh.
+            {t('invoice.detail.processingOnChain')}
           </p>
         </div>
       </div>
@@ -103,42 +102,41 @@ export default function InvoiceDetailPage() {
           <Link
             href="/invoices"
             className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-            title="Back to Invoices"
+            title={t('invoice.detail.backToInvoices')}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h2 className="text-xl font-bold text-slate-900">Invoice detail</h2>
+          <h2 className="text-xl font-bold text-slate-900">{t('invoice.detail.title')}</h2>
         </div>
         {/* Chain confirmation status and sync button */}
         <div className="flex items-center gap-3">
           {isSyncing && (
             <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
               <RefreshCw className={cn('h-3.5 w-3.5', 'animate-spin')} />
-              Syncing chain records...
+              {t('invoice.detail.syncing')}
             </span>
           )}
           {isConfirmed && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-              ✓ Confirmed (Found on Chain)
+              ✓ {t('invoice.detail.confirmedOnChain')}
             </span>
           )}
           {!isConfirmed && !isSyncing && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-              ⏳ Sending
+              ⏳ {t('invoice.detail.sending')}
             </span>
           )}
-          {/* Manual sync button */}
           {isConfirmed && (
             <button
               onClick={handleSyncStatus}
               disabled={isSyncingStatus || isProcessing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Sync latest status from chain"
+              title={t('invoice.detail.syncStatus')}
             >
               <svg className={`w-3.5 h-3.5 ${isSyncingStatus ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {isSyncingStatus ? 'Syncing...' : 'Sync Status'}
+              {isSyncingStatus ? t('common.syncing') : t('invoice.detail.syncStatus')}
             </button>
           )}
         </div>
@@ -149,7 +147,7 @@ export default function InvoiceDetailPage() {
         {/* Header with Status */}
         <div className="flex items-start justify-between mb-4">
           <div>
-            <div className="text-xs text-slate-500 mb-1">Invoice ID</div>
+            <div className="text-xs text-slate-500 mb-1">{t('invoice.detail.invoiceId')}</div>
             <code className="text-sm font-mono font-semibold text-slate-900 break-all">
               {invoice.id}
             </code>
@@ -164,7 +162,7 @@ export default function InvoiceDetailPage() {
 
         {/* Amount */}
         <div className="mb-4 pb-4 border-b border-amber-100">
-          <div className="text-xs text-slate-500 mb-1">Amount</div>
+          <div className="text-xs text-slate-500 mb-1">{t('invoice.detail.amount')}</div>
           <div className="text-2xl font-bold text-slate-900">
             {(Number(invoice.amount) / 1_000_000).toFixed(2)}
             <span className="text-sm font-normal text-slate-600 ml-2">{displayCurrency}</span>
@@ -175,54 +173,54 @@ export default function InvoiceDetailPage() {
         <div className="space-y-2 mb-4 text-sm">
           {/* buyer */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Buyer</span>
+            <span className="text-slate-600">{t('invoice.detail.buyer')}</span>
             <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
               {invoice.buyer}
             </code>
           </div>
           {/* seller */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Seller</span>
+            <span className="text-slate-600">{t('invoice.detail.seller')}</span>
             <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all">
               {invoice.seller}
             </code>
           </div>
           {/* due_date */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Due Date</span>
+            <span className="text-slate-600">{t('invoice.detail.dueDate')}</span>
             <span className="font-medium text-slate-900">
               {format(invoice.dueDate, 'yyyy-MM-dd')}
             </span>
           </div>
           {/* created_at */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Created At</span>
+            <span className="text-slate-600">{t('invoice.detail.createdAt')}</span>
             <span className="font-medium text-slate-900">
               {format(invoice.createdAt, 'yyyy-MM-dd HH:mm')}
             </span>
           </div>
           {/* role */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Your Role</span>
+            <span className="text-slate-600">{t('invoice.detail.yourRole')}</span>
             <span className="font-medium text-slate-900 capitalize">
-              {userRole === 'seller' ? '🏪 Seller' : userRole === 'buyer' ? '🛒 Buyer' : '❓ Unknown'}
+              {userRole === 'seller' ? `🏪 ${t('invoice.detail.seller')}` : userRole === 'buyer' ? `🛒 ${t('invoice.detail.buyer')}` : `❓ ${t('invoice.detail.unknown')}`}
             </span>
           </div>
           {/* tax_amount */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Tax Amount</span>
+            <span className="text-slate-600">{t('invoice.detail.taxAmount')}</span>
             <span className="font-medium text-slate-900">
               {(Number(invoice.taxAmount ?? 0) / 1_000_000).toFixed(2)} {displayCurrency}
             </span>
           </div>
           {/* currency */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Currency</span>
+            <span className="text-slate-600">{t('invoice.detail.currency')}</span>
             <span className="font-medium text-slate-900">{displayCurrency}</span>
           </div>
           {/* order_id */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Order ID</span>
+            <span className="text-slate-600">{t('invoice.detail.orderId')}</span>
             {invoice.details?.orderId || invoice.details?.invoiceNumber ? (
               <span className="font-medium text-slate-900">
                 {invoice.details.orderId ?? invoice.details.invoiceNumber}
@@ -233,7 +231,7 @@ export default function InvoiceDetailPage() {
           </div>
           {/* memo_hash / notes */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Memo</span>
+            <span className="text-slate-600">{t('invoice.detail.memo')}</span>
             {invoice.details?.notes ? (
               <span className="font-medium text-slate-900">{invoice.details.notes}</span>
             ) : (
@@ -242,25 +240,25 @@ export default function InvoiceDetailPage() {
           </div>
           {/* invoice_hash */}
           <div className="flex justify-between">
-            <span className="text-slate-600">Invoice Hash</span>
+            <span className="text-slate-600">{t('invoice.detail.invoiceHash')}</span>
             <code className="text-xs bg-amber-50 px-2 py-1 rounded text-slate-900 break-all max-w-[60%] text-right">
               {invoice.invoiceHash}
             </code>
           </div>
         </div>
-      {/* Line Items & Summary（仅详情页展示；列表页卡片不展示 line items） */}
+      {/* Line Items & Summary */}
       {invoice.details && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Line Items</div>
+          <div className="text-sm font-semibold text-slate-900">{t('invoice.create.lineItems')}</div>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[360px] text-sm text-slate-700 border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  <th className="py-2 pr-2">Description</th>
-                  <th className="py-2 pr-2 text-right">Qty</th>
-                  <th className="py-2 pr-2 text-right">Unit Price</th>
-                  <th className="py-2 pr-2 text-right">Tax Rate</th>
-                  <th className="py-2 text-right">Amount</th>
+                  <th className="py-2 pr-2">{t('invoice.create.description')}</th>
+                  <th className="py-2 pr-2 text-right">{t('invoice.create.quantity')}</th>
+                  <th className="py-2 pr-2 text-right">{t('invoice.create.unitPrice')}</th>
+                  <th className="py-2 pr-2 text-right">{t('invoice.create.taxRate')}</th>
+                  <th className="py-2 text-right">{t('invoice.create.amount')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,43 +288,43 @@ export default function InvoiceDetailPage() {
           </div>
           <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm text-slate-700">
             <div className="flex justify-between">
-              <span>Subtotal</span>
+              <span>{t('invoice.create.subtotal')}</span>
               <span>{invoice.details.subtotal} {invoice.details.currency}</span>
             </div>
             {invoice.details.taxRate > 0 && (
               <div className="flex justify-between">
-                <span>Tax ({(invoice.details.taxRate * 100).toFixed(2)}%)</span>
+                <span>{t('invoice.detail.tax')} ({(invoice.details.taxRate * 100).toFixed(2)}%)</span>
                 <span>{invoice.details.taxAmount} {invoice.details.currency}</span>
               </div>
             )}
             <div className="flex justify-between font-semibold text-slate-900">
-              <span>Total</span>
+              <span>{t('invoice.create.total')}</span>
               <span>{invoice.details.total} {invoice.details.currency}</span>
             </div>
           </div>
         </div>
       )}
 
-        {/* Audit anchors — only render when at least one anchor has data */}
+        {/* Audit anchors */}
         {!isFetchingAnchors && (anchors.commitment || anchors.rules || anchors.fieldCommitments || anchors.auth || anchors.counter != null) && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-            <div className="font-semibold text-slate-900">Audit anchors</div>
+            <div className="font-semibold text-slate-900">{t('invoice.detail.chainAnchors')}</div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-xs text-slate-800">
               {anchors.commitment && (
                 <div>
-                  <div className="text-slate-500">Commitment root</div>
+                  <div className="text-slate-500">{t('invoice.detail.commitmentRoot')}</div>
                   <div className="font-mono break-all">{anchors.commitment}</div>
                 </div>
               )}
               {anchors.rules && (
                 <div>
-                  <div className="text-slate-500">Rules result</div>
+                  <div className="text-slate-500">{t('invoice.detail.rulesResult')}</div>
                   <div className="font-mono break-all">{anchors.rules}</div>
                 </div>
               )}
               {anchors.fieldCommitments && (
                 <div className="md:col-span-2">
-                  <div className="text-slate-500">Field commitments</div>
+                  <div className="text-slate-500">{t('invoice.detail.fieldCommitments')}</div>
                   <pre className="mt-1 max-h-28 overflow-auto rounded border border-slate-200 bg-white p-2">
                     {safeStringify(anchors.fieldCommitments)}
                   </pre>
@@ -334,7 +332,7 @@ export default function InvoiceDetailPage() {
               )}
               {anchors.auth && (
                 <div className="md:col-span-2">
-                  <div className="text-slate-500">Audit authorization</div>
+                  <div className="text-slate-500">{t('settings.auditAuth')}</div>
                   <pre className="mt-1 max-h-24 overflow-auto rounded border border-slate-200 bg-white p-2">
                     {safeStringify(anchors.auth)}
                   </pre>
@@ -342,7 +340,7 @@ export default function InvoiceDetailPage() {
               )}
               {anchors.counter != null && (
                 <div>
-                  <div className="text-slate-500">Seller audit counter</div>
+                  <div className="text-slate-500">{t('invoice.detail.sellerAuditCounter')}</div>
                   <div className="font-mono break-all">{anchors.counter}</div>
                 </div>
               )}
@@ -351,29 +349,28 @@ export default function InvoiceDetailPage() {
         )}
               
 
-
-        {/* Audit package download — inside Invoice detail card */}
+        {/* Audit package download */}
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-          <div className="font-semibold text-slate-900">Audit package</div>
+          <div className="font-semibold text-slate-900">{t('invoice.detail.auditPackage')}</div>
           {invoice.details ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 onClick={() => handleDownloadPackage('minimal')}
                 className="rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
               >
-                Download minimal package
+                {t('invoice.detail.downloadMinimalPackage')}
               </button>
               <button
                 onClick={() => handleDownloadPackage('full')}
                 className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
               >
-                Download full package
+                {t('invoice.detail.downloadFullPackage')}
               </button>
               {downloadMsg && <span className="text-xs text-slate-600">{downloadMsg}</span>}
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-400">
-              Audit package download requires locally stored invoice details.
+              {t('invoice.detail.auditPackageRequiresDetails')}
             </p>
           )}
         </div>
@@ -401,8 +398,8 @@ export default function InvoiceDetailPage() {
                 className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isProcessing
-                  ? 'Processing...'
-                  : (invoice.currencyFlag === CurrencyFlag.USDCX ? 'Approve & Pay' : '💳 Pay Invoice')}
+                  ? t('common.loading')
+                  : (invoice.currencyFlag === CurrencyFlag.USDCX ? t('invoice.detail.approveAndPay') : `💳 ${t('invoice.detail.payButton')}`)}
               </button>
             )}
             {userRole === 'seller' && (
@@ -411,12 +408,12 @@ export default function InvoiceDetailPage() {
                 disabled={isProcessing || !isConfirmed}
                 className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isProcessing ? 'Cancelling...' : '❌ Cancel Invoice'}
+                {isProcessing ? t('common.loading') : `❌ ${t('invoice.detail.cancelButton')}`}
               </button>
             )}
             {userRole === 'unknown' && (
               <div className="flex-1 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-600 text-center">
-                ⚠️ You are not the buyer or seller of this invoice
+                ⚠️ {t('invoice.detail.notBuyerOrSeller')}
               </div>
             )}
           </div>
@@ -425,9 +422,9 @@ export default function InvoiceDetailPage() {
         {invoice.status !== InvoiceStatus.PENDING && (
           <div className="mt-4 pt-4 border-t border-amber-100">
             <div className="text-sm text-slate-600 text-center">
-              {invoice.status === InvoiceStatus.PAID && '✅ This invoice has been paid'}
-              {invoice.status === InvoiceStatus.CANCELLED && '❌ This invoice has been cancelled'}
-              {invoice.status === InvoiceStatus.EXPIRED && '⚠️ This invoice has expired'}
+              {invoice.status === InvoiceStatus.PAID && `✅ ${t('invoice.detail.statusPaidMessage')}`}
+              {invoice.status === InvoiceStatus.CANCELLED && `❌ ${t('invoice.detail.statusCancelledMessage')}`}
+              {invoice.status === InvoiceStatus.EXPIRED && `⚠️ ${t('invoice.detail.statusExpiredMessage')}`}
             </div>
           </div>
         )}

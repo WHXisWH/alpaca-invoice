@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useTranslations } from 'next-intl';
 import {
   Zap,
   Globe,
@@ -92,6 +93,7 @@ const MOCK_INVOICE_PAY: Invoice = {
 };
 
 export default function LandingPage() {
+  const t = useTranslations();
   const [activeTab, setActiveTab] = useState<'privacy' | 'transparency'>('privacy');
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -153,20 +155,20 @@ export default function LandingPage() {
           </div>
           <div className="hidden space-x-8 text-sm font-medium text-primary-400 md:flex">
             <a href="#how-it-works" className="transition-colors hover:text-accent-400">
-              How it Works
+              {t('landing.nav.howItWorks')}
             </a>
             <a href="#features" className="transition-colors hover:text-accent-400">
-              Features
+              {t('landing.nav.features')}
             </a>
             <a href="#why" className="transition-colors hover:text-accent-400">
-              Why
+              {t('landing.nav.why')}
             </a>
           </div>
           <Link
             href="/invoices/create"
             className="rounded-full bg-accent-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-accent-900/40 transition-all hover:bg-accent-500 active:scale-95"
           >
-            Start Private Settlement
+            {t('landing.nav.startPrivateSettlement')}
           </Link>
         </div>
       </nav>
@@ -191,13 +193,13 @@ export default function LandingPage() {
                 <div className="inline-flex items-center space-x-2 rounded-full border border-accent-500/20 bg-accent-500/10 px-3 py-1 sm:px-4 sm:py-1.5 animate-shiny">
                   <Sparkles className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-accent-400 flex-shrink-0" />
                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.1em] sm:tracking-[0.15em] text-accent-400">
-                    Powered by Aleo - Zero Knowledge Excellence
+                    {t('landing.hero.poweredByAleo')}
                   </span>
                 </div>
                 <div className="inline-flex items-center space-x-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 sm:px-4 sm:py-1.5">
                   <ShieldCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-green-400 flex-shrink-0" />
                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.1em] sm:tracking-[0.15em] text-green-400">
-                    Audit-friendly ZK-Proofs
+                    {t('landing.hero.auditFriendly')}
                   </span>
                 </div>
               </div>
@@ -210,7 +212,7 @@ export default function LandingPage() {
                              text-[clamp(1.75rem,6vw+0.5rem,8rem)] leading-[1.1]
                              animate-title-shimmer animate-title-glow"
                 >
-                  Invisible Invoicing
+                  {t('landing.hero.invisibleInvoicing')}
                 </motion.span>
                 <motion.span
                   initial={{ opacity: 0, y: 20 }}
@@ -218,27 +220,26 @@ export default function LandingPage() {
                   transition={{ duration: 0.8, delay: 0.4 }}
                   className="block text-2xl font-black leading-[1.2] tracking-tight sm:text-3xl sm:leading-[1.15] md:text-5xl md:leading-[1.1] md:tracking-tighter lg:text-6xl xl:text-7xl 2xl:text-8xl bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent drop-shadow-sm"
                 >
-                  Settle Global Trades in Seconds
+                  {t('landing.hero.settleGlobalTrades')}
                 </motion.span>
               </h1>
 
               <p className="mb-5 sm:mb-8 md:mb-10 w-full max-w-full break-words text-xs font-medium leading-normal text-primary-400/80 sm:text-sm sm:leading-relaxed md:text-base lg:text-lg xl:text-xl">
-                Competitors are mapping your supply chain via public chain data. Shield your procurement DNA with Aleo
-                ZK-Proofs and secure your trade secrets.
+                {t('landing.hero.bodyText')}
               </p>
 
               <div className="mb-5 sm:mb-8 md:mb-10 flex flex-wrap gap-3 sm:gap-4 md:gap-6 text-[9px] sm:text-[10px] md:text-xs font-bold uppercase tracking-[0.1em] sm:tracking-[0.15em] md:tracking-[0.2em] text-primary-500">
                 <div className="flex items-center gap-2 group cursor-default">
                   <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-accent-500 transition-transform group-hover:rotate-12" />
-                  Global Importers
+                  {t('landing.hero.globalImporters')}
                 </div>
                 <div className="flex items-center gap-2 group cursor-default">
                   <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-accent-500 transition-transform group-hover:-rotate-12" />
-                  Supply Chain Managers
+                  {t('landing.hero.supplyChainManagers')}
                 </div>
                 <div className="flex items-center gap-2 group cursor-default">
                   <Database className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-accent-500 transition-transform group-hover:scale-110" />
-                  B2B Wholesalers
+                  {t('landing.hero.b2bWholesalers')}
                 </div>
               </div>
 
@@ -246,7 +247,7 @@ export default function LandingPage() {
                 href="/invoices/create"
                 className="group relative inline-flex w-auto min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-accent-600 py-3 px-6 text-xs font-black text-white shadow-xl transition-all hover:scale-[1.05] hover:bg-accent-500 active:scale-95 sm:w-auto sm:px-8 sm:py-4 sm:text-base md:px-10 md:py-5 lg:gap-3 lg:px-12 lg:py-6 lg:text-lg xl:text-xl 2xl:text-2xl animate-cta-pulse animate-shiny"
               >
-                <span className="relative z-10">Create Your First Invoice Now</span>
+                <span className="relative z-10">{t('landing.hero.createFirstInvoice')}</span>
                 <ArrowRight className="relative z-10 h-4 w-4 shrink-0 transition-transform group-hover:translate-x-2 sm:h-5 sm:w-5 md:h-6 md:w-6 lg:h-7 lg:w-7" />
                 <div className="absolute inset-0 rounded-full border-2 border-white/20 transition-all group-hover:border-white/40 group-hover:scale-105 pointer-events-none" />
               </Link>
@@ -304,26 +305,25 @@ export default function LandingPage() {
               viewport={{ once: true }}
             >
               <h2 className="mb-8 text-4xl font-black leading-[1] italic tracking-tight md:text-7xl md:tracking-tighter">
-                IS YOUR WALLET <span className="text-red-500 underline decoration-red-500/40 decoration-8 underline-offset-[12px]">COSTING</span> YOU CLIENTS?
+                {t('landing.why.headingPrefix')} <span className="text-red-500 underline decoration-red-500/40 decoration-8 underline-offset-[12px]">{t('landing.why.headingHighlight')}</span> {t('landing.why.headingSuffix')}
               </h2>
               <p className="mb-10 text-xl font-medium leading-relaxed text-primary-400 md:text-2xl">
-                Standard blockchain transfers are a gift to corporate spies. Your unit costs, vendor lists, and trade
-                secrets are being scraped in real-time.
+                {t('landing.why.description')}
               </p>
 
               <div className="space-y-6 md:space-y-8">
                 {[
                   {
-                    title: 'Invisible Supply Chain',
-                    desc: 'Protect your supplier network from external prying eyes.',
+                    title: t('landing.why.item1Title'),
+                    desc: t('landing.why.item1Desc'),
                   },
                   {
-                    title: '99% Fee Reduction',
-                    desc: "Use $0.01 micro-credits to bypass SWIFT's expensive wire fees.",
+                    title: t('landing.why.item2Title'),
+                    desc: t('landing.why.item2Desc'),
                   },
                   {
-                    title: 'Privacy First Workflow',
-                    desc: 'Encrypted record management ensures data only shared with counterparties.',
+                    title: t('landing.why.item3Title'),
+                    desc: t('landing.why.item3Desc'),
                   },
                 ].map((item, i) => (
                   <div key={i} className="flex items-start space-x-4 md:space-x-5 group">
@@ -358,7 +358,7 @@ export default function LandingPage() {
                   }`}
                 >
                   <Eye className="h-5 w-5 flex-shrink-0" />
-                  Competitor Alert
+                  {t('landing.why.competitorAlert')}
                 </button>
                 <button
                   type="button"
@@ -370,7 +370,7 @@ export default function LandingPage() {
                   }`}
                 >
                   <EyeOff className="h-5 w-5 flex-shrink-0" />
-                  ZK-Shielded
+                  {t('landing.why.zkShielded')}
                 </button>
               </div>
 
@@ -385,20 +385,20 @@ export default function LandingPage() {
                       className="space-y-6"
                     >
                       <div className="flex items-center gap-3 font-bold text-red-500 text-lg">
-                        <AlertTriangle className="h-6 w-6 animate-bounce" /> LEAK DETECTED
+                        <AlertTriangle className="h-6 w-6 animate-bounce" /> {t('landing.why.leakDetected')}
                       </div>
                       <div className="space-y-4 rounded-3xl border border-red-500/20 bg-red-500/5 p-8">
                         <div className="flex justify-between border-b border-red-500/10 pb-4">
-                          <span className="tracking-widest uppercase text-primary-500 font-bold">Payload</span>
-                          <span className="font-black text-red-500">UNENCRYPTED</span>
+                          <span className="tracking-widest uppercase text-primary-500 font-bold">{t('landing.why.payload')}</span>
+                          <span className="font-black text-red-500">{t('landing.why.unencrypted')}</span>
                         </div>
                         <div className="space-y-3 text-base">
                           <div className="flex justify-between">
-                            <span className="text-primary-400">Supplier:</span>
+                            <span className="text-primary-400">{t('landing.why.supplier')}</span>
                             <span className="font-bold text-red-400 underline decoration-red-500/30 underline-offset-4">Cheap_Factory_B.eth</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-primary-400">Net Amount:</span>
+                            <span className="text-primary-400">{t('landing.why.netAmount')}</span>
                             <span className="text-white font-black">$1,200,000 USD</span>
                           </div>
                         </div>
@@ -413,21 +413,21 @@ export default function LandingPage() {
                       className="space-y-6"
                     >
                       <div className="flex items-center gap-3 font-bold text-accent-400 text-lg">
-                        <CheckCircle className="h-6 w-6" /> ZK-PROOF VERIFIED
+                        <CheckCircle className="h-6 w-6" /> {t('landing.why.zkProofVerified')}
                       </div>
                       <div className="space-y-4 rounded-3xl border border-accent-500/20 bg-accent-500/5 p-8">
                         <div className="flex justify-between border-b border-accent-500/10 pb-4">
-                          <span className="tracking-widest uppercase text-primary-500 font-bold">State</span>
-                          <span className="font-black text-accent-400">ENCRYPTED RECORD</span>
+                          <span className="tracking-widest uppercase text-primary-500 font-bold">{t('landing.why.state')}</span>
+                          <span className="font-black text-accent-400">{t('landing.why.encryptedRecord')}</span>
                         </div>
                         <div className="space-y-3 text-base">
                           <div className="flex justify-between">
-                            <span className="text-primary-400">Hash:</span>
+                            <span className="text-primary-400">{t('landing.why.hash')}</span>
                             <span className="w-48 truncate text-accent-200">at1v...p0x9z...k8l2m...q4n1</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-primary-400">Parties:</span>
-                            <span className="italic text-primary-300 font-medium">Hidden via SNARK Proof</span>
+                            <span className="text-primary-400">{t('landing.why.parties')}</span>
+                            <span className="italic text-primary-300 font-medium">{t('landing.why.hiddenViaSNARK')}</span>
                           </div>
                         </div>
                       </div>
@@ -444,10 +444,10 @@ export default function LandingPage() {
       <section id="comparison" className="mx-auto max-w-7xl px-4 md:px-6 py-20 md:py-32">
         <div className="mb-16 md:mb-24 text-center">
           <h2 className="mb-6 text-5xl font-black uppercase italic tracking-tighter md:text-8xl">
-            The <span className="text-accent-500 drop-shadow-[0_0_20px_rgba(245,158,11,0.2)]">Unfair</span> Advantage
+            {t('landing.features.thePrefix')} <span className="text-accent-500 drop-shadow-[0_0_20px_rgba(245,158,11,0.2)]">{t('landing.features.unfair')}</span> {t('landing.features.advantage')}
           </h2>
           <p className="text-lg md:text-xl font-bold uppercase tracking-[0.2em] md:tracking-[0.3em] text-primary-500">
-            Why 1% of the top traders are switching
+            {t('landing.features.unfairAdvantageSubtitle')}
           </p>
         </div>
 
@@ -459,26 +459,26 @@ export default function LandingPage() {
             <table className="w-full min-w-[700px] md:min-w-[800px] text-left border-collapse">
               <thead>
                 <tr className="bg-white/[0.03]">
-                  <th className="px-6 md:px-10 py-8 md:py-10 font-black uppercase tracking-widest text-primary-500 text-xs md:text-sm">Feature</th>
+                  <th className="px-6 md:px-10 py-8 md:py-10 font-black uppercase tracking-widest text-primary-500 text-xs md:text-sm">{t('landing.features.featureColumn')}</th>
                   <th className="px-6 md:px-10 py-8 md:py-10 font-black uppercase tracking-widest text-primary-400 text-xs md:text-sm">
-                    Legacy Banks
+                    {t('landing.features.legacyBanks')}
                   </th>
                   <th className="px-6 md:px-10 py-8 md:py-10 font-black uppercase tracking-widest text-red-500/80 text-xs md:text-sm">
-                    Public Chains
+                    {t('landing.features.publicChains')}
                   </th>
                   <th className="px-6 md:px-10 py-8 md:py-10 font-black italic uppercase tracking-widest text-accent-400 text-xs md:text-sm relative">
-                    ZK-Invoice (Aleo)
+                    {t('landing.features.zkInvoiceAleo')}
                     <div className="absolute inset-0 border-x border-accent-500/20 bg-accent-500/5 -z-10" />
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-sm md:text-base font-bold">
                 {[
-                  { f: 'Supply Chain Privacy', b: 'Bank Knows All', e: 'Fully Public', z: '100% Peer-to-Peer' },
-                  { f: 'Settlement Speed', b: '3-5 Business Days', e: 'Minutes', z: 'Seconds' },
-                  { f: 'Transaction Fee', b: '$200+ Hidden Fees', e: 'Volatile Gas', z: '< $0.01 Stable' },
-                  { f: 'Audit Compliance', b: 'Manual/Slow', e: 'Impossible Privacy', z: 'Selective View Keys' },
-                  { f: 'Trade Secret Risk', b: 'Moderate (Leakage)', e: 'CRITICAL (Exposed)', z: 'ZERO (Encrypted)' },
+                  { f: t('landing.features.supplyChainPrivacy'), b: t('landing.features.bankKnowsAll'), e: t('landing.features.fullyPublic'), z: t('landing.features.peerToPeer') },
+                  { f: t('landing.features.settlementSpeed'), b: t('landing.features.threeToFiveDays'), e: t('landing.features.minutes'), z: t('landing.features.seconds') },
+                  { f: t('landing.features.transactionFee'), b: t('landing.features.hiddenFees'), e: t('landing.features.volatileGas'), z: t('landing.features.stableFee') },
+                  { f: t('landing.features.auditCompliance'), b: t('landing.features.manualSlow'), e: t('landing.features.impossiblePrivacy'), z: t('landing.features.selectiveViewKeys') },
+                  { f: t('landing.features.tradeSecretRisk'), b: t('landing.features.moderate'), e: t('landing.features.critical'), z: t('landing.features.zero') },
                 ].map((row, i) => (
                   <tr key={i} className="transition-all hover:bg-white/[0.02] group">
                     <td className="px-6 md:px-10 py-8 md:py-10 text-primary-300 group-hover:text-white transition-colors">{row.f}</td>
@@ -503,10 +503,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 relative">
           <div className="mb-24 text-center">
             <h2 className="mb-6 text-5xl font-black tracking-tighter italic md:text-8xl">
-              THE <span className="text-accent-500">ZK-INVOICE</span> WORKFLOW
+              {t('landing.howItWorks.titlePrefix')} <span className="text-accent-500">{t('landing.howItWorks.titleHighlight')}</span> {t('landing.howItWorks.titleSuffix')}
             </h2>
             <p className="text-xl font-bold uppercase tracking-[0.3em] text-primary-500">
-              Encrypted from issuance to settlement
+              {t('landing.howItWorks.subtitle')}
             </p>
           </div>
 
@@ -524,33 +524,32 @@ export default function LandingPage() {
               <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-[2rem] bg-primary-900 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform">
                 <FileText className="h-10 w-10 text-accent-500" />
               </div>
-              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">1. Issue ZK-Invoice</h3>
+              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">{t('landing.howItWorks.step1Title')}</h3>
               <p className="mb-8 text-lg font-medium leading-relaxed text-primary-400">
-                Seller generates a private InvoiceRecord. Details like amount and buyer address are encrypted
-                on-chain.
+                {t('landing.howItWorks.step1Desc')}
               </p>
               <div className="surface-card space-y-4 rounded-[2rem] border border-white/10 bg-white/5 p-6 text-primary-900 backdrop-blur-md">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-primary-400">Seller</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-primary-400">{t('landing.howItWorks.seller')}</label>
                   <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-mono text-xs text-primary-200">
                     aleo1seller...90abc
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-primary-400">Buyer</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-primary-400">{t('landing.howItWorks.buyer')}</label>
                   <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-mono text-xs text-primary-200">
                     aleo1buyer...90ab
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-primary-400">Amount</label>
+                    <label className="text-xs font-bold uppercase tracking-widest text-primary-400">{t('landing.howItWorks.amount')}</label>
                     <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-primary-100 font-bold">
                       1,250 credits
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-primary-400">Due</label>
+                    <label className="text-xs font-bold uppercase tracking-widest text-primary-400">{t('landing.howItWorks.due')}</label>
                     <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-primary-100 font-bold">
                       Dec 15
                     </div>
@@ -560,7 +559,7 @@ export default function LandingPage() {
                   type="button"
                   className="w-full cursor-default rounded-xl bg-accent-500 py-4 text-sm font-black uppercase tracking-widest text-white shadow-lg shadow-accent-500/20"
                 >
-                  Create invoice
+                  {t('landing.howItWorks.createInvoiceBtn')}
                 </button>
               </div>
               <div className="mt-6 inline-block rounded-full border border-primary-800 bg-primary-900/50 px-5 py-2 font-mono text-xs text-accent-400">
@@ -579,9 +578,9 @@ export default function LandingPage() {
               <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-[2rem] bg-primary-900 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform">
                 <Cpu className="h-10 w-10 text-primary-400" />
               </div>
-              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">2. Private Settlement</h3>
+              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">{t('landing.howItWorks.step2Title')}</h3>
               <p className="mb-8 text-lg font-medium leading-relaxed text-primary-400">
-                Buyer settles using Aleo credits. The payment receipt is cryptographically linked to the invoice.
+                {t('landing.howItWorks.step2Desc')}
               </p>
               <div className="scale-[1.02] transform drop-shadow-2xl">
                 <InvoiceCard invoice={MOCK_INVOICE_PAY} role="BUYER" onPay={() => {}} />
@@ -602,10 +601,9 @@ export default function LandingPage() {
               <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-[2rem] bg-primary-900 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform">
                 <ShieldCheck className="h-10 w-10 text-green-500" />
               </div>
-              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">3. Dual-Receipt Generation</h3>
+              <h3 className="mb-4 text-2xl font-black uppercase tracking-tight text-white">{t('landing.howItWorks.step3Title')}</h3>
               <p className="mb-8 text-lg font-medium leading-relaxed text-primary-400">
-                Both parties hold immutable, private proof of settlement. Buyer gets proof of payment; seller gets
-                accounting voucher.
+                {t('landing.howItWorks.step3Desc')}
               </p>
               <div className="space-y-6">
                 <div className="transform -rotate-2 hover:rotate-0 transition-transform">
@@ -628,10 +626,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 relative">
           <div className="mb-24 text-center">
             <h2 className="mb-6 text-5xl font-black uppercase tracking-tighter italic md:text-8xl">
-              What is <span className="text-accent-500">ZK-Invoice?</span>
+              {t('landing.features.whatIsPrefix')} <span className="text-accent-500">{t('landing.features.whatIsHighlight')}</span>
             </h2>
             <p className="text-xl font-bold uppercase tracking-[0.3em] text-primary-500">
-              Beyond simple payments — A privacy-first trading infrastructure
+              {t('landing.features.whatIsSubtitle')}
             </p>
           </div>
 
@@ -645,17 +643,16 @@ export default function LandingPage() {
                 <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-500/10 group-hover:bg-accent-500/20 transition-colors">
                   <EyeOff className="h-8 w-8 text-accent-500" />
                 </div>
-                <h3 className="mb-4 text-3xl font-black uppercase tracking-tight text-white">ZK-Record Invoicing</h3>
-                <p className="mb-6 text-sm font-bold uppercase tracking-[0.2em] text-primary-500">The Core Technology</p>
+                <h3 className="mb-4 text-3xl font-black uppercase tracking-tight text-white">{t('landing.features.zkRecordInvoicing')}</h3>
+                <p className="mb-6 text-sm font-bold uppercase tracking-[0.2em] text-primary-500">{t('landing.features.coreTechnology')}</p>
                 <div className="mb-8 h-px bg-gradient-to-r from-primary-800 to-transparent" />
                 <p className="text-xl font-medium leading-relaxed text-primary-300">
-                  <span className="mb-2 block text-xs font-black uppercase text-accent-400">The Benefit:</span>
-                  Outsiders only see a string of hashes. Only you and your counterparty can decrypt transaction amounts
-                  and specific line items. Your profit margins remain a trade secret.
+                  <span className="mb-2 block text-xs font-black uppercase text-accent-400">{t('landing.features.theBenefit')}</span>
+                  {t('landing.features.zkRecordBenefitDesc')}
                 </p>
               </div>
               <div className="mt-8 p-6 rounded-2xl bg-primary-900/30 border border-white/5 font-mono text-xs text-primary-500">
-                <span>Encrypted Payload Example</span>
+                <span>{t('landing.features.encryptedPayloadExample')}</span>
                 <br />
                 {`{ ciphertext: "0x7f3a...2b1c", iv: "0x1a2b...3c4d" }`}
               </div>
@@ -671,10 +668,10 @@ export default function LandingPage() {
                   <Zap className="h-8 w-8 text-green-500" />
                 </div>
                 <div>
-                  <h3 className="mb-2 text-2xl font-black uppercase tracking-tight text-white">Atomic Payments</h3>
+                  <h3 className="mb-2 text-2xl font-black uppercase tracking-tight text-white">{t('landing.features.atomicPayments')}</h3>
                   <p className="text-sm font-medium leading-relaxed text-primary-400">
-                    <span className="font-black text-green-400 mr-2">ATOMICITY:</span>
-                    Payment and invoice status updates occur simultaneously. No more &quot;funds sent but no receipt&quot; disputes.
+                    <span className="font-black text-green-400 mr-2">{t('landing.features.atomicity')}</span>
+                    {t('landing.features.atomicDesc')}
                   </p>
                 </div>
               </div>
@@ -690,10 +687,10 @@ export default function LandingPage() {
                   <Key className="h-8 w-8 text-primary-400" />
                 </div>
                 <div>
-                  <h3 className="mb-2 text-2xl font-black uppercase tracking-tight text-white">Selective Disclosure</h3>
+                  <h3 className="mb-2 text-2xl font-black uppercase tracking-tight text-white">{t('landing.features.selectiveDisclosure')}</h3>
                   <p className="text-sm font-medium leading-relaxed text-primary-400">
-                    <span className="font-black text-primary-400 mr-2">COMPLIANCE:</span>
-                    Generate specific &quot;View Keys&quot; for auditors or tax authorities without making your entire history public.
+                    <span className="font-black text-primary-400 mr-2">{t('landing.features.compliance')}</span>
+                    {t('landing.features.selectiveDisclosureDesc')}
                   </p>
                 </div>
               </div>
@@ -707,19 +704,19 @@ export default function LandingPage() {
         <div className="relative overflow-hidden rounded-[4rem] bg-gradient-to-br from-accent-700 to-primary-900 p-12 shadow-2xl md:p-24">
           <div className="absolute inset-0 bg-primary-950/20" />
           <h2 className="relative z-10 mb-8 text-5xl font-black leading-none italic tracking-tighter text-white md:text-8xl">
-            CLOSE THE DEAL IN PRIVATE.
+            {t('landing.cta.heading1')}
             <br />
-            SETTLE IN SECONDS.
+            {t('landing.cta.heading2')}
           </h2>
           <div className="relative z-10 flex flex-col items-center gap-6">
             <Link
               href="/invoices/create"
               className="rounded-full bg-white px-12 py-6 text-2xl font-black text-accent-700 shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
-              START PRIVATE TRADING
+              {t('landing.cta.button')}
             </Link>
             <p className="text-sm font-bold uppercase tracking-widest text-accent-200/60">
-              Secured by Aleo Zero-Knowledge Excellence
+              {t('landing.cta.securedBy')}
             </p>
           </div>
         </div>
@@ -738,7 +735,7 @@ export default function LandingPage() {
           </div>
           <span className="text-2xl font-black tracking-tighter text-primary-400">ZK-Invoice</span>
         </div>
-        <p>© 2024 ZK-Invoice. The Global Standard for Private B2B Settlement.</p>
+        <p>{t('landing.footer.copyright')}</p>
       </footer>
     </div>
   );
