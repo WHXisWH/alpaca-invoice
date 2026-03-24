@@ -353,6 +353,12 @@ export interface TimeoutRefundParams {
   invoice: Invoice;
 }
 
+export interface ArbiterResolveParams {
+  escrow: EscrowRecord;
+  invoice: Invoice;
+  decision: 'release' | 'refund';
+}
+
 // ──────────────────────────────────────────────
 // Wave 4: ZK Credit Proof types
 // ──────────────────────────────────────────────

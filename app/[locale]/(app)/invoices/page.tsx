@@ -30,10 +30,11 @@ export default function InvoicesPage() {
 
 function InvoicesPageInner() {
   const t = useTranslations();
-  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
+  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'escrowed' | 'cancelled'; label: string }> = [
     { key: 'all', label: t('invoice.list.filterAll') },
     { key: 'pending', label: t('invoice.list.filterPending') },
     { key: 'paid', label: t('invoice.list.filterPaid') },
+    { key: 'escrowed', label: t('invoice.list.filterEscrowed') },
     { key: 'cancelled', label: t('invoice.list.filterCancelled') },
   ];
   const roleTabs: Array<{ key: 'all' | 'sent' | 'received'; label: string }> = [

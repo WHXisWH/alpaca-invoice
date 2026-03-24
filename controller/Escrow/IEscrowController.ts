@@ -3,6 +3,7 @@ import type {
   EscrowPaymentParams,
   ConfirmDeliveryParams,
   TimeoutRefundParams,
+  ArbiterResolveParams,
 } from '@/lib/types';
 
 export interface IEscrowController {
@@ -12,4 +13,5 @@ export interface IEscrowController {
   executeEscrowPayment(params: EscrowPaymentParams): Promise<AleoTransactionId>;
   executeConfirmDelivery(params: ConfirmDeliveryParams): Promise<AleoTransactionId>;
   executeTimeoutRefund(params: TimeoutRefundParams): Promise<AleoTransactionId>;
+  executeArbiterResolve(params: ArbiterResolveParams): Promise<AleoTransactionId>;
 }

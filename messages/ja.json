@@ -222,6 +222,7 @@
       "filterAll": "すべて",
       "filterPending": "未処理",
       "filterPaid": "支払済み",
+      "filterEscrowed": "エスクロー中",
       "filterCancelled": "キャンセル済み",
       "filterDisputed": "紛争中",
       "filterEscrowed": "エスクロー中",
@@ -458,7 +459,18 @@
     "timeRemaining": "残り時間",
     "confirmDeliveryMsg": "確認すると、売主に直ちに資金が解放されます。この操作は取り消せません。",
     "refundAvailable": "納品期限が過ぎました。返金を申請できます。",
-    "lockPaymentHint": "納品確認まで資金をエスクローにロックします"
+    "lockPaymentHint": "納品確認まで資金をエスクローにロックします",
+    "sellerWaiting": "買主の納品確認を待っています。確認後、資金は自動的にあなたに解放されます。",
+    "sellerReadonly": "資金はエスクローにロックされており、買主の確認を待っています。",
+    "sellerExpiredWarning": "納品期限が過ぎました。買主がエスクロー資金の返金を申請する可能性があります。",
+    "arbiterLabel": "仲裁人",
+    "contactArbiter": "紛争がある場合は、仲裁人に連絡して解決してください。仲裁人はいつでも資金の解放または返金を行うことができます。",
+    "arbiterCanResolve": "仲裁人はいずれかの当事者に代わって納品確認または返金処理を行うことができます。",
+    "refundNotYetAvailable": "返金は納品期限を過ぎた後にのみ利用可能です。",
+    "arbiterRoleTitle": "あなたは仲裁人です",
+    "arbiterRoleDesc": "このエスクローをいつでも解決できます — 売主に資金を解放するか、買主に返金します。仲裁人の決定にタイムアウト制限はありません。",
+    "arbiterRelease": "売主に解放",
+    "arbiterRefund": "買主に返金"
   },
   "credit": {
     "title": "信用証明",

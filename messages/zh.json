@@ -222,6 +222,7 @@
       "filterAll": "全部",
       "filterPending": "待处理",
       "filterPaid": "已支付",
+      "filterEscrowed": "托管中",
       "filterCancelled": "已取消",
       "filterDisputed": "争议中",
       "filterEscrowed": "托管中",
@@ -458,7 +459,18 @@
     "timeRemaining": "剩余时间",
     "confirmDeliveryMsg": "确认后，资金将立即释放给卖方。此操作不可撤销。",
     "refundAvailable": "交付截止日期已过。您可以申请退款。",
-    "lockPaymentHint": "在确认交付前将资金锁定在托管中"
+    "lockPaymentHint": "在确认交付前将资金锁定在托管中",
+    "sellerWaiting": "等待买方确认收货。确认后，资金将自动释放给您。",
+    "sellerReadonly": "资金已锁定在托管中，等待买方确认收货。",
+    "sellerExpiredWarning": "交付截止日期已过，买方可能会申请退回托管资金。",
+    "arbiterLabel": "仲裁人",
+    "contactArbiter": "如有争议，请联系仲裁人裁决。仲裁人可以随时释放资金或发起退款。",
+    "arbiterCanResolve": "仲裁人可以代表任一方确认交付或处理退款。",
+    "refundNotYetAvailable": "退款仅在交付截止日期过后可用。",
+    "arbiterRoleTitle": "您是仲裁人",
+    "arbiterRoleDesc": "您可以随时裁决此托管 — 将资金释放给卖方，或退还给买方。仲裁人的裁决不受超时限制。",
+    "arbiterRelease": "释放给卖方",
+    "arbiterRefund": "退还给买方"
   },
   "credit": {
     "title": "信用证明",

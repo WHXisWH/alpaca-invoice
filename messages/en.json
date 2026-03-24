@@ -222,6 +222,7 @@
       "filterAll": "All",
       "filterPending": "Pending",
       "filterPaid": "Paid",
+      "filterEscrowed": "Escrowed",
       "filterCancelled": "Cancelled",
       "filterDisputed": "Disputed",
       "filterEscrowed": "Escrowed",
@@ -458,7 +459,18 @@
     "timeRemaining": "Time Remaining",
     "confirmDeliveryMsg": "Once confirmed, funds will be released to the seller immediately. This action cannot be undone.",
     "refundAvailable": "Delivery deadline has passed. You can claim a refund.",
-    "lockPaymentHint": "Lock funds in escrow until delivery is confirmed"
+    "lockPaymentHint": "Lock funds in escrow until delivery is confirmed",
+    "sellerWaiting": "Waiting for the buyer to confirm delivery. Once confirmed, funds will be released to you automatically.",
+    "sellerReadonly": "Funds are locked in escrow, awaiting buyer confirmation.",
+    "sellerExpiredWarning": "Delivery deadline has passed. The buyer may request a refund for the escrowed funds.",
+    "arbiterLabel": "Arbiter",
+    "contactArbiter": "If you have a dispute, contact the arbiter to resolve. The arbiter can release funds or initiate a refund at any time.",
+    "arbiterCanResolve": "The arbiter can confirm delivery or process a refund on behalf of either party.",
+    "refundNotYetAvailable": "Refund is only available after the delivery deadline has passed.",
+    "arbiterRoleTitle": "You are the Arbiter",
+    "arbiterRoleDesc": "You can resolve this escrow at any time — release funds to the seller or refund the buyer. No timeout restriction applies to your decision.",
+    "arbiterRelease": "Release to Seller",
+    "arbiterRefund": "Refund to Buyer"
   },
   "credit": {
     "title": "Credit Proof",

@@ -1129,5 +1129,46 @@ export function useTransactionController(): ITxController {
         throw error;
       }
     },
+
+    executeArbiterResolve: async (params: any): Promise<AleoTransactionId> => {
+      if (!publicKey || !walletService) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Wallet not connected.');
+      }
+      const { PROGRAM_ID_V4 } = await import('@/lib/contract');
+      const chainId = getChainIdFromNetwork(getNetworkFromEnv());
+      const nowSec = Math.floor(Date.now() / 1000);
+      const decisionU8 = params.decision === 'release' ? 1 : 2;
+      const resolutionNonce = await cryptoService.hashObjectToField(`ARBITER-${Date.now()}-${Math.random()}`);
+
+      startTx('REQUESTING');
+      try {
+        updateProgress(10, 'Fetching escrow record...');
+        const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
+        const escrowRecord = escrowRecords?.find((r: any) =>
+          r?.data?.escrow_id === params.escrow.escrowId ||
+          r?.escrow_id === params.escrow.escrowId
+        );
+        if (!escrowRecord) {
+          throw new Error('Escrow record not found in wallet. Ensure you are the arbiter.');
+        }
+        const escrowRecordStr = toRecordInputString(escrowRecord);
+
+        updateProgress(50, 'Submitting arbiter_resolve...');
+        const requestId = await walletService.requestTransaction({
+          functionName: 'arbiter_resolve',
+          inputs: [escrowRecordStr, `${decisionU8}u8`, resolutionNonce, `${nowSec}u32`],
+          publicKey,
+          programId: PROGRAM_ID_V4,
+          fee: 1000000,
+          chainId,
+        });
+        updateProgress(100, '✓ Arbiter resolution submitted');
+        completeTx();
+        return requestId as AleoTransactionId;
+      } catch (error) {
+        completeTx();
+        throw error;
+      }
+    },
   };
 }

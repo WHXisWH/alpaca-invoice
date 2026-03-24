@@ -304,7 +304,7 @@ export class WalletService {
       if (unspentRecords.length === 0) {
         throw new WalletServiceError(
           WalletError.INSUFFICIENT_FEE,
-          'No unspent fee records available',
+          'No private credits records found. Escrow and private payments require private balance. Use your wallet to convert public credits to private (transfer_public_to_private).',
           { requiredAmount: amount.toString() }
         );
       }

@@ -14,6 +14,7 @@ import { AleoField, InvoiceStatus } from '@/lib/types';
 import { getTaxRateLabelFromTaxGroups } from '@/lib/invoice';
 import { useDisputeController } from '@/controller/Dispute/useDisputeController';
 import { useEscrowController } from '@/controller/Escrow/useEscrowController';
+import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { format } from 'date-fns';
@@ -36,6 +37,7 @@ export default function InvoiceDetailPage() {
   const publicKey = useUserStore((s) => s.publicKey);
 
   const { isAuthRequired, handleUnlock } = useAuthCheck();
+  const { handleError } = useErrorHandler();
 
   const {
     invoice,
@@ -398,6 +400,8 @@ export default function InvoiceDetailPage() {
                 escrow={escrow}
                 invoice={invoice}
                 isCurrentUserPayer={publicKey === escrow.payer}
+                isCurrentUserPayee={publicKey === escrow.payee}
+                isCurrentUserArbiter={publicKey === escrow.arbiter}
                 onConfirmDelivery={async () => {
                   setEscrowProcessing(true);
                   try {
@@ -408,6 +412,18 @@ export default function InvoiceDetailPage() {
                   setEscrowProcessing(true);
                   try {
                     await escrowController.executeTimeoutRefund({ escrow, invoice });
+                  } finally { setEscrowProcessing(false); }
+                }}
+                onArbiterRelease={async () => {
+                  setEscrowProcessing(true);
+                  try {
+                    await escrowController.executeArbiterResolve({ escrow, invoice, decision: 'release' });
+                  } finally { setEscrowProcessing(false); }
+                }}
+                onArbiterRefund={async () => {
+                  setEscrowProcessing(true);
+                  try {
+                    await escrowController.executeArbiterResolve({ escrow, invoice, decision: 'refund' });
                   } finally { setEscrowProcessing(false); }
                 }}
               />
@@ -448,48 +464,57 @@ export default function InvoiceDetailPage() {
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-amber-100">
             {userRole === 'buyer' && (
               <>
-                <button
-                  onClick={handlePay}
-                  disabled={isProcessing || !isConfirmed || escrowProcessing}
-                  className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isProcessing
-                    ? t('common.loading')
-                    : (invoice.currencyFlag === CurrencyFlag.USDCX ? t('invoice.detail.approveAndPay') : `💳 ${t('invoice.detail.payButton')}`)}
-                </button>
-                <button
-                  onClick={async () => {
-                    setEscrowProcessing(true);
-                    try {
-                      const deadline = new Date(invoice.dueDate);
-                      deadline.setDate(deadline.getDate() + 7);
-                      await escrowController.executeEscrowPayment({
-                        invoice,
-                        escrowConfig: {
-                          deliveryDeadline: deadline,
-                          autoRelease: false,
-                          releaseConditionHash: '0field' as AleoField,
-                        },
-                      });
-                    } finally { setEscrowProcessing(false); }
-                  }}
-                  disabled={isProcessing || !isConfirmed || escrowProcessing}
-                  className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title={t('escrow.lockPaymentHint')}
-                >
-                  <Lock className="inline h-4 w-4 mr-1 -mt-0.5" />
-                  {escrowProcessing ? t('common.loading') : t('invoice.detail.lockPayment')}
-                </button>
-                {!showDisputeForm && (
-                  <button
-                    onClick={() => setShowDisputeForm(true)}
-                    disabled={isProcessing || escrowProcessing}
-                    className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <AlertTriangle className="inline h-4 w-4 mr-1 -mt-0.5" />
-                    {t('dispute.raiseDispute')}
-                  </button>
-                )}
+                {(() => {
+                  const hasActiveEscrow = escrows.some(e => e.invoiceId === invoice.id);
+                  return (
+                    <>
+                      <button
+                        onClick={handlePay}
+                        disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
+                        className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isProcessing
+                          ? t('common.loading')
+                          : (invoice.currencyFlag === CurrencyFlag.USDCX ? t('invoice.detail.approveAndPay') : `💳 ${t('invoice.detail.payButton')}`)}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setEscrowProcessing(true);
+                          try {
+                            const deadline = new Date(invoice.dueDate);
+                            deadline.setDate(deadline.getDate() + 7);
+                            await escrowController.executeEscrowPayment({
+                              invoice,
+                              escrowConfig: {
+                                deliveryDeadline: deadline,
+                                autoRelease: false,
+                                releaseConditionHash: '0field' as AleoField,
+                              },
+                            });
+                          } catch (err) {
+                            handleError(err);
+                          } finally { setEscrowProcessing(false); }
+                        }}
+                        disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
+                        className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title={t('escrow.lockPaymentHint')}
+                      >
+                        <Lock className="inline h-4 w-4 mr-1 -mt-0.5" />
+                        {escrowProcessing ? t('common.loading') : t('invoice.detail.lockPayment')}
+                      </button>
+                      {!showDisputeForm && (
+                        <button
+                          onClick={() => setShowDisputeForm(true)}
+                          disabled={isProcessing || escrowProcessing || hasActiveEscrow}
+                          className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <AlertTriangle className="inline h-4 w-4 mr-1 -mt-0.5" />
+                          {t('dispute.raiseDispute')}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
             {userRole === 'seller' && (
@@ -509,17 +534,24 @@ export default function InvoiceDetailPage() {
           </div>
         )}
         
-        {invoice.status !== InvoiceStatus.PENDING && (
+        {invoice.status !== InvoiceStatus.PENDING && invoice.status !== InvoiceStatus.ESCROWED && (
           <div className="mt-4 pt-4 border-t border-amber-100">
             <div className="text-sm text-slate-600 text-center">
               {invoice.status === InvoiceStatus.PAID && `✅ ${t('invoice.detail.statusPaidMessage')}`}
               {invoice.status === InvoiceStatus.CANCELLED && `❌ ${t('invoice.detail.statusCancelledMessage')}`}
               {invoice.status === InvoiceStatus.EXPIRED && `⚠️ ${t('invoice.detail.statusExpiredMessage')}`}
               {invoice.status === InvoiceStatus.DISPUTED && `⚠️ ${t('invoice.detail.statusDisputedMessage')}`}
-              {invoice.status === InvoiceStatus.ESCROWED && `🔒 ${t('invoice.detail.statusEscrowedMessage')}`}
               {invoice.status === InvoiceStatus.REFUNDED && `↩️ ${t('invoice.detail.statusRefundedMessage')}`}
               {invoice.status === InvoiceStatus.RESOLVED_CANCELLED && `❌ ${t('invoice.detail.statusResolvedCancelledMessage')}`}
               {invoice.status === InvoiceStatus.RESOLVED_PAID && `✅ ${t('invoice.detail.statusResolvedPaidMessage')}`}
+            </div>
+          </div>
+        )}
+
+        {invoice.status === InvoiceStatus.ESCROWED && (
+          <div className="mt-4 pt-4 border-t border-amber-100">
+            <div className="text-sm text-slate-600 text-center">
+              🔒 {t('invoice.detail.statusEscrowedMessage')}
             </div>
           </div>
         )}

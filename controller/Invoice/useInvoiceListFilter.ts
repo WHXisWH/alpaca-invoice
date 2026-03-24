@@ -22,7 +22,7 @@ type InvoiceWithRole = {
 export function useInvoiceListFilter(
   invoicesWithRole: InvoiceWithRole[]
 ) {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed'>('all');
   const [search, setSearch] = useState('');
 
   /**
@@ -38,7 +38,9 @@ export function useInvoiceListFilter(
             ? invoice.status === InvoiceStatus.PENDING
             : filter === 'paid'
               ? invoice.status === InvoiceStatus.PAID
-              : invoice.status === InvoiceStatus.CANCELLED;
+              : filter === 'escrowed'
+                ? invoice.status === InvoiceStatus.ESCROWED
+                : invoice.status === InvoiceStatus.CANCELLED;
       
       // 搜索过滤
       const searchLower = search.trim().toLowerCase();

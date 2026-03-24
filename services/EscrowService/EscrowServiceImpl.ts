@@ -1,4 +1,4 @@
-import type { IEscrowService } from './IEscrowService';
+import type { IEscrowService, ChainEscrowData } from './IEscrowService';
 import type { AleoField, EscrowRecord } from '@/lib/types';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID_V4, MAPPINGS_V4 } from '@/lib/contract';
@@ -29,6 +29,35 @@ export class EscrowService implements IEscrowService {
     );
     if (!result) return null;
     return Number(cleanAleoNumber(result.replace(/"/g, '').trim()));
+  }
+
+  async getEscrowBalance(escrowId: AleoField): Promise<bigint | null> {
+    const result = await this.protocolService.getProgramMappingValue(
+      PROGRAM_ID_V4,
+      MAPPINGS_V4.escrow_balances,
+      escrowId
+    );
+    if (!result) return null;
+    return BigInt(cleanAleoNumber(result.replace(/"/g, '').trim()));
+  }
+
+  async getChainEscrowData(invoiceId: AleoField): Promise<ChainEscrowData | null> {
+    const escrowId = await this.getEscrowByInvoiceId(invoiceId);
+    if (!escrowId) return null;
+
+    const [status, balance] = await Promise.all([
+      this.getEscrowStatus(escrowId),
+      this.getEscrowBalance(escrowId),
+    ]);
+
+    if (status === null) return null;
+
+    return {
+      escrowId,
+      invoiceId,
+      status,
+      balance: balance ?? 0n,
+    };
   }
 
   isDeliveryExpired(escrowRecord: EscrowRecord): boolean {

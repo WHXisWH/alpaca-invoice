@@ -665,7 +665,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
           invoices.push(invoice);
         } catch (error) {
-          console.error(`Failed to decrypt invoice ${dbRecord.invoiceHash}:`, error);
+          console.warn(`[Store.getAllInvoices] Skipped decryption for ${dbRecord.invoiceHash} (master key mismatch or data from another wallet)`);
           // Continue processing other invoices (even if decryption fails, retain basic information)
           const invoice: Invoice = {
             id: dbRecord.id,
