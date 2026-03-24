@@ -3,7 +3,7 @@ import merkle_tree.aleo;
 import test_usdcx_multisig_core.aleo;
 import test_usdcx_freezelist.aleo;
 import test_usdcx_stablecoin.aleo;
-program zk_invoice_v3_1.aleo;
+program zk_invoice_v3_3.aleo;
 
 record InvoiceRecord:
     owner as address.private;
@@ -106,20 +106,6 @@ struct CreateInvoiceJct:
     jct_registration as field;
     currency_flag as u8;
 
-struct MerkleProof:
-    siblings as [field; 16u32];
-    leaf_index as u32;
-
-struct WalletEcdsaSigner:
-    wallet_id as address;
-    ecdsa_signer as [u8; 20u32];
-
-struct AdminOp:
-    op as u8;
-    threshold as u8;
-    aleo_signer as address;
-    ecdsa_signer as [u8; 20u32];
-
 mapping invoice_registry:
     key as field.public;
     value as field.public;
@@ -195,6 +181,10 @@ mapping getter_jct_reg_cache:
 mapping getter_payment_commitment_cache:
     key as field.public;
     value as field.public;
+
+mapping invoice_arbiter:
+    key as field.public;
+    value as address.public;
 
 closure compute_invoice_id_internal:
     input r0 as address;
@@ -279,65 +269,66 @@ function create_invoice:
     input r12 as u64.private;
     input r13 as u64.private;
     input r14 as CreateInvoiceJct.private;
+    input r15 as address.private;
     assert.neq self.caller r0;
-    gt r1 0u64 into r15;
-    assert.eq r15 true;
-    lte r1 1000000000000000u64 into r16;
+    gt r1 0u64 into r16;
     assert.eq r16 true;
-    gte r3 r6 into r17;
+    lte r1 1000000000000000u64 into r17;
     assert.eq r17 true;
-    call compute_invoice_id_internal self.caller r0 r1 r3 r5 into r18;
-    call compute_invoice_hash_internal self.caller r0 r1 r2 r3 r5 r7 r8 r9 r10 into r19;
-    assert.eq r4 r19;
-    is.neq r14.tax_tag 0field into r20;
-    call compute_tax_tag r14.tax_groups into r21;
-    not r20 into r22;
-    is.eq r21 r14.tax_tag into r23;
-    or r23 r22 into r24;
-    assert.eq r24 true;
-    call tax_group_valid r14.tax_groups.group_a into r25;
-    or r25 r22 into r26;
-    assert.eq r26 true;
-    call tax_group_valid r14.tax_groups.group_b into r27;
-    or r27 r22 into r28;
-    assert.eq r28 true;
-    call tax_groups_sum r14.tax_groups into r29;
-    is.eq r29 r14.total_amount into r30;
-    or r30 r22 into r31;
-    assert.eq r31 true;
-    add r1 r2 into r32;
-    assert.eq r32 r14.total_amount;
-    div r1 10000u64 into r33;
-    mul r33 r13 into r34;
-    is.eq r2 r34 into r35;
-    is.eq r32 r12 into r36;
-    is.eq r11 r1 into r37;
-    is.eq r4 r19 into r38;
-    call compute_rules_result r35 r17 r36 r37 r38 into r39;
-    cast r1 into r40 as field;
-    call commit_field r40 r5 1field into r41;
-    cast r2 into r42 as field;
-    call commit_field r42 r5 2field into r43;
-    cast r3 into r44 as field;
-    call commit_field r44 r5 3field into r45;
-    cast r0 into r46 as field;
-    call commit_field r46 r5 4field into r47;
-    cast self.caller into r48 as field;
-    call commit_field r48 r5 5field into r49;
-    call commit_field r8 r5 6field into r50;
-    call commit_field r9 r5 7field into r51;
-    call commit_field r10 r5 8field into r52;
-    call commit_field r7 r5 9field into r53;
-    call commit_field r14.tax_tag r5 10field into r54;
-    call commit_field r14.jct_registration r5 11field into r55;
-    cast r41 r43 r45 r47 r49 r50 r51 r52 r53 r54 r55 into r56 as FieldCommitments;
-    hash.bhp256 r56 into r57 as field;
-    cast self.caller r18 self.caller r0 r1 r2 r4 r3 r6 0u8 r7 r8 r9 r10 r14.tax_tag r14.jct_registration r14.total_amount r14.currency_flag into r58 as InvoiceRecord.record;
-    cast r0 r18 self.caller r0 r1 r2 r4 r3 r6 0u8 r7 r8 r9 r10 r14.tax_tag r14.jct_registration r14.total_amount r14.currency_flag into r59 as InvoiceRecord.record;
-    async create_invoice r18 r4 self.caller r57 r56 r39 r14.tax_tag r14.jct_registration into r60;
-    output r58 as InvoiceRecord.record;
+    gte r3 r6 into r18;
+    assert.eq r18 true;
+    call compute_invoice_id_internal self.caller r0 r1 r3 r5 into r19;
+    call compute_invoice_hash_internal self.caller r0 r1 r2 r3 r5 r7 r8 r9 r10 into r20;
+    assert.eq r4 r20;
+    is.neq r14.tax_tag 0field into r21;
+    call compute_tax_tag r14.tax_groups into r22;
+    not r21 into r23;
+    is.eq r22 r14.tax_tag into r24;
+    or r24 r23 into r25;
+    assert.eq r25 true;
+    call tax_group_valid r14.tax_groups.group_a into r26;
+    or r26 r23 into r27;
+    assert.eq r27 true;
+    call tax_group_valid r14.tax_groups.group_b into r28;
+    or r28 r23 into r29;
+    assert.eq r29 true;
+    call tax_groups_sum r14.tax_groups into r30;
+    is.eq r30 r14.total_amount into r31;
+    or r31 r23 into r32;
+    assert.eq r32 true;
+    add r1 r2 into r33;
+    assert.eq r33 r14.total_amount;
+    div r1 10000u64 into r34;
+    mul r34 r13 into r35;
+    is.eq r2 r35 into r36;
+    is.eq r33 r12 into r37;
+    is.eq r11 r1 into r38;
+    is.eq r4 r20 into r39;
+    call compute_rules_result r36 r18 r37 r38 r39 into r40;
+    cast r1 into r41 as field;
+    call commit_field r41 r5 1field into r42;
+    cast r2 into r43 as field;
+    call commit_field r43 r5 2field into r44;
+    cast r3 into r45 as field;
+    call commit_field r45 r5 3field into r46;
+    cast r0 into r47 as field;
+    call commit_field r47 r5 4field into r48;
+    cast self.caller into r49 as field;
+    call commit_field r49 r5 5field into r50;
+    call commit_field r8 r5 6field into r51;
+    call commit_field r9 r5 7field into r52;
+    call commit_field r10 r5 8field into r53;
+    call commit_field r7 r5 9field into r54;
+    call commit_field r14.tax_tag r5 10field into r55;
+    call commit_field r14.jct_registration r5 11field into r56;
+    cast r42 r44 r46 r48 r50 r51 r52 r53 r54 r55 r56 into r57 as FieldCommitments;
+    hash.bhp256 r57 into r58 as field;
+    cast self.caller r19 self.caller r0 r1 r2 r4 r3 r6 0u8 r7 r8 r9 r10 r14.tax_tag r14.jct_registration r14.total_amount r14.currency_flag into r59 as InvoiceRecord.record;
+    cast r0 r19 self.caller r0 r1 r2 r4 r3 r6 0u8 r7 r8 r9 r10 r14.tax_tag r14.jct_registration r14.total_amount r14.currency_flag into r60 as InvoiceRecord.record;
+    async create_invoice r19 r4 self.caller r58 r57 r40 r14.tax_tag r14.jct_registration r15 into r61;
     output r59 as InvoiceRecord.record;
-    output r60 as zk_invoice_v3_1.aleo/create_invoice.future;
+    output r60 as InvoiceRecord.record;
+    output r61 as zk_invoice_v3_3.aleo/create_invoice.future;
 
 finalize create_invoice:
     input r0 as field.public;
@@ -348,8 +339,9 @@ finalize create_invoice:
     input r5 as field.public;
     input r6 as field.public;
     input r7 as field.public;
-    get.or_use invoice_registry[r0] 0field into r8;
-    assert.eq r8 0field;
+    input r8 as address.public;
+    get.or_use invoice_registry[r0] 0field into r9;
+    assert.eq r9 0field;
     set r1 into invoice_registry[r0];
     set 0u8 into invoice_status[r0];
     set r3 into invoice_commitment[r0];
@@ -357,12 +349,13 @@ finalize create_invoice:
     set r5 into invoice_rules_result[r0];
     set r6 into invoice_tax_tag[r0];
     set r7 into invoice_jct_reg[r0];
-    get.or_use invoice_count[r2] 0u64 into r9;
-    add r9 1u64 into r10;
-    set r10 into invoice_count[r2];
-    get.or_use audit_counter[r2] 0u64 into r11;
-    add r11 1u64 into r12;
-    set r12 into audit_counter[r2];
+    set r8 into invoice_arbiter[r0];
+    get.or_use invoice_count[r2] 0u64 into r10;
+    add r10 1u64 into r11;
+    set r11 into invoice_count[r2];
+    get.or_use audit_counter[r2] 0u64 into r12;
+    add r12 1u64 into r13;
+    set r13 into audit_counter[r2];
 
 function pay_invoice_credits_private:
     input r0 as credits.aleo/credits.record;
@@ -389,7 +382,7 @@ function pay_invoice_credits_private:
     output r11 as PaymentRecord.record;
     output r12 as InvoiceRecord.record;
     output r13 as InvoiceRecord.record;
-    output r14 as zk_invoice_v3_1.aleo/pay_invoice_credits_private.future;
+    output r14 as zk_invoice_v3_3.aleo/pay_invoice_credits_private.future;
 
 finalize pay_invoice_credits_private:
     input r0 as field.public;
@@ -398,39 +391,34 @@ finalize pay_invoice_credits_private:
     set r0 into payment_commitments[r1];
 
 function pay_invoice_usdcx:
-    input r0 as test_usdcx_stablecoin.aleo/Token.record;
-    input r1 as InvoiceRecord.record;
-    input r2 as field.private;
-    input r3 as u32.private;
-    input r4 as [MerkleProof; 2u32].private;
-    assert.eq self.caller r1.buyer;
-    assert.eq r1.status 0u8;
-    assert.eq r1.currency_flag 1u8;
-    lte r3 r1.due_date into r5;
-    assert.eq r5 true;
-    gt r1.total_amount 0u64 into r6;
-    assert.eq r6 true;
-    cast r1.total_amount into r7 as u128;
-    call test_usdcx_stablecoin.aleo/transfer_private r1.seller r7 r0 r4 into r8 r9 r10 r11;
-    cast r1.invoice_id r1.total_amount r2 into r12 as PaymentCommitData;
-    hash.bhp256 r12 into r13 as field;
-    hash.bhp256 r1.invoice_id into r14 as field;
-    cast self.caller r14 r1.invoice_id self.caller r1.seller r1.total_amount r3 r13 into r15 as PaymentRecord.record;
-    cast self.caller r1.invoice_id r1.seller r1.buyer r1.amount r1.tax_amount r1.invoice_hash r1.due_date r1.created_at 1u8 r1.order_id r1.currency r1.items_hash r1.memo_hash r1.tax_tag r1.jct_registration r1.total_amount r1.currency_flag into r16 as InvoiceRecord.record;
-    cast r1.seller r1.invoice_id r1.seller r1.buyer r1.amount r1.tax_amount r1.invoice_hash r1.due_date r1.created_at 1u8 r1.order_id r1.currency r1.items_hash r1.memo_hash r1.tax_tag r1.jct_registration r1.total_amount r1.currency_flag into r17 as InvoiceRecord.record;
-    async pay_invoice_usdcx r1.invoice_id r13 r11 into r18;
-    output r9 as test_usdcx_stablecoin.aleo/Token.record;
-    output r10 as test_usdcx_stablecoin.aleo/Token.record;
-    output r8 as test_usdcx_stablecoin.aleo/ComplianceRecord.record;
-    output r15 as PaymentRecord.record;
-    output r16 as InvoiceRecord.record;
-    output r17 as InvoiceRecord.record;
-    output r18 as zk_invoice_v3_1.aleo/pay_invoice_usdcx.future;
+    input r0 as InvoiceRecord.record;
+    input r1 as field.private;
+    input r2 as u32.private;
+    assert.eq self.caller r0.buyer;
+    assert.eq r0.status 0u8;
+    assert.eq r0.currency_flag 1u8;
+    lte r2 r0.due_date into r3;
+    assert.eq r3 true;
+    gt r0.total_amount 0u64 into r4;
+    assert.eq r4 true;
+    cast r0.total_amount into r5 as u128;
+    call test_usdcx_stablecoin.aleo/transfer_public_as_signer r0.seller r5 into r6;
+    cast r0.invoice_id r0.total_amount r1 into r7 as PaymentCommitData;
+    hash.bhp256 r7 into r8 as field;
+    hash.bhp256 r0.invoice_id into r9 as field;
+    cast self.caller r9 r0.invoice_id self.caller r0.seller r0.total_amount r2 r8 into r10 as PaymentRecord.record;
+    cast self.caller r0.invoice_id r0.seller r0.buyer r0.amount r0.tax_amount r0.invoice_hash r0.due_date r0.created_at 1u8 r0.order_id r0.currency r0.items_hash r0.memo_hash r0.tax_tag r0.jct_registration r0.total_amount r0.currency_flag into r11 as InvoiceRecord.record;
+    cast r0.seller r0.invoice_id r0.seller r0.buyer r0.amount r0.tax_amount r0.invoice_hash r0.due_date r0.created_at 1u8 r0.order_id r0.currency r0.items_hash r0.memo_hash r0.tax_tag r0.jct_registration r0.total_amount r0.currency_flag into r12 as InvoiceRecord.record;
+    async pay_invoice_usdcx r0.invoice_id r8 r6 into r13;
+    output r10 as PaymentRecord.record;
+    output r11 as InvoiceRecord.record;
+    output r12 as InvoiceRecord.record;
+    output r13 as zk_invoice_v3_3.aleo/pay_invoice_usdcx.future;
 
 finalize pay_invoice_usdcx:
     input r0 as field.public;
     input r1 as field.public;
-    input r2 as test_usdcx_stablecoin.aleo/transfer_private.future;
+    input r2 as test_usdcx_stablecoin.aleo/transfer_public_as_signer.future;
     await r2;
     set 1u8 into invoice_status[r0];
     set r0 into payment_commitments[r1];
@@ -442,7 +430,7 @@ function cancel_invoice:
     cast r0.owner r0.invoice_id r0.seller r0.buyer r0.amount r0.tax_amount r0.invoice_hash r0.due_date r0.created_at 2u8 r0.order_id r0.currency r0.items_hash r0.memo_hash r0.tax_tag r0.jct_registration r0.total_amount r0.currency_flag into r1 as InvoiceRecord.record;
     async cancel_invoice r0.invoice_id r0.seller into r2;
     output r1 as InvoiceRecord.record;
-    output r2 as zk_invoice_v3_1.aleo/cancel_invoice.future;
+    output r2 as zk_invoice_v3_3.aleo/cancel_invoice.future;
 
 finalize cancel_invoice:
     input r0 as field.public;
@@ -468,7 +456,7 @@ function set_audit_authorization:
     assert.eq r5 true;
     cast r1 r2 r3 self.caller into r6 as AuditAuthorization;
     async set_audit_authorization r0.invoice_id r6 into r7;
-    output r7 as zk_invoice_v3_1.aleo/set_audit_authorization.future;
+    output r7 as zk_invoice_v3_3.aleo/set_audit_authorization.future;
 
 finalize set_audit_authorization:
     input r0 as field.public;
@@ -547,7 +535,7 @@ function compute_tax_tag_for_test:
 function get_invoice_tax_tag:
     input r0 as field.private;
     async get_invoice_tax_tag r0 into r1;
-    output r1 as zk_invoice_v3_1.aleo/get_invoice_tax_tag.future;
+    output r1 as zk_invoice_v3_3.aleo/get_invoice_tax_tag.future;
 
 finalize get_invoice_tax_tag:
     input r0 as field.public;
@@ -557,7 +545,7 @@ finalize get_invoice_tax_tag:
 function get_invoice_jct_reg:
     input r0 as field.private;
     async get_invoice_jct_reg r0 into r1;
-    output r1 as zk_invoice_v3_1.aleo/get_invoice_jct_reg.future;
+    output r1 as zk_invoice_v3_3.aleo/get_invoice_jct_reg.future;
 
 finalize get_invoice_jct_reg:
     input r0 as field.public;
@@ -567,7 +555,7 @@ finalize get_invoice_jct_reg:
 function get_payment_commitment:
     input r0 as field.private;
     async get_payment_commitment r0 into r1;
-    output r1 as zk_invoice_v3_1.aleo/get_payment_commitment.future;
+    output r1 as zk_invoice_v3_3.aleo/get_payment_commitment.future;
 
 finalize get_payment_commitment:
     input r0 as field.public;

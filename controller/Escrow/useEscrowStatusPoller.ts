@@ -10,7 +10,7 @@ import { Invoice, InvoiceStatus, EscrowStatus, AleoField } from '@/lib/types';
 const POLL_INTERVAL_MS = 12_000; // 12 seconds
 const POLL_TIMEOUT_MS  = 600_000; // 10 minutes
 
-export type EscrowOperation = 'confirm_delivery' | 'timeout_refund' | 'arbiter_resolve';
+export type EscrowOperation = 'confirm_delivery' | 'timeout_refund' | 'arbiter_resolve' | 'dispute_dismiss' | 'dispute_uphold';
 
 /** Derives the expected InvoiceStatus and EscrowStatus from the operation. */
 function expectedStatuses(
@@ -19,6 +19,12 @@ function expectedStatuses(
 ): { invoiceStatus: InvoiceStatus; escrowStatus: EscrowStatus } {
   if (op === 'confirm_delivery' || (op === 'arbiter_resolve' && decision === 'release')) {
     return { invoiceStatus: InvoiceStatus.PAID, escrowStatus: EscrowStatus.RELEASED };
+  }
+  if (op === 'dispute_dismiss') {
+    return { invoiceStatus: InvoiceStatus.RESOLVED_CANCELLED, escrowStatus: EscrowStatus.LOCKED };
+  }
+  if (op === 'dispute_uphold') {
+    return { invoiceStatus: InvoiceStatus.REFUNDED, escrowStatus: EscrowStatus.REFUNDED };
   }
   return { invoiceStatus: InvoiceStatus.REFUNDED, escrowStatus: EscrowStatus.REFUNDED };
 }

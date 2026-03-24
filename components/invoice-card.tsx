@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useUserStore } from '@/stores/User/useUserStore';
+import { determineInvoiceRole } from '@/lib/invoice';
 import type { Invoice } from '@/lib/types';
 import { InvoiceStatus } from '@/lib/types';
 import { format } from 'date-fns';
@@ -19,7 +21,7 @@ import type { StatusConfig } from '@/controller/Invoice/IInvoices';
 
 interface InvoiceCardProps {
   invoice: Invoice;
-  role?: 'SELLER' | 'BUYER' | 'BOTH';
+  role?: 'SELLER' | 'BUYER' | 'BOTH' | 'NONE';
   statusConfig?: StatusConfig;
   showFullAddresses?: boolean;
   isLoading?: boolean;
@@ -55,7 +57,15 @@ export default function InvoiceCard({
   onCancel,
 }: InvoiceCardProps) {
   const t = useTranslations();
+  const { publicKey } = useUserStore();
   const [expanded, setExpanded] = useState(false);
+
+  const canCancelAsSeller = useMemo(() => {
+    if (!publicKey || !onCancel) return false;
+    if (invoice.status !== InvoiceStatus.PENDING) return false;
+    const wr = determineInvoiceRole(publicKey, invoice);
+    return wr === 'seller' || wr === 'both';
+  }, [publicKey, invoice, onCancel]);
   const details = invoice.details;
   const truncateAddress = (addr: string) =>
     showFullAddresses ? addr : `${addr.slice(0, 8)}...${addr.slice(-6)}`;
@@ -211,9 +221,9 @@ export default function InvoiceCard({
                       )}
                     </button>
                   )}
-                  {(role === 'SELLER' || role === 'BOTH') && onCancel && (
+                  {canCancelAsSeller && (
                     <button
-                      onClick={() => onCancel(invoice)}
+                      onClick={() => onCancel!(invoice)}
                       disabled={isLoading || isProcessing || isSyncing}
                       className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-error-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-error-600 disabled:cursor-not-allowed disabled:opacity-50"
                     >

@@ -30,12 +30,13 @@ export default function InvoicesPage() {
 
 function InvoicesPageInner() {
   const t = useTranslations();
-  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'escrowed' | 'cancelled'; label: string }> = [
+  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'escrowed' | 'cancelled' | 'resolved'; label: string }> = [
     { key: 'all', label: t('invoice.list.filterAll') },
     { key: 'pending', label: t('invoice.list.filterPending') },
     { key: 'paid', label: t('invoice.list.filterPaid') },
     { key: 'escrowed', label: t('invoice.list.filterEscrowed') },
     { key: 'cancelled', label: t('invoice.list.filterCancelled') },
+    { key: 'resolved', label: t('invoice.list.filterResolved') },
   ];
   const roleTabs: Array<{ key: 'all' | 'sent' | 'received'; label: string }> = [
     { key: 'all', label: t('invoice.list.roleAll') },
@@ -252,7 +253,13 @@ function InvoicesPageInner() {
               <MotionItem key={invoice.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium text-primary-500">
-                    {role === 'BOTH' ? t('invoice.detail.roleBoth') : role === 'SELLER' ? t('invoice.detail.roleAsSeller') : t('invoice.detail.roleAsBuyer')}
+                    {role === 'BOTH'
+                      ? t('invoice.detail.roleBoth')
+                      : role === 'SELLER'
+                        ? t('invoice.detail.roleAsSeller')
+                        : role === 'BUYER'
+                          ? t('invoice.detail.roleAsBuyer')
+                          : t('invoice.detail.roleUnrelated')}
                   </div>
                   <span
                     className={cn(

@@ -46,9 +46,19 @@ export function useDisputeController(): IDisputeController {
         status: 0 as DisputeStatus,
         createdAt: new Date(),
         resolutionDeadline: new Date(deadlineSec * 1000),
+        reasonText: params.reasonText,
       };
 
       disputeStore.addDispute(dispute);
+
+      if (params.reasonText) {
+        fetch('/api/dispute-reason', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId: params.invoice.id, reasonText: params.reasonText }),
+        }).catch((e) => console.warn('[Dispute] Failed to save reason to KV:', e));
+      }
+
       setLog('Dispute raised successfully');
       return txId;
     } catch (error) {

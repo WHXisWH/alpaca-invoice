@@ -264,6 +264,7 @@ export function useInvoicePollingCore() {
     buildUpdatedInvoice,
     buildRolledBackInvoice,
     fetchChainAnchors,
+    getChainInvoiceStatus,
     reconcilePendingWithMapping
   };
 }

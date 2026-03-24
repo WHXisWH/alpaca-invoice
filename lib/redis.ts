@@ -29,6 +29,7 @@ export const redis = new Proxy({} as Redis, {
 export const kvKey = {
   byHash: (hash: string) => `invhash:${hash}`,
   byId:   (id: string)   => `invid:${id}`,
+  disputeReason: (invoiceId: string) => `dispute-reason:${invoiceId}`,
 };
 
 /** 2-year TTL in seconds */

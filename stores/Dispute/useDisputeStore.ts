@@ -5,9 +5,8 @@ import type { DisputeRecord, AleoField } from '@/lib/types';
 
 export const useDisputeStore = create<DisputeState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       disputes: [],
-      currentDispute: null,
       isLoading: false,
 
       addDispute(dispute: DisputeRecord) {
@@ -23,29 +22,13 @@ export const useDisputeStore = create<DisputeState>()(
           disputes: state.disputes.map(d =>
             d.disputeId === disputeId ? { ...d, ...data } : d
           ),
-          currentDispute:
-            state.currentDispute?.disputeId === disputeId
-              ? { ...state.currentDispute, ...data }
-              : state.currentDispute,
         }));
-      },
-
-      setCurrentDispute(dispute: DisputeRecord | null) {
-        set({ currentDispute: dispute });
       },
 
       removeDispute(disputeId: AleoField) {
         set(state => ({
           disputes: state.disputes.filter(d => d.disputeId !== disputeId),
-          currentDispute:
-            state.currentDispute?.disputeId === disputeId
-              ? null
-              : state.currentDispute,
         }));
-      },
-
-      getDisputesByInvoiceId(invoiceId: AleoField): DisputeRecord[] {
-        return get().disputes.filter(d => d.invoiceId === invoiceId);
       },
     }),
     {

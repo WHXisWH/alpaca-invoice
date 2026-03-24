@@ -6,7 +6,7 @@ import { StatusConfig } from './IInvoices';
 
 type InvoiceWithRole = {
   invoice: Invoice;
-  role: 'SELLER' | 'BUYER' | 'BOTH';
+  role: 'SELLER' | 'BUYER' | 'BOTH' | 'NONE';
   chainStatus: ChainConfirmationStatus;
   statusConfig: StatusConfig;
 };
@@ -22,15 +22,11 @@ type InvoiceWithRole = {
 export function useInvoiceListFilter(
   invoicesWithRole: InvoiceWithRole[]
 ) {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed' | 'resolved'>('all');
   const [search, setSearch] = useState('');
 
-  /**
-   * 前端过滤和搜索（基于 Store 数据）
-   */
   const filteredInvoices = useMemo(() => {
     return invoicesWithRole.filter(({ invoice }) => {
-      // 状态过滤
       const matchStatus =
         filter === 'all'
           ? true
@@ -40,7 +36,9 @@ export function useInvoiceListFilter(
               ? invoice.status === InvoiceStatus.PAID
               : filter === 'escrowed'
                 ? invoice.status === InvoiceStatus.ESCROWED
-                : invoice.status === InvoiceStatus.CANCELLED;
+                : filter === 'resolved'
+                  ? (invoice.status === InvoiceStatus.RESOLVED_CANCELLED || invoice.status === InvoiceStatus.RESOLVED_PAID)
+                  : invoice.status === InvoiceStatus.CANCELLED;
       
       // 搜索过滤
       const searchLower = search.trim().toLowerCase();

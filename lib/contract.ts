@@ -9,7 +9,7 @@ function resolveProgramId(value: string | undefined, fallback: string): string {
 
 export const PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_PROGRAM_ID,
-  'zk_invoice_v3_1.aleo'
+  'zk_invoice_v3_3.aleo'
 );
 export const LEGACY_PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_LEGACY_PROGRAM_ID,

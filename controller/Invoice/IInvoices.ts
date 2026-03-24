@@ -17,7 +17,7 @@ export interface StatusConfig {
  */
 export type InvoiceWithRole = {
   invoice: Invoice;
-  role: 'SELLER' | 'BUYER' | 'BOTH';
+  role: 'SELLER' | 'BUYER' | 'BOTH' | 'NONE';
   chainStatus: ChainConfirmationStatus;
   statusConfig: StatusConfig;
 };

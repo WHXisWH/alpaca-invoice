@@ -5,9 +5,8 @@ import type { EscrowRecord, AleoField } from '@/lib/types';
 
 export const useEscrowStore = create<EscrowState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       escrows: [],
-      currentEscrow: null,
       isLoading: false,
 
       addEscrow(escrow: EscrowRecord) {
@@ -23,19 +22,7 @@ export const useEscrowStore = create<EscrowState>()(
           escrows: state.escrows.map(e =>
             e.escrowId === escrowId ? { ...e, ...data } : e
           ),
-          currentEscrow:
-            state.currentEscrow?.escrowId === escrowId
-              ? { ...state.currentEscrow, ...data }
-              : state.currentEscrow,
         }));
-      },
-
-      setCurrentEscrow(escrow: EscrowRecord | null) {
-        set({ currentEscrow: escrow });
-      },
-
-      getEscrowByInvoiceId(invoiceId: AleoField): EscrowRecord | undefined {
-        return get().escrows.find(e => e.invoiceId === invoiceId);
       },
     }),
     {

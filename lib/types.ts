@@ -290,6 +290,8 @@ export interface DisputeRecord {
   status: DisputeStatus;
   createdAt: Date;
   resolutionDeadline: Date;
+  /** Plain-text reason kept locally (not on chain) */
+  reasonText?: string;
 }
 
 export interface RaiseDisputeParams {
@@ -298,6 +300,8 @@ export interface RaiseDisputeParams {
   evidenceHash: AleoField;
   arbiter?: AleoAddress;
   resolutionDeadlineDays: number;
+  /** Original reason text (stored locally, not sent to chain) */
+  reasonText?: string;
 }
 
 export interface ResolveDisputeParams {

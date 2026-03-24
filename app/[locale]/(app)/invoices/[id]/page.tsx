@@ -19,6 +19,7 @@ import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrow
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
+import { useDisputeStore } from '@/stores/Dispute/useDisputeStore';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { format } from 'date-fns';
@@ -40,6 +41,7 @@ export default function InvoiceDetailPage() {
   const escrowPoller = useEscrowStatusPoller();
   const { syncFromChain: syncDisputeEscrow } = useDisputeEscrowChainSync();
   const { escrows } = useEscrowStore();
+  const { disputes } = useDisputeStore();
   const publicKey = useUserStore((s) => s.publicKey);
 
   useEffect(() => {
@@ -65,6 +67,7 @@ export default function InvoiceDetailPage() {
     handleCancel,
     handleSyncStatus,
     displayCurrency,
+    chainArbiter: hookChainArbiter,
     anchors,
     isFetchingAnchors,
     downloadMsg,
@@ -123,7 +126,9 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  const chainArbiter = escrows.find(e => e.invoiceId === invoice.id)?.arbiter ?? invoice.details?.arbiter;
+  const chainArbiter = hookChainArbiter
+    ?? escrows.find(e => e.invoiceId === invoice.id)?.arbiter
+    ?? invoice.details?.arbiter;
 
   return (
     <div className="space-y-4">
@@ -691,7 +696,23 @@ export default function InvoiceDetailPage() {
               {invoice.status === InvoiceStatus.PAID && `✅ ${t('invoice.detail.statusPaidMessage')}`}
               {invoice.status === InvoiceStatus.CANCELLED && `❌ ${t('invoice.detail.statusCancelledMessage')}`}
               {invoice.status === InvoiceStatus.EXPIRED && `⚠️ ${t('invoice.detail.statusExpiredMessage')}`}
-              {invoice.status === InvoiceStatus.DISPUTED && `⚠️ ${t('invoice.detail.statusDisputedMessage')}`}
+              {invoice.status === InvoiceStatus.DISPUTED && (() => {
+                const relDispute = disputes.find((d) => d.invoiceId === invoice.id);
+                return (
+                  <div className="space-y-2">
+                    <p>⚠️ {t('invoice.detail.statusDisputedMessage')}</p>
+                    {relDispute && (
+                      <Link
+                        href={`/disputes/${encodeURIComponent(relDispute.disputeId)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-200 transition-colors"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {t('dispute.viewDispute')}
+                      </Link>
+                    )}
+                  </div>
+                );
+              })()}
               {invoice.status === InvoiceStatus.REFUNDED && `↩️ ${t('invoice.detail.statusRefundedMessage')}`}
               {invoice.status === InvoiceStatus.RESOLVED_CANCELLED && `❌ ${t('invoice.detail.statusResolvedCancelledMessage')}`}
               {invoice.status === InvoiceStatus.RESOLVED_PAID && `✅ ${t('invoice.detail.statusResolvedPaidMessage')}`}

@@ -23,7 +23,7 @@ const WORKER_TIMEOUT_MS = 120_000;
 
 /** Wave 3.1 outputs */
 export const WAVE3_CREDITS_OUTPUT_COUNT = 6; // pay_invoice_credits_private returns 6 outputs
-export const WAVE3_USDCX_OUTPUT_COUNT = 7;   // pay_invoice_usdcx returns 7 outputs
+export const WAVE3_USDCX_OUTPUT_COUNT = 4;   // pay_invoice_usdcx returns 4 outputs (public-as-signer path)
 
 /**
  * AleoProtocolService implementation class

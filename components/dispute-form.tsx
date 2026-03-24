@@ -12,6 +12,7 @@ interface DisputeFormProps {
     evidenceHash: AleoField;
     arbiter?: AleoAddress;
     resolutionDeadlineDays: number;
+    reasonText?: string;
   }) => Promise<void>;
   onCancel: () => void;
 }
@@ -39,6 +40,7 @@ export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel }: Di
         evidenceHash: '0field' as AleoField,
         arbiter,
         resolutionDeadlineDays: deadlineDays,
+        reasonText: reason.trim(),
       });
     } finally {
       setIsSubmitting(false);

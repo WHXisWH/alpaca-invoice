@@ -1,8 +1,8 @@
 'use client';
 
-import { Lock, CheckCircle, RefreshCw, Clock, Shield, User, Gavel, AlertTriangle } from 'lucide-react';
+import { Lock, CheckCircle, RefreshCw, Clock, Shield, User, Gavel, AlertTriangle, Ban } from 'lucide-react';
 import type { EscrowRecord, Invoice } from '@/lib/types';
-import { EscrowStatus } from '@/lib/types';
+import { EscrowStatus, InvoiceStatus } from '@/lib/types';
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -196,8 +196,75 @@ export default function EscrowStatusCard({
         </div>
       )}
 
-      {/* Buyer (payer) actions */}
-      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayer && (
+      {/* Resolved: invoice fully settled — no more actions */}
+      {invoice.status === InvoiceStatus.RESOLVED_PAID && (
+        <div className="space-y-2 pt-1">
+          <div className="flex items-start gap-2 rounded-lg bg-slate-100/60 p-3">
+            <Ban className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+            <div className="text-xs text-slate-700">
+              <p className="font-medium">{t('escrow.resolvedPaidMessage')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resolved (dismissed): seller read-only, buyer can still confirm delivery */}
+      {invoice.status === InvoiceStatus.RESOLVED_CANCELLED && (
+        <div className="space-y-2 pt-1">
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50/60 border border-amber-200 p-3 mb-2">
+            <Gavel className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-xs text-amber-800">
+              <p className="font-medium">{t('escrow.resolvedCancelledMessage')}</p>
+            </div>
+          </div>
+
+          {/* Buyer can still confirm delivery or claim refund */}
+          {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayer && (
+            <>
+              <p className="text-xs text-slate-600">
+                {isExpired ? t('escrow.refundAvailable') : t('escrow.confirmDeliveryMsg')}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleConfirm}
+                  disabled={isAnyProcessing || isExpired}
+                  className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {t('invoice.detail.confirmDelivery')}
+                </button>
+                <button
+                  onClick={handleRefund}
+                  disabled={isAnyProcessing || !isExpired}
+                  className="flex-1 rounded-lg border-2 border-amber-300 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={!isExpired ? t('escrow.refundNotYetAvailable') : ''}
+                >
+                  {t('invoice.detail.claimRefund')}
+                </button>
+              </div>
+              {!isExpired && (
+                <p className="text-xs text-amber-600 text-center">
+                  {t('escrow.refundNotYetAvailable')}
+                </p>
+              )}
+            </>
+          )}
+
+          {/* Seller read-only for dismissed disputes */}
+          {escrow.status === EscrowStatus.LOCKED && isCurrentUserPayee && !isCurrentUserPayer && (
+            <div className="flex items-start gap-2 rounded-lg bg-slate-100/60 p-3">
+              <User className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+              <div className="text-xs text-slate-600">
+                <p className="font-medium">{t('escrow.sellerDisputeDismissed')}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Normal (non-resolved) Buyer (payer) actions */}
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayer
+        && invoice.status !== InvoiceStatus.RESOLVED_PAID
+        && invoice.status !== InvoiceStatus.RESOLVED_CANCELLED && (
         <div className="space-y-2 pt-1">
           <p className="text-xs text-slate-600">
             {isExpired ? t('escrow.refundAvailable') : t('escrow.confirmDeliveryMsg')}
@@ -248,8 +315,10 @@ export default function EscrowStatusCard({
         </div>
       )}
 
-      {/* Seller (payee) view */}
-      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayee && !isCurrentUserPayer && (
+      {/* Seller (payee) view — only for non-resolved invoices */}
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayee && !isCurrentUserPayer
+        && invoice.status !== InvoiceStatus.RESOLVED_PAID
+        && invoice.status !== InvoiceStatus.RESOLVED_CANCELLED && (
         <div className="space-y-2 pt-1">
           {!isExpired ? (
             <div className="flex items-start gap-2 rounded-lg bg-blue-100/60 p-3">
@@ -270,8 +339,10 @@ export default function EscrowStatusCard({
         </div>
       )}
 
-      {/* Arbiter actions */}
-      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserArbiter && !isCurrentUserPayer && (
+      {/* Arbiter actions — only for non-resolved invoices */}
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserArbiter && !isCurrentUserPayer
+        && invoice.status !== InvoiceStatus.RESOLVED_PAID
+        && invoice.status !== InvoiceStatus.RESOLVED_CANCELLED && (
         <div className="space-y-2 pt-1">
           <div className="flex items-start gap-2 rounded-lg bg-purple-100/60 p-3">
             <Gavel className="h-4 w-4 text-purple-600 mt-0.5 shrink-0" />

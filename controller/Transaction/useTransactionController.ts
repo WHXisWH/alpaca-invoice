@@ -17,10 +17,8 @@ import { MASTER_KEY_SIGNATURE_MESSAGE } from '@/lib/auth-constants';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { useReceiptStore } from '@/stores/Receipt/useReceiptStore';
 import { toRecordInputString } from '@/lib/recordParser';
-import { FreezeListService, serializeMerkleProofsForContract } from '@/services/FreezeListService/FreezeListServiceImpl';
 
 const cryptoService = new CryptoService();
-const freezeListService = new FreezeListService();
 
 /**
  * Extract a field value from an Aleo record returned by requestRecords.
@@ -291,6 +289,8 @@ export function useTransactionController(): ITxController {
           );
         }, 5000);
 
+        const arbiterAddress = (params.details as any)?.arbiter?.trim() || publicKey;
+
         let requestId: string | null = null;
         try {
           requestId = await walletService.requestTransaction({
@@ -310,7 +310,8 @@ export function useTransactionController(): ITxController {
               `${lineItemsSum}u64`,
               `${expectedTotal}u64`,
               `${taxRateBps}u64`,
-              jctStruct
+              jctStruct,
+              arbiterAddress
             ],
             publicKey: publicKey,
             programId: PROGRAM_ID,
@@ -525,70 +526,8 @@ export function useTransactionController(): ITxController {
             );
           }
 
-          // --- Fetch & validate USDCx Token record ---
-          updateProgress(32, 'Fetching USDCx token record...');
-          let tokenRecords: any[] = [];
-          try {
-            const resp = await walletService.requestRecords(USDCX_PROGRAM_ID);
-            tokenRecords = resp.records ?? [];
-          } catch (err: any) {
-            console.warn('⚠️ [executePay/usdcx] requestRecords failed:', err?.message ?? err);
-            throw new WalletServiceError(
-              WalletError.INSUFFICIENT_FEE,
-              `No USDCx tokens found. Your wallet has no Token records for ${USDCX_PROGRAM_ID}. ` +
-              'Please acquire USDCx tokens first (e.g. via mint or transfer).',
-              { originalError: err }
-            );
-          }
-
-          const unspentTokens = tokenRecords.filter((r: any) => {
-            if (r.spent === true || r.spent === 'true') return false;
-            return true;
-          });
-
-          if (unspentTokens.length === 0) {
-            throw new WalletServiceError(
-              WalletError.INSUFFICIENT_FEE,
-              'No USDCx Token record found in wallet. Please ensure you have USDCx tokens.'
-            );
-          }
-
-          // Extract token amount (u128) and pick the first record that covers payAmount
-          const parseTokenAmount = (record: any): bigint => {
-            const plain = record?.plaintext ?? record?.recordPlaintext ?? record?.record_plaintext ?? '';
-            if (typeof plain === 'string') {
-              const m = plain.match(/amount:\s*(\d+)u128/);
-              if (m) return BigInt(m[1]);
-            }
-            const raw = record?.data?.amount ?? record?.amount;
-            const val = typeof raw === 'object' && raw != null && 'value' in raw ? raw.value : raw;
-            if (val != null) {
-              const s = String(val).replace(/u128\.private|u128/g, '').trim();
-              if (s && /^\d+$/.test(s)) return BigInt(s);
-            }
-            return 0n;
-          };
-
-          const suitableToken = unspentTokens.find((r: any) => parseTokenAmount(r) >= payAmount);
-          if (!suitableToken) {
-            const maxAvailable = unspentTokens.reduce((max: bigint, r: any) => {
-              const amt = parseTokenAmount(r);
-              return amt > max ? amt : max;
-            }, 0n);
-            throw new WalletServiceError(
-              WalletError.INSUFFICIENT_FEE,
-              `Insufficient USDCx balance. Required: ${payAmount.toString()}, largest record: ${maxAvailable.toString()}.`
-            );
-          }
-
-          // --- Freeze-list compliance proofs ---
-          updateProgress(36, 'Fetching freeze-list proofs...');
-          const merkleProofs = await freezeListService.getMerkleProofs(
-            publicKey,
-            invoice.seller
-          );
-
-          const tokenRecordStr = toRecordInputString(suitableToken);
+          // USDCx public path: wallet signs directly (no Token record / MerkleProof input).
+          updateProgress(36, 'Preparing USDCx payment...');
           const usdcxInvoiceRecordStr = toRecordInputString(invoiceRecord);
 
           // --- Payment nonce & paid_at ---
@@ -597,13 +536,12 @@ export function useTransactionController(): ITxController {
           const usdcxPaidAtSec = Math.min(usdcxNowSec, usdcxDueDateSec);
           const usdcxPaidAt = `${usdcxPaidAtSec}u32`;
           const usdcxPaymentNonce = await cryptoService.hashObjectToField(`PAY-${Date.now()}-${Math.random()}`);
-          const proofsStr = serializeMerkleProofsForContract(merkleProofs);
 
           // --- Submit transaction ---
           updateProgress(50, 'Submitting pay_invoice_usdcx...');
           const usdcxRequestId = await walletService.requestTransaction({
             functionName: 'pay_invoice_usdcx',
-            inputs: [tokenRecordStr, usdcxInvoiceRecordStr, usdcxPaymentNonce, usdcxPaidAt, proofsStr],
+            inputs: [usdcxInvoiceRecordStr, usdcxPaymentNonce, usdcxPaidAt],
             publicKey,
             programId: PROGRAM_ID,
             fee: 1_000_000,
@@ -945,9 +883,7 @@ export function useTransactionController(): ITxController {
 
       startTx('REQUESTING');
       try {
-        updateProgress(10, 'Fetching invoice record...');
-        const { rawRecord } = await scanInvoiceRecord(params.invoice.invoiceHash, params.invoice.id);
-        if (!rawRecord) { throw new Error('Invoice record not found on chain.'); }
+        updateProgress(10, 'Validating dispute parameters...');
 
         const arbiter = params.arbiter ?? params.invoice.details?.arbiter;
         if (!arbiter) {

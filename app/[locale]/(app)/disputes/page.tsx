@@ -7,7 +7,7 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrowChainSync';
 import ConnectWalletCard from '@/components/connect-wallet-card';
-import { AlertTriangle, ArrowRight, Gavel, Scale, User, Shield, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Gavel, Scale, User, Shield, RefreshCw, Store } from 'lucide-react';
 import Link from 'next/link';
 import { DisputeStatus, InvoiceStatus } from '@/lib/types';
 import { useTranslations } from 'next-intl';
@@ -59,13 +59,15 @@ export default function DisputesPage() {
 
   const statusLabels: Record<number, { text: string; className: string }> = {
     [DisputeStatus.OPEN]: { text: t('dispute.statusOpen'), className: 'bg-amber-100 text-amber-700' },
-    [DisputeStatus.RESOLVED_CANCEL]: { text: t('dispute.statusResolvedCancel'), className: 'bg-red-100 text-red-700' },
-    [DisputeStatus.RESOLVED_PAY]: { text: t('dispute.statusResolvedPay'), className: 'bg-emerald-100 text-emerald-700' },
+    [DisputeStatus.RESOLVED_CANCEL]: { text: t('dispute.resolvedCancelStatus'), className: 'bg-amber-100 text-amber-700' },
+    [DisputeStatus.RESOLVED_PAY]: { text: t('dispute.resolvedPay'), className: 'bg-emerald-100 text-emerald-700' },
   };
 
   const getRole = (d: typeof disputes[0]) => {
     if (d.disputant === publicKey) return 'disputant';
     if (d.arbiter === publicKey) return 'arbiter';
+    const inv = invoices.find((inv) => inv.id === d.invoiceId);
+    if (inv && inv.seller === publicKey) return 'seller';
     return 'observer';
   };
 
@@ -175,13 +177,15 @@ export default function DisputesPage() {
                 href={`/disputes/${encodeURIComponent(dispute.disputeId)}`}
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md"
               >
-                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4">
                   <div className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg',
-                    role === 'arbiter' ? 'bg-purple-100' : 'bg-amber-100'
+                    role === 'arbiter' ? 'bg-purple-100' : role === 'seller' ? 'bg-emerald-100' : 'bg-amber-100'
                   )}>
                     {role === 'arbiter'
                       ? <Gavel className="h-5 w-5 text-purple-600" />
+                      : role === 'seller'
+                      ? <Store className="h-5 w-5 text-emerald-600" />
                       : <AlertTriangle className="h-5 w-5 text-amber-600" />}
                   </div>
                   <div>
@@ -191,10 +195,14 @@ export default function DisputesPage() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className={cn(
                         'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                        role === 'arbiter' ? 'bg-purple-100 text-purple-700' : role === 'disputant' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                        role === 'arbiter' ? 'bg-purple-100 text-purple-700'
+                          : role === 'disputant' ? 'bg-blue-100 text-blue-700'
+                          : role === 'seller' ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-100 text-slate-600'
                       )}>
                         {role === 'arbiter' && <><Gavel className="h-2.5 w-2.5" /> {t('dispute.roleArbiter')}</>}
                         {role === 'disputant' && <><User className="h-2.5 w-2.5" /> {t('dispute.roleDisputant')}</>}
+                        {role === 'seller' && <><Store className="h-2.5 w-2.5" /> {t('dispute.roleSeller')}</>}
                         {role === 'observer' && <><Shield className="h-2.5 w-2.5" /> {t('dispute.roleObserver')}</>}
                       </span>
                       {amount && (

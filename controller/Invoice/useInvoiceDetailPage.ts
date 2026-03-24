@@ -9,7 +9,7 @@ import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import type { AleoAddress, AleoField, EscrowRecord, EscrowStatus, CurrencyFlag as CurrencyFlagType } from '@/lib/types';
 import { CurrencyFlag, InvoiceStatus } from '@/lib/types';
-import { PROGRAM_ID_V4 } from '@/lib/contract';
+import { PROGRAM_ID, PROGRAM_ID_V4 } from '@/lib/contract';
 import { cleanAleoNumber } from '@/lib/utils';
 import type { IInvoiceDetail } from './IInvoiceDetail';
 
@@ -23,6 +23,7 @@ export interface InvoiceDetailPageAnchors {
 
 export interface UseInvoiceDetailPageReturn extends IInvoiceDetail {
   displayCurrency: string;
+  chainArbiter: string | null;
   anchors: InvoiceDetailPageAnchors;
   isFetchingAnchors: boolean;
   downloadMsg: string;
@@ -41,17 +42,37 @@ export function useInvoiceDetailPage(invoiceHash: AleoField | null): UseInvoiceD
   const { addEscrow, escrows } = useEscrowStore();
   const masterKey = useUserStore((s) => s.masterKey);
 
+  const [chainArbiter, setChainArbiter] = useState<string | null>(null);
   const [anchors, setAnchors] = useState<InvoiceDetailPageAnchors>({});
   const [isFetchingAnchors, setIsFetchingAnchors] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState('');
 
   const chainSyncedRef = useRef<string | null>(null);
+  const arbiterQueriedRef = useRef<string | null>(null);
 
   const displayCurrency = useMemo(() => {
     const inv = detail.invoice;
     return inv?.details?.currency
       ?? (inv?.currencyFlag === CurrencyFlag.USDCX ? 'USDCX' : 'credits');
   }, [detail.invoice]);
+
+  // Query arbiter from on-chain public mapping (authoritative source)
+  useEffect(() => {
+    const inv = detail.invoice;
+    if (!inv?.id) return;
+    if (arbiterQueriedRef.current === inv.id) return;
+    arbiterQueriedRef.current = inv.id;
+
+    protocolService.getProgramMappingValue(PROGRAM_ID, 'invoice_arbiter', inv.id)
+      .then((raw) => {
+        if (!raw) return;
+        const addr = raw.replace(/"/g, '').trim();
+        if (addr && addr !== inv.seller) {
+          setChainArbiter(addr);
+        }
+      })
+      .catch(() => {});
+  }, [detail.invoice, protocolService]);
 
   const safeStringify = useCallback(
     (obj: any) => JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2),
@@ -202,6 +223,7 @@ export function useInvoiceDetailPage(invoiceHash: AleoField | null): UseInvoiceD
   return {
     ...detail,
     displayCurrency,
+    chainArbiter,
     anchors,
     isFetchingAnchors,
     downloadMsg,

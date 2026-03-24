@@ -7,6 +7,7 @@ import { useDisputeStore } from '@/stores/Dispute/useDisputeStore';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID_V4 } from '@/lib/contract';
 import type { AleoField, AleoAddress, DisputeRecord, EscrowRecord } from '@/lib/types';
 import { DisputeStatus, EscrowStatus, CurrencyFlag } from '@/lib/types';
@@ -112,6 +113,10 @@ function parseEscrowFromChain(record: any): EscrowRecord | null {
   }
 }
 
+function isStatusResolved(status: DisputeStatus): boolean {
+  return status === DisputeStatus.RESOLVED_CANCEL || status === DisputeStatus.RESOLVED_PAY;
+}
+
 export function useDisputeEscrowChainSync() {
   const wallet = useWallet();
   const { publicKey } = useUserStore();
@@ -119,17 +124,35 @@ export function useDisputeEscrowChainSync() {
   const escrowStore = useEscrowStore();
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
-  const [syncLog, setSyncLog] = useState('');
 
   const walletService = useMemo(() => {
     if (!wallet) return null;
     return new WalletService(createWalletAdapter(wallet));
   }, [wallet]);
 
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
+
   const isWalletReady = useCallback(
     () => !!(wallet?.connected && wallet?.address),
     [wallet?.connected, wallet?.address]
   );
+
+  /**
+   * Query the public dispute_status mapping on chain for a given disputeId.
+   * Returns the DisputeStatus or null if no mapping entry exists.
+   */
+  const getChainDisputeStatus = useCallback(async (disputeId: AleoField): Promise<DisputeStatus | null> => {
+    try {
+      const raw = await protocolService.getProgramMappingValue(
+        PROGRAM_ID_V4, 'dispute_status', disputeId
+      );
+      if (!raw) return null;
+      const cleaned = cleanAleoNumber(raw.replace(/"/g, '').trim());
+      return Number(cleaned) as DisputeStatus;
+    } catch {
+      return null;
+    }
+  }, [protocolService]);
 
   const syncFromChain = useCallback(async () => {
     if (!walletService || !publicKey || !isWalletReady()) {
@@ -138,7 +161,6 @@ export function useDisputeEscrowChainSync() {
     }
 
     setIsSyncing(true);
-    setSyncLog('Fetching records from chain...');
 
     try {
       const response = await walletService.requestRecords(PROGRAM_ID_V4);
@@ -148,32 +170,22 @@ export function useDisputeEscrowChainSync() {
       let disputeCount = 0;
       let escrowCount = 0;
 
+      // Phase 1: Collect all unspent chain disputes, deduplicate by invoiceId
+      const chainDisputesByInvoice = new Map<string, DisputeRecord>();
       for (const record of records) {
         const isSpent = record?.spent === true || record?.spent === 'true';
 
-        if (isDisputeRecord(record)) {
+        if (isDisputeRecord(record) && !isSpent) {
           const parsed = parseDisputeFromChain(record);
           if (parsed) {
-            const existing = disputeStore.disputes.find(
-              (d) => d.disputeId === parsed.disputeId
-            );
-            if (!existing) {
-              disputeStore.addDispute(parsed);
-              disputeCount++;
-            } else if (existing.status !== parsed.status) {
-              disputeStore.updateDispute(parsed.disputeId, {
-                status: parsed.status,
-                evidenceHash: parsed.evidenceHash,
-              });
-              disputeCount++;
-            }
+            chainDisputesByInvoice.set(parsed.invoiceId, parsed);
           }
         }
 
-        if (isEscrowRecord(record)) {
+        if (isEscrowRecord(record) && !isSpent) {
           const parsed = parseEscrowFromChain(record);
           if (parsed) {
-            const existing = escrowStore.escrows.find(
+            const existing = useEscrowStore.getState().escrows.find(
               (e) => e.escrowId === parsed.escrowId
             );
             if (!existing) {
@@ -189,24 +201,97 @@ export function useDisputeEscrowChainSync() {
         }
       }
 
-      const msg = `Synced ${disputeCount} dispute(s), ${escrowCount} escrow(s)`;
-      setSyncLog(msg);
+      // Phase 2: Merge chain disputes into the store
+      // IMPORTANT: Never downgrade status (RESOLVED → OPEN is forbidden)
+      for (const [invoiceId, chainDispute] of chainDisputesByInvoice) {
+        const currentDisputes = useDisputeStore.getState().disputes;
+
+        const duplicates = currentDisputes.filter(
+          (d) => d.invoiceId === invoiceId && d.disputeId !== chainDispute.disputeId
+        );
+        let preservedReasonText: string | undefined;
+        for (const dup of duplicates) {
+          if (dup.reasonText) preservedReasonText = dup.reasonText;
+          disputeStore.removeDispute(dup.disputeId);
+        }
+
+        const exactMatch = useDisputeStore.getState().disputes.find(
+          (d) => d.disputeId === chainDispute.disputeId
+        );
+        if (exactMatch) {
+          const updates: Partial<DisputeRecord> = {};
+
+          // Guard: never downgrade from resolved → open
+          if (exactMatch.status !== chainDispute.status) {
+            if (isStatusResolved(exactMatch.status) && !isStatusResolved(chainDispute.status)) {
+              // Local says resolved but chain record (stale wallet cache) says OPEN — skip
+              console.log(`[DisputeEscrowSync] Skipping status downgrade for ${chainDispute.disputeId}`);
+            } else {
+              updates.status = chainDispute.status;
+              updates.evidenceHash = chainDispute.evidenceHash;
+            }
+          }
+          if (!exactMatch.reasonText && preservedReasonText) {
+            updates.reasonText = preservedReasonText;
+          }
+          if (Object.keys(updates).length > 0) {
+            disputeStore.updateDispute(chainDispute.disputeId, updates);
+            disputeCount++;
+          }
+        } else {
+          const merged: DisputeRecord = {
+            ...chainDispute,
+            reasonText: preservedReasonText,
+          };
+          disputeStore.addDispute(merged);
+          disputeCount++;
+        }
+      }
+
+      // Phase 3: Reconcile ALL local OPEN disputes against the public dispute_status mapping.
+      //
+      // Why check ALL OPEN disputes, not just orphans?
+      // - resolve_dispute consumes only the arbiter's DisputeRecord, NOT the buyer's/seller's
+      // - The buyer/seller still have unspent DisputeRecords with status=OPEN (record data never changes)
+      // - Only the public dispute_status mapping reflects the true resolved status
+      // - So we must query the mapping for every OPEN dispute to catch resolutions
+      const localDisputes = useDisputeStore.getState().disputes;
+      const stillOpen = localDisputes.filter((d) => d.status === DisputeStatus.OPEN);
+
+      if (stillOpen.length > 0) {
+        const statusChecks = await Promise.allSettled(
+          stillOpen.map((d) =>
+            getChainDisputeStatus(d.disputeId).then((status) => ({ dispute: d, status }))
+          )
+        );
+
+        for (const result of statusChecks) {
+          if (result.status !== 'fulfilled') continue;
+          const { dispute, status } = result.value;
+          if (status !== null && status !== DisputeStatus.OPEN) {
+            console.log(
+              `[DisputeEscrowSync] Mapping reconciliation: ${dispute.disputeId} local=OPEN → chain=${DisputeStatus[status]}`
+            );
+            disputeStore.updateDispute(dispute.disputeId, { status });
+            disputeCount++;
+          }
+        }
+      }
+
       setLastSyncAt(new Date());
-      console.log(`[DisputeEscrowSync] ${msg}`);
+      console.log(`[DisputeEscrowSync] Synced ${disputeCount} dispute(s), ${escrowCount} escrow(s)`);
       return { disputes: disputeCount, escrows: escrowCount };
     } catch (err) {
       console.error('[DisputeEscrowSync] Sync failed:', err);
-      setSyncLog('Sync failed');
       return { disputes: 0, escrows: 0 };
     } finally {
       setIsSyncing(false);
     }
-  }, [walletService, publicKey, isWalletReady, disputeStore, escrowStore]);
+  }, [walletService, publicKey, isWalletReady, disputeStore, escrowStore, getChainDisputeStatus]);
 
   return {
     syncFromChain,
     isSyncing,
     lastSyncAt,
-    syncLog,
   };
 }

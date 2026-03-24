@@ -6,92 +6,23 @@ import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useDisputeController } from '@/controller/Dispute/useDisputeController';
+import { useEscrowController } from '@/controller/Escrow/useEscrowController';
+import { useEscrowStatusPoller } from '@/controller/Escrow/useEscrowStatusPoller';
 import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrowChainSync';
 import { useTranslations } from 'next-intl';
-import DisputeTimeline from '@/components/dispute-timeline';
-import { ArrowLeft, Scale, FileText, Lock, Shield, Gavel, AlertTriangle, CheckCircle, XCircle, RefreshCw, ArrowRight } from 'lucide-react';
-import { DisputeStatus, InvoiceStatus, EscrowStatus } from '@/lib/types';
-import type { AleoField, Invoice, EscrowRecord } from '@/lib/types';
-import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { ArrowLeft, Scale, Gavel, AlertTriangle, CheckCircle, XCircle, MessageSquareText, Clock, Users, Store, Loader2 } from 'lucide-react';
+import { DisputeStatus, InvoiceStatus } from '@/lib/types';
+import type { AleoField } from '@/lib/types';
+import { useEffect, useMemo, useState } from 'react';
+import { cn, cleanAleoNumber } from '@/lib/utils';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
+import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
+import { PROGRAM_ID_V4 } from '@/lib/contract';
 
 function truncateAddr(addr: string) {
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 10)}…${addr.slice(-6)}`;
-}
-
-const invoiceStatusConfig: Record<number, { label: string; icon: React.ReactNode; color: string }> = {
-  [InvoiceStatus.PENDING]: { label: 'Pending', icon: <FileText className="h-3.5 w-3.5" />, color: 'text-slate-600 bg-slate-100' },
-  [InvoiceStatus.PAID]: { label: 'Paid', icon: <CheckCircle className="h-3.5 w-3.5" />, color: 'text-emerald-700 bg-emerald-100' },
-  [InvoiceStatus.CANCELLED]: { label: 'Cancelled', icon: <XCircle className="h-3.5 w-3.5" />, color: 'text-red-700 bg-red-100' },
-  [InvoiceStatus.ESCROWED]: { label: 'Escrowed', icon: <Lock className="h-3.5 w-3.5" />, color: 'text-blue-700 bg-blue-100' },
-  [InvoiceStatus.DISPUTED]: { label: 'Disputed', icon: <AlertTriangle className="h-3.5 w-3.5" />, color: 'text-amber-700 bg-amber-100' },
-  [InvoiceStatus.REFUNDED]: { label: 'Refunded', icon: <RefreshCw className="h-3.5 w-3.5" />, color: 'text-amber-700 bg-amber-100' },
-  [InvoiceStatus.RESOLVED_CANCELLED]: { label: 'Resolved (Cancel)', icon: <XCircle className="h-3.5 w-3.5" />, color: 'text-red-700 bg-red-100' },
-  [InvoiceStatus.RESOLVED_PAID]: { label: 'Resolved (Pay)', icon: <CheckCircle className="h-3.5 w-3.5" />, color: 'text-emerald-700 bg-emerald-100' },
-};
-
-interface FlowStep {
-  label: string;
-  description?: string;
-  date?: Date;
-  status: 'completed' | 'active' | 'pending' | 'skipped';
-  icon: React.ReactNode;
-}
-
-function buildFlowSteps(invoice: Invoice | undefined, escrow: EscrowRecord | undefined, dispute: { status: DisputeStatus; createdAt: Date; resolutionDeadline: Date }, t: ReturnType<typeof useTranslations>): FlowStep[] {
-  const steps: FlowStep[] = [];
-
-  steps.push({
-    label: t('dispute.flowInvoiceCreated'),
-    date: invoice?.createdAt,
-    status: 'completed',
-    icon: <FileText className="h-4 w-4" />,
-    description: invoice ? `${(Number(invoice.amount) / 1_000_000).toLocaleString()} Credits` : undefined,
-  });
-
-  const escrowDone = !!escrow;
-  steps.push({
-    label: t('dispute.flowEscrowPaid'),
-    date: escrow?.deliveryDeadline ? undefined : undefined,
-    status: escrowDone ? 'completed' : 'pending',
-    icon: <Lock className="h-4 w-4" />,
-    description: escrow ? `${(Number(escrow.amount) / 1_000_000).toLocaleString()} Credits locked` : undefined,
-  });
-
-  steps.push({
-    label: t('dispute.flowDisputeRaised'),
-    date: dispute.createdAt,
-    status: 'completed',
-    icon: <AlertTriangle className="h-4 w-4" />,
-  });
-
-  const isResolved = dispute.status !== DisputeStatus.OPEN;
-  steps.push({
-    label: t('dispute.flowArbiterReview'),
-    status: isResolved ? 'completed' : 'active',
-    icon: <Gavel className="h-4 w-4" />,
-    description: isResolved
-      ? (dispute.status === DisputeStatus.RESOLVED_PAY ? t('dispute.upheldPaid') : t('dispute.dismissedCancelled'))
-      : `${t('dispute.deadlineLabel')}: ${dispute.resolutionDeadline.toLocaleDateString()}`,
-  });
-
-  if (isResolved) {
-    steps.push({
-      label: dispute.status === DisputeStatus.RESOLVED_PAY ? t('dispute.flowFundsReleased') : t('dispute.flowFundsRefunded'),
-      status: 'completed',
-      icon: dispute.status === DisputeStatus.RESOLVED_PAY ? <CheckCircle className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />,
-    });
-  } else {
-    steps.push({
-      label: t('dispute.flowResolutionPending'),
-      status: 'pending',
-      icon: <Scale className="h-4 w-4" />,
-    });
-  }
-
-  return steps;
 }
 
 export default function DisputeDetailPage() {
@@ -104,15 +35,43 @@ export default function DisputeDetailPage() {
   const { escrows } = useEscrowStore();
   const publicKey = useUserStore((s) => s.publicKey);
   const controller = useDisputeController();
-  const { syncFromChain, isSyncing } = useDisputeEscrowChainSync();
+  const escrowController = useEscrowController();
+  const escrowPoller = useEscrowStatusPoller();
+  const { syncFromChain } = useDisputeEscrowChainSync();
+  const protocolService = useMemo(() => new AleoProtocolService(), []);
   const [resolving, setResolving] = useState(false);
+  const [resolveStep, setResolveStep] = useState<'' | 'dismiss' | 'step1' | 'step2' | 'polling' | 'done'>('');
   const [error, setError] = useState('');
+  const [reasonText, setReasonText] = useState<string | null>(null);
 
   useEffect(() => {
     if (publicKey) syncFromChain();
   }, [publicKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dispute = disputes.find((d) => d.disputeId === disputeId);
+
+  useEffect(() => {
+    if (!dispute) return;
+    if (dispute.reasonText) {
+      setReasonText(dispute.reasonText);
+      return;
+    }
+    // Check if any other local dispute for the same invoice has reasonText
+    const siblingWithReason = disputes.find(
+      (d) => d.invoiceId === dispute.invoiceId && d.reasonText
+    );
+    if (siblingWithReason?.reasonText) {
+      setReasonText(siblingWithReason.reasonText);
+      return;
+    }
+    // Fallback: fetch from server-side KV
+    fetch(`/api/dispute-reason?invoiceId=${encodeURIComponent(dispute.invoiceId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.reasonText) setReasonText(data.reasonText);
+      })
+      .catch(() => {});
+  }, [dispute?.disputeId, dispute?.invoiceId, dispute?.reasonText, disputes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!dispute) {
     return (
@@ -132,34 +91,130 @@ export default function DisputeDetailPage() {
   const relatedEscrow = escrows.find((e) => e.invoiceId === dispute.invoiceId);
   const isArbiter = publicKey === dispute.arbiter;
   const isDisputant = publicKey === dispute.disputant;
+  const isSeller = !isArbiter && !isDisputant && relatedInvoice?.seller === publicKey;
   const isOpen = dispute.status === DisputeStatus.OPEN;
 
-  const flowSteps = buildFlowSteps(relatedInvoice, relatedEscrow, dispute, t);
+  const amount = relatedEscrow
+    ? (Number(relatedEscrow.amount) / 1_000_000).toLocaleString()
+    : relatedInvoice
+    ? (Number(relatedInvoice.amount) / 1_000_000).toLocaleString()
+    : null;
+
+  const statusConfig = isOpen
+    ? { label: t('dispute.statusOpen'), color: 'bg-amber-100 text-amber-700', icon: <Clock className="h-3.5 w-3.5" /> }
+    : dispute.status === DisputeStatus.RESOLVED_PAY
+    ? { label: t('dispute.resolvedPay'), color: 'bg-emerald-100 text-emerald-700', icon: <CheckCircle className="h-3.5 w-3.5" /> }
+    : { label: t('dispute.resolvedCancelStatus'), color: 'bg-amber-100 text-amber-700', icon: <XCircle className="h-3.5 w-3.5" /> };
 
   const handleResolve = async (resolution: DisputeStatus.RESOLVED_CANCEL | DisputeStatus.RESOLVED_PAY) => {
-    if (!relatedInvoice) {
-      setError(t('dispute.errorInvoiceNotFound'));
-      return;
-    }
     if (!isArbiter) {
       setError(t('dispute.errorNotArbiter'));
       return;
     }
     setResolving(true);
     setError('');
+
+    // Pre-check: verify the dispute hasn't already been resolved on chain
     try {
-      await controller.executeResolveDispute({ dispute, invoice: relatedInvoice, resolution });
-      router.push('/disputes');
+      const chainStatus = await protocolService.getProgramMappingValue(
+        PROGRAM_ID_V4, 'dispute_status', dispute.disputeId
+      ).catch(() => null);
+      if (chainStatus) {
+        const statusNum = Number(cleanAleoNumber(chainStatus.replace(/"/g, '').trim()));
+        if (statusNum === DisputeStatus.RESOLVED_CANCEL || statusNum === DisputeStatus.RESOLVED_PAY) {
+          useDisputeStore.getState().updateDispute(dispute.disputeId, {
+            status: statusNum as DisputeStatus,
+          });
+          setResolving(false);
+          toast.info(statusNum === DisputeStatus.RESOLVED_PAY
+            ? t('dispute.resolveUpheldSuccess')
+            : t('dispute.resolveDismissedSuccess'));
+          return;
+        }
+      }
+    } catch {
+      // Non-fatal: continue with the resolve attempt
+    }
+
+    const invoiceProxy = relatedInvoice ?? { id: dispute.invoiceId } as any;
+    const isUphold = resolution === DisputeStatus.RESOLVED_PAY;
+    let currentStep: 'step1' | 'step2' = 'step1';
+
+    try {
+      setResolveStep(isUphold ? 'step1' : 'dismiss');
+      await controller.executeResolveDispute({ dispute, invoice: invoiceProxy, resolution });
+
+      if (isUphold) {
+        // Step 2 (Uphold only): Refund buyer via arbiter_resolve(REFUND)
+        currentStep = 'step2';
+        setResolveStep('step2');
+
+        if (!relatedEscrow) {
+          setError(t('dispute.resolveStep2Failed'));
+          setResolving(false);
+          setResolveStep('');
+          return;
+        }
+
+        await escrowController.executeArbiterResolve({
+          escrow: relatedEscrow,
+          invoice: invoiceProxy,
+          decision: 'refund',
+        });
+
+        setResolveStep('polling');
+        escrowPoller.startPolling({
+          invoice: { ...invoiceProxy, status: InvoiceStatus.DISPUTED },
+          escrowId: relatedEscrow.escrowId,
+          operation: 'dispute_uphold',
+          decision: 'refund',
+          onConfirmed: () => {
+            setResolveStep('done');
+            setResolving(false);
+            toast.success(t('dispute.resolveUpheldSuccess'));
+          },
+          onTimeout: () => {
+            setResolveStep('done');
+            setResolving(false);
+            toast.warning(t('dispute.pollingChainConfirmation'));
+          },
+        });
+      } else {
+        // Dismiss: poll for RESOLVED_CANCELLED status
+        setResolveStep('polling');
+        if (relatedEscrow) {
+          escrowPoller.startPolling({
+            invoice: { ...invoiceProxy, status: InvoiceStatus.DISPUTED },
+            escrowId: relatedEscrow.escrowId,
+            operation: 'dispute_dismiss',
+            onConfirmed: () => {
+              setResolveStep('done');
+              setResolving(false);
+              toast.success(t('dispute.resolveDismissedSuccess'));
+            },
+            onTimeout: () => {
+              setResolveStep('done');
+              setResolving(false);
+              toast.warning(t('dispute.pollingChainConfirmation'));
+            },
+          });
+        } else {
+          setResolveStep('done');
+          setResolving(false);
+          toast.success(t('dispute.resolveDismissedSuccess'));
+        }
+      }
     } catch (err) {
       console.error('Resolve dispute failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to resolve dispute');
-    } finally {
+      const msg = err instanceof Error ? err.message : 'Failed to resolve dispute';
+      setError(currentStep === 'step2' ? t('dispute.resolveStep2Failed') : msg);
       setResolving(false);
+      setResolveStep('');
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-2xl space-y-5">
       <button
         onClick={() => router.push('/disputes')}
         className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800"
@@ -168,183 +223,110 @@ export default function DisputeDetailPage() {
         {t('dispute.backToDisputes')}
       </button>
 
-      {/* Header card */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{t('dispute.detail')}</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {t('dispute.invoiceLabel')} {dispute.invoiceId.slice(0, 20)}…
-            </p>
+      {/* Header */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-xl',
+              isOpen ? 'bg-amber-100' : 'bg-slate-100'
+            )}>
+              <AlertTriangle className={cn('h-5 w-5', isOpen ? 'text-amber-600' : 'text-slate-500')} />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">{t('dispute.detail')}</h1>
+              {amount && (
+                <p className="text-sm font-medium text-slate-600">{amount} Credits</p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Role badge */}
             {isArbiter && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
                 <Gavel className="h-3 w-3" />
                 {t('dispute.roleArbiter')}
               </span>
             )}
             {isDisputant && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
                 <AlertTriangle className="h-3 w-3" />
                 {t('dispute.roleDisputant')}
               </span>
             )}
-            {/* Status badge */}
-            <span
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-medium',
-                isOpen
-                  ? 'bg-amber-100 text-amber-700'
-                  : dispute.status === DisputeStatus.RESOLVED_PAY
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-red-100 text-red-700'
-              )}
-            >
-              {isOpen ? t('dispute.statusOpen') : dispute.status === DisputeStatus.RESOLVED_PAY ? t('dispute.resolvedPay') : t('dispute.resolvedCancelStatus')}
+            {isSeller && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                <Store className="h-3 w-3" />
+                {t('dispute.roleSeller')}
+              </span>
+            )}
+            <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', statusConfig.color)}>
+              {statusConfig.icon}
+              {statusConfig.label}
             </span>
           </div>
         </div>
 
-        {/* Participants grid */}
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium text-slate-500">{t('dispute.disputant')}</p>
-            <p className="mt-0.5 break-all text-sm text-slate-800">
-              {truncateAddr(dispute.disputant)}
-              {isDisputant && <span className="ml-1.5 text-xs text-blue-600">({t('dispute.you')})</span>}
-            </p>
+        {/* Reason */}
+        {reasonText && (
+          <div className="mt-4 rounded-xl border border-amber-200/60 bg-amber-50/50 p-4">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-700">
+              <MessageSquareText className="h-3.5 w-3.5" />
+              {t('dispute.reason')}
+            </div>
+            <p className="text-sm leading-relaxed text-slate-800">{reasonText}</p>
           </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">{t('dispute.arbiterLabel')}</p>
-            <p className="mt-0.5 break-all text-sm text-slate-800">
-              {truncateAddr(dispute.arbiter)}
-              {isArbiter && <span className="ml-1.5 text-xs text-purple-600">({t('dispute.you')})</span>}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">{t('dispute.createdAt')}</p>
-            <p className="mt-0.5 text-sm text-slate-800">{format(dispute.createdAt, 'yyyy-MM-dd HH:mm')}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">{t('dispute.resolutionDeadline')}</p>
-            <p className="mt-0.5 text-sm text-slate-800">{format(dispute.resolutionDeadline, 'yyyy-MM-dd HH:mm')}</p>
-          </div>
-        </div>
-      </div>
+        )}
 
-      {/* Related Invoice & Escrow info */}
-      {(relatedInvoice || relatedEscrow) && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-slate-800">{t('dispute.relatedInfo')}</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {relatedInvoice && (
-              <>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('dispute.invoiceAmount')}</p>
-                  <p className="mt-0.5 text-sm font-medium text-slate-800">
-                    {(Number(relatedInvoice.amount) / 1_000_000).toLocaleString()} Credits
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('dispute.invoiceStatus')}</p>
-                  <span className={cn(
-                    'mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                    invoiceStatusConfig[relatedInvoice.status]?.color ?? 'text-slate-600 bg-slate-100'
-                  )}>
-                    {invoiceStatusConfig[relatedInvoice.status]?.icon}
-                    {invoiceStatusConfig[relatedInvoice.status]?.label ?? `Status ${relatedInvoice.status}`}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('invoice.detail.seller')}</p>
-                  <p className="mt-0.5 text-sm text-slate-800 break-all">{truncateAddr(relatedInvoice.seller)}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('invoice.detail.buyer')}</p>
-                  <p className="mt-0.5 text-sm text-slate-800 break-all">{truncateAddr(relatedInvoice.buyer)}</p>
-                </div>
-              </>
-            )}
-            {relatedEscrow && (
-              <>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('dispute.escrowAmount')}</p>
-                  <p className="mt-0.5 text-sm font-medium text-slate-800">
-                    {(Number(relatedEscrow.amount) / 1_000_000).toLocaleString()} Credits (locked)
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-slate-500">{t('escrow.deliveryDeadline')}</p>
-                  <p className="mt-0.5 text-sm text-slate-800">{format(relatedEscrow.deliveryDeadline, 'yyyy-MM-dd')}</p>
-                </div>
-              </>
-            )}
+        {/* Key info grid */}
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-xs text-slate-500">{t('dispute.disputant')}</p>
+            <p className="mt-0.5 font-medium text-slate-800">
+              {truncateAddr(dispute.disputant)}
+              {isDisputant && <span className="ml-1 text-xs text-blue-600">({t('dispute.you')})</span>}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">{t('dispute.arbiterLabel')}</p>
+            <p className="mt-0.5 font-medium text-slate-800">
+              {truncateAddr(dispute.arbiter)}
+              {isArbiter && <span className="ml-1 text-xs text-purple-600">({t('dispute.you')})</span>}
+            </p>
           </div>
           {relatedInvoice && (
-            <div className="mt-4 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => router.push(`/invoices/${relatedInvoice.invoiceHash}`)}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
-              >
-                {t('dispute.viewInvoice')}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+            <div>
+              <p className="text-xs text-slate-500">{t('invoice.detail.seller')}</p>
+              <p className="mt-0.5 font-medium text-slate-800">
+                {truncateAddr(relatedInvoice.seller)}
+                {isSeller && <span className="ml-1 text-xs text-emerald-600">({t('dispute.you')})</span>}
+              </p>
             </div>
           )}
+          <div>
+            <p className="text-xs text-slate-500">{t('dispute.createdAt')}</p>
+            <p className="mt-0.5 text-slate-800">{format(dispute.createdAt, 'yyyy-MM-dd HH:mm')}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">{t('dispute.resolutionDeadline')}</p>
+            <p className="mt-0.5 text-slate-800">{format(dispute.resolutionDeadline, 'yyyy-MM-dd HH:mm')}</p>
+          </div>
         </div>
-      )}
 
-      {/* Flow / lifecycle steps */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-slate-800">{t('dispute.flowTitle')}</h2>
-        <div className="space-y-0">
-          {flowSteps.map((step, idx) => (
-            <div key={idx} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded-full',
-                    step.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
-                    step.status === 'active' ? 'bg-blue-100 text-blue-600 ring-2 ring-blue-300' :
-                    'bg-slate-100 text-slate-400'
-                  )}
-                >
-                  {step.icon}
-                </div>
-                {idx < flowSteps.length - 1 && (
-                  <div className={cn('h-8 w-0.5', step.status === 'completed' ? 'bg-emerald-200' : 'bg-slate-200')} />
-                )}
-              </div>
-              <div className="pb-6">
-                <p className={cn('text-sm font-medium', step.status === 'active' ? 'text-blue-800' : 'text-slate-800')}>
-                  {step.label}
-                </p>
-                {step.date && (
-                  <p className="text-xs text-slate-500">
-                    {format(step.date, 'yyyy-MM-dd HH:mm')}
-                  </p>
-                )}
-                {step.description && (
-                  <p className="mt-0.5 text-xs text-slate-600">{step.description}</p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Dispute Timeline (original events) */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-slate-800">{t('dispute.timeline')}</h2>
-        <DisputeTimeline dispute={dispute} />
+        {/* Invoice link */}
+        {relatedInvoice && (
+          <button
+            onClick={() => router.push(`/invoices/${relatedInvoice.invoiceHash}`)}
+            className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800"
+          >
+            {t('dispute.viewInvoice')} →
+          </button>
+        )}
       </div>
 
       {/* Resolve actions — only for arbiter */}
       {isOpen && isArbiter && (
-        <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/50 p-6 shadow-sm">
-          <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-purple-900">
+        <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/50 p-5 shadow-sm">
+          <h2 className="mb-1.5 flex items-center gap-2 text-base font-semibold text-purple-900">
             <Scale className="h-5 w-5" />
             {t('dispute.resolve')}
           </h2>
@@ -354,18 +336,31 @@ export default function DisputeDetailPage() {
           {error && (
             <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</p>
           )}
+
+          {resolving && resolveStep && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-purple-100/60 px-4 py-3 text-sm text-purple-800">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                {resolveStep === 'dismiss' && t('dispute.resolvingDismiss')}
+                {resolveStep === 'step1' && t('dispute.resolvingStep1')}
+                {resolveStep === 'step2' && t('dispute.resolvingStep2')}
+                {resolveStep === 'polling' && t('dispute.pollingChainConfirmation')}
+              </span>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button
               disabled={resolving}
               onClick={() => handleResolve(DisputeStatus.RESOLVED_CANCEL)}
-              className="flex-1 rounded-lg border border-red-300 bg-red-50 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+              className="flex-1 rounded-lg border border-red-300 bg-red-50 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {t('dispute.dismissCancel')}
             </button>
             <button
               disabled={resolving}
               onClick={() => handleResolve(DisputeStatus.RESOLVED_PAY)}
-              className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {t('dispute.upholdPay')}
             </button>
@@ -373,10 +368,30 @@ export default function DisputeDetailPage() {
         </div>
       )}
 
-      {/* Non-arbiter notice */}
+      {/* Post-resolution explanation */}
+      {!isOpen && dispute.status === DisputeStatus.RESOLVED_CANCEL && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <XCircle className="h-5 w-5 text-amber-600" />
+            <h3 className="font-semibold text-amber-900">{t('dispute.resolvedCancelStatus')}</h3>
+          </div>
+          <p className="text-sm text-amber-800">{t('dispute.dismissedExplanation')}</p>
+        </div>
+      )}
+      {!isOpen && dispute.status === DisputeStatus.RESOLVED_PAY && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle className="h-5 w-5 text-emerald-600" />
+            <h3 className="font-semibold text-emerald-900">{t('dispute.resolvedPay')}</h3>
+          </div>
+          <p className="text-sm text-emerald-800">{t('dispute.upheldExplanation')}</p>
+        </div>
+      )}
+
+      {/* Non-arbiter waiting notice */}
       {isOpen && !isArbiter && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
-          <Shield className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
+          <Users className="h-7 w-7 text-slate-400 mx-auto mb-2" />
           <p className="text-sm text-slate-600">{t('dispute.waitingForArbiter')}</p>
           <p className="text-xs text-slate-500 mt-1">
             {t('dispute.arbiterLabel')}: {truncateAddr(dispute.arbiter)}
