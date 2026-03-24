@@ -20,10 +20,10 @@ export const CREDITS_PROGRAM_ID = 'credits.aleo';
 /** USDCx (Aleo Testnet); set via env when integrating. See https://aleo.org/usdcx */
 export const USDCX_PROGRAM_ID = resolveProgramId(process.env.NEXT_PUBLIC_USDCX_PROGRAM_ID, '');
 
-/** Wave 4.1 contract with Dispute + Escrow + Arbiter Resolution */
+/** Wave 4.2 contract with ESCROWED-only Dispute + Arbiter Resolution */
 export const PROGRAM_ID_V4 = resolveProgramId(
   process.env.NEXT_PUBLIC_PROGRAM_ID_V4,
-  'zk_invoice_v4_1.aleo'
+  'zk_invoice_v4_2.aleo'
 );
 
 /** ZK Credit Proof standalone contract */

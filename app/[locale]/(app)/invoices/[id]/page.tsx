@@ -1,21 +1,25 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { RefreshCw, ArrowLeft, AlertTriangle, Lock } from 'lucide-react';
+import { RefreshCw, ArrowLeft, AlertTriangle, Lock, Shield } from 'lucide-react';
 import { useInvoiceDetailPage } from '@/controller/Invoice/useInvoiceDetailPage';
 import PaymentProgress from '@/components/payment-progress';
 import DisputeForm from '@/components/dispute-form';
 import EscrowStatusCard from '@/components/escrow-status-card';
 import { CurrencyFlag } from '@/lib/types';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
-import { AleoField, InvoiceStatus } from '@/lib/types';
+import { AleoAddress, AleoField, InvoiceStatus } from '@/lib/types';
 import { getTaxRateLabelFromTaxGroups } from '@/lib/invoice';
 import { useDisputeController } from '@/controller/Dispute/useDisputeController';
 import { useEscrowController } from '@/controller/Escrow/useEscrowController';
+import { useEscrowStatusPoller } from '@/controller/Escrow/useEscrowStatusPoller';
+import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrowChainSync';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
+import { toast } from 'sonner';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
+import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -33,8 +37,17 @@ export default function InvoiceDetailPage() {
   const [escrowProcessing, setEscrowProcessing] = useState(false);
   const disputeController = useDisputeController();
   const escrowController = useEscrowController();
+  const escrowPoller = useEscrowStatusPoller();
+  const { syncFromChain: syncDisputeEscrow } = useDisputeEscrowChainSync();
   const { escrows } = useEscrowStore();
   const publicKey = useUserStore((s) => s.publicKey);
+
+  useEffect(() => {
+    if (publicKey) syncDisputeEscrow();
+  }, [publicKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Granular tx progress for escrow operations (shared with all txController calls)
+  const { progress: txProgress, logs: txLogs } = useTransactionStore();
+  const txCurrentLog = txLogs[txLogs.length - 1] ?? '';
 
   const { isAuthRequired, handleUnlock } = useAuthCheck();
   const { handleError } = useErrorHandler();
@@ -109,6 +122,8 @@ export default function InvoiceDetailPage() {
       </div>
     );
   }
+
+  const chainArbiter = escrows.find(e => e.invoiceId === invoice.id)?.arbiter ?? invoice.details?.arbiter;
 
   return (
     <div className="space-y-4">
@@ -200,6 +215,15 @@ export default function InvoiceDetailPage() {
               {invoice.seller}
             </code>
           </div>
+          {/* arbiter (from chain EscrowRecord or in-memory) */}
+          {chainArbiter && (
+            <div className="flex justify-between">
+              <span className="text-slate-600">{t('invoice.detail.arbiterLabel')}</span>
+              <code className="text-xs bg-purple-50 px-2 py-1 rounded text-slate-900 break-all">
+                {chainArbiter}
+              </code>
+            </div>
+          )}
           {/* due_date */}
           <div className="flex justify-between">
             <span className="text-slate-600">{t('invoice.detail.dueDate')}</span>
@@ -402,29 +426,107 @@ export default function InvoiceDetailPage() {
                 isCurrentUserPayer={publicKey === escrow.payer}
                 isCurrentUserPayee={publicKey === escrow.payee}
                 isCurrentUserArbiter={publicKey === escrow.arbiter}
+                isExternallyProcessing={escrowProcessing}
+                txProgress={txProgress}
+                txLog={txCurrentLog}
+                isPollingChain={escrowPoller.isPolling}
+                pollLog={escrowPoller.pollLog}
+                onRaiseDispute={() => setShowDisputeForm(true)}
+                showDisputeForm={showDisputeForm}
                 onConfirmDelivery={async () => {
                   setEscrowProcessing(true);
                   try {
                     await escrowController.executeConfirmDelivery({ escrow, invoice });
-                  } finally { setEscrowProcessing(false); }
+                    // Phase 1 done (wallet accepted). Now poll chain for PAID status.
+                    setEscrowProcessing(false);
+                    escrowPoller.startPolling({
+                      invoice,
+                      escrowId: escrow.escrowId,
+                      operation: 'confirm_delivery',
+                      onConfirmed: () => {
+                        toast.success('Delivery confirmed — funds released!');
+                      },
+                      onTimeout: () => {
+                        toast.warning('Confirmation timeout', {
+                          description: 'Transaction may still be pending. Please sync manually.'
+                        });
+                      },
+                    });
+                  } catch (err) {
+                    handleError(err);
+                    setEscrowProcessing(false);
+                  }
                 }}
                 onClaimRefund={async () => {
                   setEscrowProcessing(true);
                   try {
                     await escrowController.executeTimeoutRefund({ escrow, invoice });
-                  } finally { setEscrowProcessing(false); }
+                    setEscrowProcessing(false);
+                    escrowPoller.startPolling({
+                      invoice,
+                      escrowId: escrow.escrowId,
+                      operation: 'timeout_refund',
+                      onConfirmed: () => {
+                        toast.success('Refund confirmed — payment returned!');
+                      },
+                      onTimeout: () => {
+                        toast.warning('Confirmation timeout', {
+                          description: 'Transaction may still be pending. Please sync manually.'
+                        });
+                      },
+                    });
+                  } catch (err) {
+                    handleError(err);
+                    setEscrowProcessing(false);
+                  }
                 }}
                 onArbiterRelease={async () => {
                   setEscrowProcessing(true);
                   try {
                     await escrowController.executeArbiterResolve({ escrow, invoice, decision: 'release' });
-                  } finally { setEscrowProcessing(false); }
+                    setEscrowProcessing(false);
+                    escrowPoller.startPolling({
+                      invoice,
+                      escrowId: escrow.escrowId,
+                      operation: 'arbiter_resolve',
+                      decision: 'release',
+                      onConfirmed: () => {
+                        toast.success('Arbiter released funds to seller!');
+                      },
+                      onTimeout: () => {
+                        toast.warning('Confirmation timeout', {
+                          description: 'Transaction may still be pending. Please sync manually.'
+                        });
+                      },
+                    });
+                  } catch (err) {
+                    handleError(err);
+                    setEscrowProcessing(false);
+                  }
                 }}
                 onArbiterRefund={async () => {
                   setEscrowProcessing(true);
                   try {
                     await escrowController.executeArbiterResolve({ escrow, invoice, decision: 'refund' });
-                  } finally { setEscrowProcessing(false); }
+                    setEscrowProcessing(false);
+                    escrowPoller.startPolling({
+                      invoice,
+                      escrowId: escrow.escrowId,
+                      operation: 'arbiter_resolve',
+                      decision: 'refund',
+                      onConfirmed: () => {
+                        toast.success('Arbiter refunded payment to buyer!');
+                      },
+                      onTimeout: () => {
+                        toast.warning('Confirmation timeout', {
+                          description: 'Transaction may still be pending. Please sync manually.'
+                        });
+                      },
+                    });
+                  } catch (err) {
+                    handleError(err);
+                    setEscrowProcessing(false);
+                  }
                 }}
               />
             </div>
@@ -444,11 +546,45 @@ export default function InvoiceDetailPage() {
           </div>
         )}
 
-        {/* Dispute Form (expandable) */}
-        {showDisputeForm && invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && (
+        {/* Escrow Pay progress — shown while wallet is processing escrow_payment_credits */}
+        {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && escrowProcessing && (
+          <div className="mt-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 space-y-3">
+            {/* Progress bar */}
+            <div className="flex items-center gap-2.5">
+              <div className="flex-1 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                  style={{ width: `${Math.max(txProgress, 8)}%` }}
+                />
+              </div>
+              <span className="text-xs font-medium text-blue-700 tabular-nums min-w-[2.5rem] text-right">
+                {txProgress}%
+              </span>
+            </div>
+            {/* Shield animation + log */}
+            <div className="flex items-center gap-3">
+              <div className="animate-spin shrink-0">
+                <Shield className="h-8 w-8 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-blue-800">Locking payment in escrow…</p>
+                {txCurrentLog && (
+                  <p className="text-xs text-blue-600 mt-0.5">{txCurrentLog}</p>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-blue-500 leading-relaxed">
+              The wallet is generating a zero-knowledge proof for <strong>escrow_payment_credits</strong>. This may take a moment — do not close the page.
+            </p>
+          </div>
+        )}
+
+        {/* Dispute Form (only available for buyer when ESCROWED, hosted inside EscrowStatusCard) */}
+        {showDisputeForm && invoice.status === InvoiceStatus.ESCROWED && userRole === 'buyer' && (
           <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/50 p-4">
             <DisputeForm
               invoice={invoice}
+              arbiter={escrows.find(e => e.invoiceId === invoice.id)?.arbiter}
               onSubmit={async (params) => {
                 await disputeController.executeRaiseDispute({ invoice, ...params });
                 setShowDisputeForm(false);
@@ -459,8 +595,21 @@ export default function InvoiceDetailPage() {
           </div>
         )}
 
-        {/* Action Buttons - Role-based */}
-        {invoice.status === InvoiceStatus.PENDING && (
+        {/* Arbiter info for buyer (visible before paying) */}
+        {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && chainArbiter && (
+          <div className="mt-4 flex items-start gap-2 rounded-lg bg-purple-50 border border-purple-200 p-3">
+            <Shield className="h-4 w-4 text-purple-600 mt-0.5 shrink-0" />
+            <div className="text-xs text-purple-800">
+              <p className="font-medium">{t('invoice.detail.arbiterSetBySeller')}</p>
+              <code className="mt-1 block bg-purple-100 px-1.5 py-0.5 rounded text-purple-900 break-all">
+                {chainArbiter}
+              </code>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons - Role-based (hidden while escrow tx is in flight) */}
+        {invoice.status === InvoiceStatus.PENDING && !escrowProcessing && (
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-amber-100">
             {userRole === 'buyer' && (
               <>
@@ -477,39 +626,41 @@ export default function InvoiceDetailPage() {
                           ? t('common.loading')
                           : (invoice.currencyFlag === CurrencyFlag.USDCX ? t('invoice.detail.approveAndPay') : `💳 ${t('invoice.detail.payButton')}`)}
                       </button>
-                      <button
-                        onClick={async () => {
-                          setEscrowProcessing(true);
-                          try {
-                            const deadline = new Date(invoice.dueDate);
-                            deadline.setDate(deadline.getDate() + 7);
-                            await escrowController.executeEscrowPayment({
-                              invoice,
-                              escrowConfig: {
-                                deliveryDeadline: deadline,
-                                autoRelease: false,
-                                releaseConditionHash: '0field' as AleoField,
-                              },
-                            });
-                          } catch (err) {
-                            handleError(err);
-                          } finally { setEscrowProcessing(false); }
-                        }}
-                        disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
-                        className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title={t('escrow.lockPaymentHint')}
-                      >
-                        <Lock className="inline h-4 w-4 mr-1 -mt-0.5" />
-                        {escrowProcessing ? t('common.loading') : t('invoice.detail.lockPayment')}
-                      </button>
-                      {!showDisputeForm && (
+                      {chainArbiter ? (
                         <button
-                          onClick={() => setShowDisputeForm(true)}
-                          disabled={isProcessing || escrowProcessing || hasActiveEscrow}
-                          className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          onClick={async () => {
+                            setEscrowProcessing(true);
+                            try {
+                              const deadline = new Date(invoice.dueDate);
+                              deadline.setDate(deadline.getDate() + 7);
+                              await escrowController.executeEscrowPayment({
+                                invoice,
+                                escrowConfig: {
+                                  deliveryDeadline: deadline,
+                                  autoRelease: false,
+                                  arbiter: chainArbiter as AleoAddress,
+                                  releaseConditionHash: '0field' as AleoField,
+                                },
+                              });
+                            } catch (err) {
+                              handleError(err);
+                            } finally { setEscrowProcessing(false); }
+                          }}
+                          disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
+                          className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title={t('escrow.lockPaymentHint')}
                         >
-                          <AlertTriangle className="inline h-4 w-4 mr-1 -mt-0.5" />
-                          {t('dispute.raiseDispute')}
+                          <Lock className="inline h-4 w-4 mr-1 -mt-0.5" />
+                          {escrowProcessing ? t('common.loading') : t('invoice.detail.lockPayment')}
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed"
+                          title={t('invoice.detail.arbiterNotSet')}
+                        >
+                          <Lock className="inline h-4 w-4 mr-1 -mt-0.5" />
+                          {t('invoice.detail.lockPayment')}
                         </button>
                       )}
                     </>

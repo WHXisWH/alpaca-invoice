@@ -2,13 +2,14 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { Sparkles, Shield, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2 } from 'lucide-react';
 import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
 import { useCreditProof } from '@/controller/Credit/useCreditProof';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useInvoiceListInitialize } from '@/controller/Invoice/useInvoiceListInitialize';
 import { CreditService } from '@/services/CreditService/CreditServiceImpl';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import type { CreditMetrics } from '@/lib/types';
@@ -72,17 +73,7 @@ export default function CreditCenterPage() {
   };
 
   if (!publicKey) {
-    return (
-      <MotionContainer>
-        <MotionItem className="surface-card p-8">
-          <EmptyState
-            icon={Shield}
-            title={t('wallet.connect')}
-            description={t('wallet.connectPrompt')}
-          />
-        </MotionItem>
-      </MotionContainer>
-    );
+    return <ConnectWalletCard />;
   }
 
   if (isInitializing) {

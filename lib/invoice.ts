@@ -283,7 +283,8 @@ export function updateInvoiceFromInvoiceRecord(
     transactionId: invoiceRecord.transactionId ?? invoice.transactionId,
     blockHeight: invoiceRecord.blockHeight != null ? Number(invoiceRecord.blockHeight) : invoice.blockHeight,
     nonce: invoice.nonce,
-    auditKey: invoice.auditKey
+    auditKey: invoice.auditKey,
+    details: invoice.details,
   };
   if (invoiceRecord.tax_tag != null && invoiceRecord.tax_tag !== '0field') {
     partial.taxTag = cleanAleoField(invoiceRecord.tax_tag) as AleoField;

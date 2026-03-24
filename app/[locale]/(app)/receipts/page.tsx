@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Receipt, Download, RefreshCw, FileText } from 'lucide-react';
 import { useReceipts } from '@/controller/Receipt/useReceipts';
 import ReceiptCard from '@/components/receipt-card';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import type { AleoTransactionId } from '@/lib/types';
@@ -32,21 +33,9 @@ export default function ReceiptsPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Wallet connection prompt — match invoices page style
+  // Wallet connection prompt
   if (showWalletPrompt) {
-    return (
-      <div>
-        <MotionContainer>
-          <MotionItem className="surface-card p-8">
-            <EmptyState
-              icon={Receipt}
-              title={t('wallet.connect')}
-              description={t('wallet.connectPrompt')}
-            />
-          </MotionItem>
-        </MotionContainer>
-      </div>
-    );
+    return <ConnectWalletCard />;
   }
 
   return (

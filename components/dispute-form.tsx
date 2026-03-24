@@ -6,6 +6,7 @@ import type { Invoice, AleoField, AleoAddress } from '@/lib/types';
 
 interface DisputeFormProps {
   invoice: Invoice;
+  arbiter?: AleoAddress;
   onSubmit: (params: {
     reasonHash: AleoField;
     evidenceHash: AleoField;
@@ -15,10 +16,9 @@ interface DisputeFormProps {
   onCancel: () => void;
 }
 
-export default function DisputeForm({ invoice, onSubmit, onCancel }: DisputeFormProps) {
+export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel }: DisputeFormProps) {
   const t = useTranslations();
   const [reason, setReason] = useState('');
-  const [arbiter, setArbiter] = useState('');
   const [deadlineDays, setDeadlineDays] = useState(14);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -37,7 +37,7 @@ export default function DisputeForm({ invoice, onSubmit, onCancel }: DisputeForm
       await onSubmit({
         reasonHash,
         evidenceHash: '0field' as AleoField,
-        arbiter: arbiter ? (arbiter as AleoAddress) : undefined,
+        arbiter,
         resolutionDeadlineDays: deadlineDays,
       });
     } finally {
@@ -65,18 +65,17 @@ export default function DisputeForm({ invoice, onSubmit, onCancel }: DisputeForm
         />
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-700">
-          {t('dispute.arbiter')}
-        </label>
-        <input
-          type="text"
-          value={arbiter}
-          onChange={e => setArbiter(e.target.value)}
-          placeholder={t('dispute.arbiterPlaceholder')}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
+      {arbiter && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700">
+            {t('dispute.arbiter')}
+          </label>
+          <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 break-all">
+            {arbiter}
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">{t('dispute.arbiterFromEscrow')}</p>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-slate-700">

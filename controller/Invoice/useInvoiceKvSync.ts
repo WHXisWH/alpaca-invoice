@@ -27,11 +27,25 @@ export async function fetchAndMergeKvDetails(
 
   const results = await Promise.allSettled(
     toFetch.map(async (inv) => {
+      let raw: any = null;
       const res = await fetch(
         `/api/invoice-details?invoiceHash=${encodeURIComponent(inv.invoiceHash)}`
       );
-      if (!res.ok) return;
-      const { details: raw } = await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        raw = data?.details ?? null;
+      }
+      if (!raw && inv.id !== inv.invoiceHash) {
+        try {
+          const res2 = await fetch(
+            `/api/invoice-details?invoiceId=${encodeURIComponent(inv.id)}`
+          );
+          if (res2.ok) {
+            const data2 = await res2.json();
+            raw = data2?.details ?? null;
+          }
+        } catch { /* fallback failed, continue */ }
+      }
       if (!raw) return;
 
       let plainDetails: unknown = raw;

@@ -45,7 +45,13 @@ export const useEscrowStore = create<EscrowState>()(
         getItem: (name) => {
           const str = localStorage.getItem(name);
           if (!str) return null;
-          const parsed = JSON.parse(str);
+          // Revive serialized BigInt strings ("123n") and Date strings
+          const parsed = JSON.parse(str, (_, v) => {
+            if (typeof v === 'string' && /^\d+n$/.test(v)) {
+              return BigInt(v.slice(0, -1));
+            }
+            return v;
+          });
           if (parsed?.state?.escrows) {
             parsed.state.escrows = parsed.state.escrows.map((e: any) => ({
               ...e,
@@ -55,7 +61,11 @@ export const useEscrowStore = create<EscrowState>()(
           return parsed;
         },
         setItem: (name, value) => {
-          localStorage.setItem(name, JSON.stringify(value));
+          // Serialize BigInt as "<digits>n" strings so JSON.stringify doesn't throw
+          const serialized = JSON.stringify(value, (_, v) =>
+            typeof v === 'bigint' ? `${v}n` : v
+          );
+          localStorage.setItem(name, serialized);
         },
         removeItem: (name) => {
           localStorage.removeItem(name);

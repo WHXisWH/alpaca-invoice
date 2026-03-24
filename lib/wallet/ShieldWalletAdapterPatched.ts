@@ -67,9 +67,13 @@ export class ShieldWalletAdapterPatched extends ShieldWalletAdapter {
   }
 
   /**
-   * Shield extension may occasionally throw "Receiving end does not exist"
-   * during disconnect (e.g. extension reloaded / background channel lost).
-   * Treat it as already disconnected to avoid crashing the app UI.
+   * Shield extension can throw several non-fatal errors during disconnect:
+   *   - "Receiving end does not exist"  → background channel already gone
+   *   - "No response"                   → extension didn't reply (port closed)
+   *   - "Could not establish connection" → tab/extension race on close
+   *
+   * All of these mean the extension is effectively already disconnected, so
+   * we treat them as success to avoid crashing the UI on the first click.
    */
   async disconnect() {
     try {
@@ -78,17 +82,18 @@ export class ShieldWalletAdapterPatched extends ShieldWalletAdapter {
       const msg =
         error instanceof Error ? error.message : String(error ?? '');
       const lower = msg.toLowerCase();
-      const isMissingReceiver =
-        lower.includes('receiving end does not exist') ||
-        (lower.includes('could not establish connection') &&
-          lower.includes('receiving end'));
 
-      if (isMissingReceiver) {
+      const isAlreadyGone =
+        lower.includes('receiving end does not exist') ||
+        lower.includes('no response') ||
+        lower.includes('could not establish connection');
+
+      if (isAlreadyGone) {
         console.warn(
-          '[ShieldAdapterPatched] disconnect ignored (extension channel missing):',
+          '[ShieldAdapterPatched] disconnect treated as success (extension already gone):',
           msg
         );
-        return;
+        return; // treat as disconnected — do not rethrow
       }
 
       throw error;

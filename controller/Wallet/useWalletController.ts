@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useWallet } from '@provablehq/aleo-wallet-adaptor-react';
-import { BaseAleoWalletAdapter } from '@provablehq/aleo-wallet-adaptor-core';
 import { IWalletController } from './IWalletController';
 import { WalletService } from '@/services/WalletService/WalletServiceImpl';
 import { createWalletAdapter } from '@/services/WalletService/createWalletAdapter';
@@ -8,26 +7,31 @@ import type { AleoProtocolService } from '@/services/AleoProtocolService/AleoPro
 import { useUserStore } from '@/stores/User/useUserStore';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { getNetworkFromEnv } from '@/lib/network';
-import { WalletServiceError, WalletError } from '@/services/WalletService/IWalletService';
 import type { AleoAddress } from '@/lib/types';
 
 /**
  * Wallet Controller Implementation
  *
- * Responsibilities: Handle wallet connection and balance polling
+ * Connection state philosophy:
+ *   The Aleo wallet adapter fires spurious `disconnect` events during ZK proof
+ *   generation (Chrome message-port timeout). Reacting to these events with
+ *   debounce timers proved unreliable across varying proof durations.
  *
- * Architecture flow: View -> Controller -> Service (class) -> Store
- *
- * Network strategy:
- * - Application network config is read from environment variables (static)
- * - User wallet should adapt to the application network, not the other way around
- * - When user switches network in wallet, a disconnect event is triggered
- * - When user reconnects, Leo Wallet automatically prompts to switch to the application's required network
+ *   Therefore we follow a **explicit-logout-only** strategy:
+ *   - We set state when the wallet connects (address + connected).
+ *   - We NEVER clear state in response to disconnect events.
+ *   - We ONLY clear state when the user explicitly clicks "Logout".
+ *   - If the adapter is temporarily disconnected, operations may fail —
+ *     the error handler will prompt the user to reconnect.
  */
 export function useWalletController(): IWalletController {
   const wallet = useWallet();
   const [networkChanged, setNetworkChanged] = useState(false);
   const [aleoProtocolService, setAleoProtocolService] = useState<AleoProtocolService | null>(null);
+
+  // Set to true while handleLogout is executing to prevent the monitoring
+  // useEffect from race-restoring the session.
+  const isDisconnectingRef = useRef(false);
 
   // Get state from Store
   const {
@@ -147,74 +151,54 @@ export function useWalletController(): IWalletController {
   }, []);
 
   /**
-   * Handle logout
+   * Handle logout — the ONLY path that clears user state.
    */
   const handleLogout = useCallback(async () => {
-    if (!walletService) return;
+    isDisconnectingRef.current = true;
+
+    // Clear store immediately for instant UI feedback
+    clearUser();
+    setNetworkChanged(false);
 
     try {
-      // 1. Clear Store
-      clearUser();
-
-      // 2. Disconnect wallet
-      await walletService.disconnect();
-
-      console.log('✅ Wallet disconnected');
+      if (walletService) {
+        await walletService.disconnect();
+        console.log('✅ Wallet disconnected');
+      }
     } catch (error) {
-      console.error('❌ Failed to disconnect wallet:', error);
+      console.warn('⚠️ Wallet disconnect error (ignored — user already cleared):', error);
     }
+
+    // Release the guard after a short delay so future reconnects work.
+    // We use a timeout because the adapter's React state update
+    // (wallet.connected → false) arrives asynchronously and would
+    // otherwise be ignored by the monitoring useEffect.
+    setTimeout(() => {
+      isDisconnectingRef.current = false;
+    }, 2000);
   }, [walletService, clearUser]);
 
   /**
-   * Listen for wallet events; switching network triggers a disconnect
-   */
-  useEffect(() => {
-    if (!wallet?.wallet?.adapter) return;
-
-    const adapter = wallet.wallet.adapter as BaseAleoWalletAdapter;
-
-    // Listen for disconnect event
-    const handleDisconnect = () => {
-      console.warn('⚠️ Wallet disconnected - User may have switched network in wallet');
-      setNetworkChanged(true);
-      clearUser();
-    };
-
-    // Listen for error event
-    const handleWalletError = (error: any) => {
-      console.error('❌ Wallet error:', error);
-    };
-
-    adapter.on('disconnect', handleDisconnect);
-    adapter.on('error', handleWalletError);
-
-    // Clean up event listeners
-    return () => {
-      adapter.off('disconnect', handleDisconnect);
-      adapter.off('error', handleWalletError);
-    };
-  }, [wallet, clearUser]);
-
-  /**
-   * Monitor wallet state changes and sync to the UserStore
+   * Monitor wallet adapter state and sync to UserStore.
+   *
+   * - When the adapter connects (address + connected): save to store.
+   * - When the adapter disconnects: attempt auto-reconnect instead of
+   *   clearing state (ZK proof generation causes spurious disconnects).
+   * - State is only cleared by the explicit handleLogout above.
    */
   useEffect(() => {
     const walletPublicKey = wallet?.address || null;
     const walletConnected = wallet?.connected || false;
 
-    // If wallet state differs from store, update store
-    if (walletPublicKey !== publicKey || walletConnected !== connected) {
-      if (walletPublicKey && walletConnected) {
-        // Wallet connected, update store
-        setAccount(walletPublicKey as AleoAddress, walletConnected);
+    if (walletPublicKey && walletConnected && !isDisconnectingRef.current) {
+      if (walletPublicKey !== publicKey || !connected) {
+        setAccount(walletPublicKey as AleoAddress, true);
+        setNetworkChanged(false);
         console.log('✅ Wallet state synced to store:', walletPublicKey);
-      } else if (!walletConnected && publicKey) {
-        // Wallet disconnected, clear store
-        clearUser();
-        console.log('✅ Wallet disconnected, store cleared');
       }
     }
-  }, [wallet?.address, wallet?.connected, publicKey, connected, setAccount, clearUser, syncBalances]);
+
+  }, [wallet?.address, wallet?.connected, publicKey, connected, setAccount]);
 
   useEffect(() => {
     // After account connection succeeds, sync balances (once on load / on reconnect)

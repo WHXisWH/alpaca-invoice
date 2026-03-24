@@ -3,6 +3,7 @@ import { InvoiceState, ChainConfirmationStatus } from './InvoiceState';
 import { Invoice, AleoField, AleoAddress, AleoTransactionId, EncryptedPayload, InvoiceStatus, CurrencyFlag, TaxGroups } from '@/lib/types';
 import { StorageService } from '@/services/StorageService/StorageServiceImpl';
 import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
+import { cleanAleoField } from '@/lib/invoice';
 
 // Service instances (singleton pattern, lazy initialization)
 let storageServiceInstance: StorageService | null = null;
@@ -774,15 +775,22 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
           console.log(`[Store.setInvoices] Cleared ${allKeys.length} existing invoices from IndexedDB`);
         }
 
-        // Build a lookup from existing data so we can preserve encryptedDetails
-        const existingByInvoiceId = new Map(
-          allExistingData.map(item => [item.id, item])
-        );
+        // Build lookups from existing data so we can preserve encryptedDetails.
+        // Use both exact ID and cleaned ID (without .private suffix) to handle format differences.
+        const existingByInvoiceId = new Map<string, InvoiceStorageData>();
+        const existingByCleanId = new Map<string, InvoiceStorageData>();
+        const existingByHash = new Map<string, InvoiceStorageData>();
+        for (const item of allExistingData) {
+          existingByInvoiceId.set(item.id, item);
+          existingByCleanId.set(cleanAleoField(item.id), item);
+          if (item.invoiceHash) {
+            existingByHash.set(item.invoiceHash, item);
+          }
+        }
 
         // Prepare batch data
         const dataList: Array<{ key: string; data: InvoiceStorageData }> = [];
 
-        console.log('invoices', invoices)
         for (const invoice of invoices) {
           try {
             // Encrypt details (if present), otherwise preserve existing encryptedDetails from IndexedDB
@@ -790,7 +798,9 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               ? await getCryptoService().encryptPayload(invoice.details, masterKey)
               : null;
             if (!encryptedDetails) {
-              const existing = existingByInvoiceId.get(invoice.id);
+              const existing = existingByInvoiceId.get(invoice.id)
+                ?? existingByCleanId.get(cleanAleoField(invoice.id))
+                ?? existingByHash.get(invoice.invoiceHash);
               if (existing?.encryptedDetails) {
                 encryptedDetails = existing.encryptedDetails;
               }

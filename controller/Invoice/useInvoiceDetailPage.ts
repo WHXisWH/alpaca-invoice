@@ -7,7 +7,7 @@ import { useInvoiceDetail } from './useInvoiceDetail';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { useEscrowStore } from '@/stores/Escrow/useEscrowStore';
 import { useUserStore } from '@/stores/User/useUserStore';
-import type { AleoField, EscrowRecord, EscrowStatus, CurrencyFlag as CurrencyFlagType } from '@/lib/types';
+import type { AleoAddress, AleoField, EscrowRecord, EscrowStatus, CurrencyFlag as CurrencyFlagType } from '@/lib/types';
 import { CurrencyFlag, InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID_V4 } from '@/lib/contract';
 import { cleanAleoNumber } from '@/lib/utils';
@@ -156,7 +156,7 @@ export function useInvoiceDetailPage(invoiceHash: AleoField | null): UseInvoiceD
                 amount: chainEscrow.balance > 0n ? chainEscrow.balance : (inv.totalAmount ?? inv.amount),
                 currencyFlag: (inv.currencyFlag ?? 0) as CurrencyFlagType,
                 deliveryDeadline: deadline,
-                arbiter: inv.seller,
+                arbiter: (inv.details?.arbiter ?? inv.seller) as AleoAddress,
                 status: chainEscrow.status as EscrowStatus,
               };
               addEscrow(escrowRecord);

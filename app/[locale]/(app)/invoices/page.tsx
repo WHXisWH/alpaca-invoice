@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import { useInvoicesPageController } from '@/controller/Invoice/useInvoicesPageController';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import InvoiceCard from '@/components/invoice-card';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import {
@@ -13,7 +14,6 @@ import {
   RefreshCw,
   Loader2,
   Shield,
-  Wallet,
   FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -138,19 +138,7 @@ function InvoicesPageInner() {
 
   // Wallet connection prompt
   if (showWalletPrompt) {
-    return (
-      <div data-tour="invoice-list">
-        <MotionContainer>
-          <MotionItem className="surface-card p-8">
-            <EmptyState
-              icon={Wallet}
-              title={t('wallet.connect')}
-              description={t('wallet.connectPrompt')}
-            />
-          </MotionItem>
-        </MotionContainer>
-      </div>
-    );
+    return <ConnectWalletCard />;
   }
 
   if (!showMainContent) {

@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import type { IEscrowController } from './IEscrowController';
 import type {
+  AleoAddress,
   AleoTransactionId,
   EscrowPaymentParams,
   ConfirmDeliveryParams,
@@ -23,10 +24,17 @@ export function useEscrowController(): IEscrowController {
   const txController = useTransactionController();
   const escrowStore = useEscrowStore();
   const invoiceStore = useInvoiceStore();
-  const masterKey = useUserStore((s) => s.masterKey);
+  const masterKey = useUserStore((s) => s.masterKey); // still used in executeEscrowPayment
   const [log, setLog] = useState('');
 
   const executeEscrowPayment = useCallback(async (params: EscrowPaymentParams): Promise<AleoTransactionId> => {
+    const arbiter = params.escrowConfig.arbiter ?? params.invoice.details?.arbiter;
+    if (!arbiter) {
+      throw new Error('Arbiter address is required for escrow payment. The seller must set an arbiter when creating the invoice.');
+    }
+    if (arbiter === params.invoice.seller) {
+      throw new Error('Arbiter cannot be the same as the seller.');
+    }
     setLog('Locking payment in escrow...');
     try {
       const txId = await txController.executeEscrowPayment(params);
@@ -39,7 +47,7 @@ export function useEscrowController(): IEscrowController {
         amount: params.invoice.totalAmount ?? params.invoice.amount,
         currencyFlag: params.invoice.currencyFlag ?? (0 as CurrencyFlag),
         deliveryDeadline: params.escrowConfig.deliveryDeadline,
-        arbiter: params.escrowConfig.arbiter ?? params.invoice.seller,
+        arbiter: (params.escrowConfig.arbiter ?? params.invoice.details?.arbiter)! as AleoAddress,
         status: 0 as EscrowStatus,
       };
 
@@ -61,63 +69,45 @@ export function useEscrowController(): IEscrowController {
     setLog('Confirming delivery and releasing funds...');
     try {
       const txId = await txController.executeConfirmDelivery(params);
-      escrowStore.updateEscrow(params.escrow.escrowId, {
-        status: 1 as EscrowStatus,
-      });
-      invoiceStore.updateInvoice(
-        params.invoice.id,
-        { status: InvoiceStatus.PAID },
-        { masterKey: masterKey ?? undefined }
-      );
-      setLog('Delivery confirmed, funds released');
+      // Do NOT optimistically set status to RELEASED here.
+      // requestTransaction resolves as soon as the wallet queues the request, not when the
+      // transaction is confirmed on-chain. If we update state here and the wallet later fails
+      // to prove/submit, the local state is permanently out of sync with the chain.
+      // Actual status update (RELEASED / PAID) will be applied by the sync/polling mechanism
+      // once on-chain confirmation is observed.
+      setLog('Delivery confirmation submitted – awaiting on-chain confirmation');
       return txId;
     } catch (error) {
       setLog('');
       throw error;
     }
-  }, [txController, escrowStore, invoiceStore, masterKey]);
+  }, [txController]);
 
   const executeTimeoutRefund = useCallback(async (params: TimeoutRefundParams): Promise<AleoTransactionId> => {
     setLog('Processing timeout refund...');
     try {
       const txId = await txController.executeTimeoutRefund(params);
-      escrowStore.updateEscrow(params.escrow.escrowId, {
-        status: 2 as EscrowStatus,
-      });
-      invoiceStore.updateInvoice(
-        params.invoice.id,
-        { status: InvoiceStatus.REFUNDED },
-        { masterKey: masterKey ?? undefined }
-      );
-      setLog('Refund processed');
+      // Same reasoning as executeConfirmDelivery – wait for chain confirmation via sync.
+      setLog('Refund request submitted – awaiting on-chain confirmation');
       return txId;
     } catch (error) {
       setLog('');
       throw error;
     }
-  }, [txController, escrowStore, invoiceStore, masterKey]);
+  }, [txController]);
 
   const executeArbiterResolve = useCallback(async (params: ArbiterResolveParams): Promise<AleoTransactionId> => {
     setLog('Arbiter resolving escrow...');
     try {
       const txId = await txController.executeArbiterResolve(params);
-      const newEscrowStatus = params.decision === 'release' ? 1 : 2;
-      const newInvoiceStatus = params.decision === 'release' ? InvoiceStatus.PAID : InvoiceStatus.REFUNDED;
-      escrowStore.updateEscrow(params.escrow.escrowId, {
-        status: newEscrowStatus as EscrowStatus,
-      });
-      invoiceStore.updateInvoice(
-        params.invoice.id,
-        { status: newInvoiceStatus },
-        { masterKey: masterKey ?? undefined }
-      );
-      setLog(params.decision === 'release' ? 'Funds released to seller' : 'Funds refunded to buyer');
+      // Same reasoning – do not apply final state until chain confirms.
+      setLog(`Arbiter ${params.decision} submitted – awaiting on-chain confirmation`);
       return txId;
     } catch (error) {
       setLog('');
       throw error;
     }
-  }, [txController, escrowStore, invoiceStore, masterKey]);
+  }, [txController]);
 
   return {
     isProcessing: txController.isProcessing,

@@ -93,6 +93,24 @@ export default function InvoiceForm() {
         {form.errors.buyer && <p className="text-xs text-red-500">{form.errors.buyer}</p>}
       </div>
 
+      {/* ── Arbiter (optional, for escrow disputes) ── */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-slate-800">
+          {t('invoice.create.arbiterAddress')} <span className="text-xs text-slate-400">({t('common.optional')})</span>
+        </label>
+        <input
+          type="text"
+          value={form.arbiter}
+          onChange={(e) => form.setArbiter(e.target.value)}
+          className="input-field"
+          placeholder={t('invoice.create.arbiterPlaceholder')}
+        />
+        {form.errors.arbiter && <p className="text-xs text-red-500">{form.errors.arbiter}</p>}
+        <p className="text-xs text-slate-400">
+          {t('invoice.create.arbiterHint')}
+        </p>
+      </div>
+
       {/* ── Line items ── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">

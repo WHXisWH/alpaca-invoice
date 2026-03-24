@@ -21,6 +21,9 @@ import {
 } from 'lucide-react';
 import { useSidebar } from '@/components/sidebar-context';
 import { useOnboarding } from '@/components/onboarding/onboarding-provider';
+import { useDisputeStore } from '@/stores/Dispute/useDisputeStore';
+import { useUserStore } from '@/stores/User/useUserStore';
+import { DisputeStatus } from '@/lib/types';
 
 const navItems = [
   { titleKey: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
@@ -40,6 +43,12 @@ export default function Sidebar() {
   const { restart: restartGuide } = useOnboarding();
   const [helpVisible, setHelpVisible] = useState(true);
   const t = useTranslations('nav');
+  const publicKey = useUserStore((s) => s.publicKey);
+  const pendingArbitrationCount = useDisputeStore((s) =>
+    s.disputes.filter(
+      (d) => d.arbiter === publicKey && d.status === DisputeStatus.OPEN
+    ).length
+  );
   const handleRestartGuide = () => {
     restartGuide();
     close();
@@ -133,7 +142,12 @@ export default function Sidebar() {
                 )}
               >
                 <Icon className="h-5 w-5" />
-                {t(item.titleKey)}
+                <span className="flex-1">{t(item.titleKey)}</span>
+                {item.href === '/disputes' && pendingArbitrationCount > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                    {pendingArbitrationCount}
+                  </span>
+                )}
               </Link>
             );
           })}

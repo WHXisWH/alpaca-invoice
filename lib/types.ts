@@ -69,6 +69,8 @@ export interface InvoiceDetails {
   total: number;
   currency: string;
   notes?: string;
+  /** Designated arbiter address for escrow disputes (set by seller at invoice creation) */
+  arbiter?: string;
 }
 
 export interface Invoice {

@@ -26,6 +26,11 @@ import { PROGRAM_ID } from '@/lib/contract';
 export function useInvoiceChainScan() {
   const wallet = useWallet();
   const { publicKey } = useUserStore();
+
+  /** Returns true when the wallet adapter is ready for record/tx requests. */
+  const isWalletReady = useCallback((): boolean => {
+    return !!(wallet?.connected && wallet?.address);
+  }, [wallet?.connected, wallet?.address]);
   
   // 服务实例
   const walletService = useMemo(() => new WalletService(createWalletAdapter(wallet)), [wallet]);
@@ -56,6 +61,11 @@ export function useInvoiceChainScan() {
     }> = [];
     
     if (!walletService || !publicKey) {
+      return { byHash: new Map(), byInvoiceId: new Map() };
+    }
+
+    if (!isWalletReady()) {
+      console.warn('[scanAllInvoiceRecords] Wallet not connected – skipping chain scan');
       return { byHash: new Map(), byInvoiceId: new Map() };
     }
 
@@ -215,6 +225,11 @@ export function useInvoiceChainScan() {
   }> => {
     if (!publicKey || !invoiceHash) {
       console.log('⚠️ [scanInvoiceRecord] Missing publicKey or invoiceHash', { publicKey, invoiceHash });
+      return { invoiceRecord: null, paymentRecord: null, rawRecord: null };
+    }
+
+    if (!isWalletReady()) {
+      console.warn('[scanInvoiceRecord] Wallet not connected – skipping chain scan for:', invoiceHash);
       return { invoiceRecord: null, paymentRecord: null, rawRecord: null };
     }
 

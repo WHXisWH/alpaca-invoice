@@ -1,6 +1,6 @@
 'use client';
 
-import { Lock, CheckCircle, RefreshCw, Clock, Shield, User, Gavel } from 'lucide-react';
+import { Lock, CheckCircle, RefreshCw, Clock, Shield, User, Gavel, AlertTriangle } from 'lucide-react';
 import type { EscrowRecord, Invoice } from '@/lib/types';
 import { EscrowStatus } from '@/lib/types';
 import { useState, useEffect } from 'react';
@@ -16,6 +16,20 @@ interface EscrowStatusCardProps {
   isCurrentUserPayer: boolean;
   isCurrentUserPayee: boolean;
   isCurrentUserArbiter: boolean;
+  /** Progress 0-100 from useTransactionStore while a tx is in flight */
+  txProgress?: number;
+  /** Latest log message from useTransactionStore */
+  txLog?: string;
+  /** Whether the parent is externally processing an escrow tx */
+  isExternallyProcessing?: boolean;
+  /** Whether we are in the chain-confirmation polling phase */
+  isPollingChain?: boolean;
+  /** Log message from the chain poller */
+  pollLog?: string;
+  /** Callback to open the Raise Dispute form (buyer only, LOCKED status) */
+  onRaiseDispute?: () => void;
+  /** Whether the dispute form is already showing */
+  showDisputeForm?: boolean;
 }
 
 function useCountdown(deadline: Date) {
@@ -57,11 +71,21 @@ export default function EscrowStatusCard({
   isCurrentUserPayer,
   isCurrentUserPayee,
   isCurrentUserArbiter,
+  txProgress = 0,
+  txLog = '',
+  isExternallyProcessing = false,
+  isPollingChain = false,
+  pollLog = '',
+  onRaiseDispute,
+  showDisputeForm = false,
 }: EscrowStatusCardProps) {
   const t = useTranslations();
   const remaining = useCountdown(escrow.deliveryDeadline);
   const isExpired = new Date() > escrow.deliveryDeadline;
   const [processing, setProcessing] = useState(false);
+
+  // True while ZK proving OR waiting for chain confirmation
+  const isAnyProcessing = processing || isExternallyProcessing || isPollingChain;
 
   const statusConfig = {
     [EscrowStatus.LOCKED]: {
@@ -119,8 +143,61 @@ export default function EscrowStatusCard({
         </div>
       </div>
 
+      {/* ── Phase 1: ZK Proving (wallet is generating proof) ── */}
+      {(isExternallyProcessing || processing) && !isPollingChain && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3.5 py-3 space-y-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex-1 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                style={{ width: `${Math.max(txProgress, 8)}%` }}
+              />
+            </div>
+            <span className="text-xs font-medium text-blue-700 tabular-nums min-w-[2.5rem] text-right">
+              {txProgress}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="animate-spin shrink-0">
+              <Shield className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-800">Step 1 / 2 — ZK Proving</p>
+              {txLog && (
+                <p className="text-xs text-blue-600 mt-0.5 truncate max-w-[260px]">{txLog}</p>
+              )}
+            </div>
+          </div>
+          <p className="text-[11px] text-blue-500 leading-relaxed">
+            Wallet is generating a zero-knowledge proof. This may take a moment.
+          </p>
+        </div>
+      )}
+
+      {/* ── Phase 2: Waiting for on-chain confirmation ── */}
+      {isPollingChain && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3.5 py-3 space-y-2.5">
+          {/* Indeterminate pulse bar */}
+          <div className="h-1.5 rounded-full bg-emerald-100 overflow-hidden">
+            <div className="h-full w-1/3 rounded-full bg-emerald-400 animate-[slide_1.8s_ease-in-out_infinite]" />
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="shrink-0 h-5 w-5 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+            <div>
+              <p className="text-xs font-semibold text-emerald-800">Step 2 / 2 — Confirming on chain</p>
+              {pollLog && (
+                <p className="text-xs text-emerald-600 mt-0.5">{pollLog}</p>
+              )}
+            </div>
+          </div>
+          <p className="text-[11px] text-emerald-600 leading-relaxed">
+            Transaction submitted to network. Polling for confirmation every ~12 s.
+          </p>
+        </div>
+      )}
+
       {/* Buyer (payer) actions */}
-      {escrow.status === EscrowStatus.LOCKED && isCurrentUserPayer && (
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayer && (
         <div className="space-y-2 pt-1">
           <p className="text-xs text-slate-600">
             {isExpired ? t('escrow.refundAvailable') : t('escrow.confirmDeliveryMsg')}
@@ -128,14 +205,14 @@ export default function EscrowStatusCard({
           <div className="flex gap-2">
             <button
               onClick={handleConfirm}
-              disabled={processing || isExpired}
+              disabled={isAnyProcessing || isExpired}
               className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {processing ? t('invoice.card.processing') : t('invoice.detail.confirmDelivery')}
+              {t('invoice.detail.confirmDelivery')}
             </button>
             <button
               onClick={handleRefund}
-              disabled={processing || !isExpired}
+              disabled={isAnyProcessing || !isExpired}
               className="flex-1 rounded-lg border-2 border-amber-300 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title={!isExpired ? t('escrow.refundNotYetAvailable') : ''}
             >
@@ -149,6 +226,18 @@ export default function EscrowStatusCard({
             </p>
           )}
 
+          {/* Raise Dispute button for buyer */}
+          {onRaiseDispute && !showDisputeForm && (
+            <button
+              onClick={onRaiseDispute}
+              disabled={isAnyProcessing}
+              className="w-full rounded-lg border-2 border-amber-300 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <AlertTriangle className="inline h-4 w-4 mr-1 -mt-0.5" />
+              {t('dispute.raiseDispute')}
+            </button>
+          )}
+
           {/* Arbiter contact hint for buyer */}
           <div className="flex items-start gap-2 rounded-lg bg-slate-100/80 p-2.5 mt-1">
             <Shield className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
@@ -160,7 +249,7 @@ export default function EscrowStatusCard({
       )}
 
       {/* Seller (payee) view */}
-      {escrow.status === EscrowStatus.LOCKED && isCurrentUserPayee && !isCurrentUserPayer && (
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserPayee && !isCurrentUserPayer && (
         <div className="space-y-2 pt-1">
           {!isExpired ? (
             <div className="flex items-start gap-2 rounded-lg bg-blue-100/60 p-3">
@@ -182,7 +271,7 @@ export default function EscrowStatusCard({
       )}
 
       {/* Arbiter actions */}
-      {escrow.status === EscrowStatus.LOCKED && isCurrentUserArbiter && !isCurrentUserPayer && (
+      {!isAnyProcessing && escrow.status === EscrowStatus.LOCKED && isCurrentUserArbiter && !isCurrentUserPayer && (
         <div className="space-y-2 pt-1">
           <div className="flex items-start gap-2 rounded-lg bg-purple-100/60 p-3">
             <Gavel className="h-4 w-4 text-purple-600 mt-0.5 shrink-0" />
@@ -197,20 +286,20 @@ export default function EscrowStatusCard({
                 setProcessing(true);
                 try { await onArbiterRelease?.(); } finally { setProcessing(false); }
               }}
-              disabled={processing}
+              disabled={isAnyProcessing}
               className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {processing ? t('invoice.card.processing') : t('escrow.arbiterRelease')}
+              {t('escrow.arbiterRelease')}
             </button>
             <button
               onClick={async () => {
                 setProcessing(true);
                 try { await onArbiterRefund?.(); } finally { setProcessing(false); }
               }}
-              disabled={processing}
+              disabled={isAnyProcessing}
               className="flex-1 rounded-lg border-2 border-amber-300 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {processing ? t('invoice.card.processing') : t('escrow.arbiterRefund')}
+              {t('escrow.arbiterRefund')}
             </button>
           </div>
         </div>

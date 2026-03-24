@@ -23,6 +23,51 @@ const cryptoService = new CryptoService();
 const freezeListService = new FreezeListService();
 
 /**
+ * Extract a field value from an Aleo record returned by requestRecords.
+ * Handles both structured-data shapes (r.data.field_name) and
+ * plaintext string shapes (r.plaintext / r.recordPlaintext).
+ *
+ * Aleo plaintext looks like:
+ *   "{ owner: aleo1..., invoice_id: 123field.private, ... }"
+ * Field values have a type suffix (.private / .public) that we strip.
+ */
+function extractRecordField(record: any, fieldName: string): string | undefined {
+  // 1. Structured data (most wallets after parsing)
+  const fromData =
+    record?.data?.[fieldName] ??
+    record?.[fieldName];
+  if (fromData !== undefined && fromData !== null) {
+    // Strip type suffixes like ".private" or ".public"
+    return String(fromData).replace(/\.(private|public)$/, '').trim();
+  }
+
+  // 2. Plaintext string (Shield returns raw Aleo record plaintext)
+  const plaintext: string | undefined =
+    record?.plaintext ?? record?.recordPlaintext ?? record?.record_plaintext;
+  if (typeof plaintext === 'string') {
+    // Matches:  field_name: <value>(.<suffix>)?
+    const re = new RegExp(`\\b${fieldName}\\s*:\\s*([^,}\\s]+)`);
+    const m = plaintext.match(re);
+    if (m) return m[1].replace(/\.(private|public)$/, '').trim();
+  }
+
+  return undefined;
+}
+
+/**
+ * Find the first unspent EscrowRecord in a wallet record list that belongs to
+ * the given invoice.  Matches on invoice_id (always known) rather than
+ * escrow_id (which is computed on-chain and not stored locally).
+ */
+function findEscrowRecordByInvoice(records: any[], invoiceId: string): any | undefined {
+  return records?.find((r: any) => {
+    if (r?.spent === true || r?.spent === 'true') return false;
+    const rid = extractRecordField(r, 'invoice_id');
+    return rid === invoiceId;
+  });
+}
+
+/**
  * Transaction Controller Hook
  * Implements the full invoice creation flow, executing in three phases per the architecture diagram
  */
@@ -385,17 +430,24 @@ export function useTransactionController(): ITxController {
               action: 'create'
             }
           };
+          console.log('🔍 [DEBUG-ARBITER] addInvoice payload:', {
+            invoiceId,
+            invoiceHash: invoiceHash?.slice(0, 30),
+            hasDetails: !!params.details,
+            arbiter: (params.details as any)?.arbiter ?? 'NOT SET',
+            detailKeys: params.details ? Object.keys(params.details) : [],
+          });
           invoicePayload.taxTag = taxTagField;
           invoicePayload.jctRegistration = jctRegField;
           invoicePayload.totalAmount = totalAmountU64;
           invoicePayload.currencyFlag = currencyFlagU8;
           invoicePayload.taxGroups = params.taxGroups;
           invoicePayload.tNumber = params.tNumber;
-          // Important: do NOT persist to IndexedDB before chain confirmation.
-          // Keep it in-memory as SENDING first; AutoPoller persists after true confirmation.
+          // Persist immediately to IndexedDB so details (including arbiter) survive
+          // page reloads / HMR. Status stays SENDING; AutoPoller updates to CONFIRMED later.
           await invoiceStore.addInvoice(invoicePayload, {
-            masterKey: undefined,
-            persistFull: false
+            masterKey: currentMasterKey,
+            persistFull: true
           });
           updateProgress(97, '✓ Saved locally in memory (status: SENDING)');
           console.log('✅ [TransactionController] Invoice saved to Store memory as SENDING:', invoiceHash);
@@ -897,13 +949,16 @@ export function useTransactionController(): ITxController {
         const { rawRecord } = await scanInvoiceRecord(params.invoice.invoiceHash, params.invoice.id);
         if (!rawRecord) { throw new Error('Invoice record not found on chain.'); }
 
-        const arbiter = params.arbiter ?? params.invoice.seller;
+        const arbiter = params.arbiter ?? params.invoice.details?.arbiter;
+        if (!arbiter) {
+          throw new Error('Arbiter address is required for raising a dispute.');
+        }
         updateProgress(50, 'Submitting raise_dispute...');
         const requestId = await walletService.requestTransaction({
           functionName: 'raise_dispute',
           inputs: [
             params.invoice.id,
-            `${params.invoice.status}u8`,
+            `${InvoiceStatus.ESCROWED}u8`,
             params.invoice.buyer,
             params.invoice.seller,
             arbiter,
@@ -938,12 +993,18 @@ export function useTransactionController(): ITxController {
       try {
         updateProgress(10, 'Fetching dispute record...');
         const { records: disputeRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
-        const disputeRecord = disputeRecords?.find((r: any) =>
-          r?.data?.dispute_id === params.dispute.disputeId ||
-          r?.dispute_id === params.dispute.disputeId
-        );
+        // Match by invoice_id for the same reason as escrow: the local disputeId is a
+        // placeholder, not the on-chain BHP256 hash.
+        const disputeRecord = disputeRecords?.find((r: any) => {
+          if (r?.spent === true || r?.spent === 'true') return false;
+          const rid = extractRecordField(r, 'invoice_id');
+          return rid === params.invoice.id;
+        });
         if (!disputeRecord) {
-          throw new Error('Dispute record not found in wallet. Ensure you are the arbiter.');
+          throw new Error(
+            `Dispute record not found in wallet for invoice ${params.invoice?.id}. ` +
+            'Ensure you are the arbiter and the dispute transaction is confirmed on-chain.'
+          );
         }
         const disputeRecordStr = toRecordInputString(disputeRecord);
 
@@ -976,12 +1037,16 @@ export function useTransactionController(): ITxController {
       try {
         updateProgress(10, 'Fetching dispute record...');
         const { records: disputeRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
-        const disputeRecord = disputeRecords?.find((r: any) =>
-          r?.data?.dispute_id === params.dispute.disputeId ||
-          r?.dispute_id === params.dispute.disputeId
-        );
+        const disputeRecord = disputeRecords?.find((r: any) => {
+          if (r?.spent === true || r?.spent === 'true') return false;
+          const rid = extractRecordField(r, 'invoice_id');
+          return rid === params.invoice?.id;
+        });
         if (!disputeRecord) {
-          throw new Error('Dispute record not found in wallet.');
+          throw new Error(
+            `Dispute record not found in wallet for invoice ${params.invoice?.id}. ` +
+            'Ensure the dispute transaction is confirmed on-chain.'
+          );
         }
         const disputeRecordStr = toRecordInputString(disputeRecord);
 
@@ -1013,7 +1078,10 @@ export function useTransactionController(): ITxController {
       const payAmount = params.invoice.totalAmount ?? params.invoice.amount;
       const nowSec = Math.floor(Date.now() / 1000);
       const deadlineSec = Math.floor(params.escrowConfig.deliveryDeadline.getTime() / 1000);
-      const arbiter = params.escrowConfig.arbiter ?? params.invoice.seller;
+      const arbiter = params.escrowConfig.arbiter ?? params.invoice.details?.arbiter;
+      if (!arbiter) {
+        throw new WalletServiceError(WalletError.UNAUTHORIZED, 'Arbiter address is required for escrow payment. The seller must set an arbiter when creating the invoice.');
+      }
 
       startTx('REQUESTING');
       try {
@@ -1064,12 +1132,14 @@ export function useTransactionController(): ITxController {
       try {
         updateProgress(10, 'Fetching escrow record...');
         const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
-        const escrowRecord = escrowRecords?.find((r: any) =>
-          r?.data?.escrow_id === params.escrow.escrowId ||
-          r?.escrow_id === params.escrow.escrowId
-        );
+        // Match by invoice_id (always reliable). The local escrowId is a placeholder
+        // derived from the tx request ID, not the on-chain BHP256 hash.
+        const escrowRecord = findEscrowRecordByInvoice(escrowRecords, params.invoice.id);
         if (!escrowRecord) {
-          throw new Error('Escrow record not found in wallet. Ensure you are the payer.');
+          throw new Error(
+            `Escrow record not found in wallet for invoice ${params.invoice.id}. ` +
+            'Ensure you are the payer and the escrow transaction is confirmed on-chain.'
+          );
         }
         const escrowRecordStr = toRecordInputString(escrowRecord);
 
@@ -1103,12 +1173,12 @@ export function useTransactionController(): ITxController {
       try {
         updateProgress(10, 'Fetching escrow record...');
         const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
-        const escrowRecord = escrowRecords?.find((r: any) =>
-          r?.data?.escrow_id === params.escrow.escrowId ||
-          r?.escrow_id === params.escrow.escrowId
-        );
+        const escrowRecord = findEscrowRecordByInvoice(escrowRecords, params.invoice.id);
         if (!escrowRecord) {
-          throw new Error('Escrow record not found in wallet.');
+          throw new Error(
+            `Escrow record not found in wallet for invoice ${params.invoice.id}. ` +
+            'Ensure you are the payer and the escrow transaction is confirmed on-chain.'
+          );
         }
         const escrowRecordStr = toRecordInputString(escrowRecord);
 
@@ -1144,12 +1214,12 @@ export function useTransactionController(): ITxController {
       try {
         updateProgress(10, 'Fetching escrow record...');
         const { records: escrowRecords } = await walletService.requestRecords(PROGRAM_ID_V4);
-        const escrowRecord = escrowRecords?.find((r: any) =>
-          r?.data?.escrow_id === params.escrow.escrowId ||
-          r?.escrow_id === params.escrow.escrowId
-        );
+        const escrowRecord = findEscrowRecordByInvoice(escrowRecords, params.invoice.id);
         if (!escrowRecord) {
-          throw new Error('Escrow record not found in wallet. Ensure you are the arbiter.');
+          throw new Error(
+            `Escrow record not found in wallet for invoice ${params.invoice.id}. ` +
+            'Ensure you are the arbiter and the escrow transaction is confirmed on-chain.'
+          );
         }
         const escrowRecordStr = toRecordInputString(escrowRecord);
 
