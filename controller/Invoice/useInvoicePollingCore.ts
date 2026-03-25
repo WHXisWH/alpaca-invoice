@@ -13,7 +13,7 @@ import { PROGRAM_ID, PROGRAM_ID_V4 } from '@/lib/contract';
 import { cleanAleoNumber } from '@/lib/utils';
 
 const POLL_INTERVAL = 15000; // 15 seconds
-const POLL_TIMEOUT = 600000; // 10 minutes timeout
+const POLL_TIMEOUT = 180000; // 3 minutes timeout
 const MAPPING_CACHE_MS = 20000;
 
 /**
@@ -76,8 +76,7 @@ export function useInvoicePollingCore() {
     return {
       ...invoice,
       metadata: {
-        // Timeout means we have not confirmed this invoice on chain.
-        confirmationStatus: 'SENDING',
+        confirmationStatus: 'TIMEOUT',
         dataSource: 'local',
         lastUpdated: new Date(),
         action: invoice.metadata?.action

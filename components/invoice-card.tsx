@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { CreditCard, X, Eye, Copy, Loader2, ExternalLink, ChevronDown, Package } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import WalletOperationProgress from '@/components/wallet-operation-progress';
 import {
   Tooltip,
   TooltipContent,
@@ -28,6 +29,8 @@ interface InvoiceCardProps {
   isProcessing?: boolean;
   isSyncing?: boolean;
   explorerTxUrl?: string | null;
+  txProgress?: number;
+  txLog?: string;
   onPay?: (invoice: Invoice) => void;
   onCancel?: (invoice: Invoice) => void;
 }
@@ -53,6 +56,8 @@ export default function InvoiceCard({
   isProcessing = false,
   isSyncing = false,
   explorerTxUrl = null,
+  txProgress = 0,
+  txLog = '',
   onPay,
   onCancel,
 }: InvoiceCardProps) {
@@ -109,9 +114,15 @@ export default function InvoiceCard({
             </div>
 
             {(isProcessing || isSyncing) && (
-              <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-50/70 px-3 py-2 text-xs text-primary-700 ring-1 ring-primary-200/40">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{isProcessing ? t('invoice.card.processingTransaction') : t('invoice.detail.syncing')}</span>
+              <div className="mb-4">
+                <WalletOperationProgress
+                  isProving={isProcessing}
+                  txProgress={txProgress}
+                  txLog={txLog}
+                  isConfirming={isSyncing && !isProcessing}
+                  pollLog={isSyncing && !isProcessing ? t('walletProgress.confirmingOnChain') : ''}
+                  compact
+                />
               </div>
             )}
 

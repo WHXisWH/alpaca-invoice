@@ -32,13 +32,14 @@ export function useInvoiceActions(
   /**
    * Process payment using the invoice provided to the hook.
    * Marks the invoice as SENDING to trigger the global AutoPoller.
-  */
-  const handlePay = useCallback(async () => {
+   * @returns true if the transaction was submitted successfully
+   */
+  const handlePay = useCallback(async (): Promise<boolean> => {
     if (!invoice) {
       toast.error('Payment failed', {
         description: 'Invoice data not available. Please try again.'
       });
-      return;
+      return false;
     }
     
     setIsProcessing(true);
@@ -46,7 +47,6 @@ export function useInvoiceActions(
       toast.loading('Processing payment...', { id: `pay-${invoice.id}` });
       const transactionId = await executePay(invoice);
       
-      // ✅ 标记为 SENDING（触发 AutoPoller 自动轮询）
       markInvoiceSending(invoice.invoiceHash);
       
       toast.success('Payment successful!', {
@@ -54,13 +54,14 @@ export function useInvoiceActions(
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
       
-      // 不再需要手动同步，AutoPoller 会自动处理
+      return true;
     } catch (error) {
       toast.error('Payment failed', {
         id: `pay-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -69,13 +70,14 @@ export function useInvoiceActions(
   /**
    * Process cancellation using the invoice provided to the hook.
    * Marks the invoice as SENDING to trigger the global AutoPoller.
-  */
-  const handleCancel = useCallback(async () => {
+   * @returns true if the transaction was submitted successfully
+   */
+  const handleCancel = useCallback(async (): Promise<boolean> => {
     if (!invoice) {
       toast.error('Cancellation failed', {
         description: 'Invoice data not available. Please try again.'
       });
-      return;
+      return false;
     }
     
     setIsProcessing(true);
@@ -83,7 +85,6 @@ export function useInvoiceActions(
       toast.loading('Cancelling invoice...', { id: `cancel-${invoice.id}` });
       const transactionId = await executeCancel(invoice);
       
-      // ✅ 标记为 SENDING（触发 AutoPoller 自动轮询）
       markInvoiceSending(invoice.invoiceHash);
       
       toast.success('Invoice cancelled successfully', { 
@@ -91,13 +92,14 @@ export function useInvoiceActions(
         description: `Transaction ID: ${transactionId.slice(0, 16)}...`
       });
       
-      // 不再需要手动同步，AutoPoller 会自动处理
+      return true;
     } catch (error) {
       toast.error('Failed to cancel invoice', {
         id: `cancel-${invoice.id}`,
         description: error instanceof Error ? error.message : 'Unknown error occurred'
       });
       handleError(error as Error);
+      return false;
     } finally {
       setIsProcessing(false);
     }

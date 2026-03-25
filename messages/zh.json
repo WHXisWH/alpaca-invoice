@@ -510,6 +510,7 @@
     "timeRemaining": "剩余时间",
     "confirmDeliveryMsg": "确认后，资金将立即释放给卖方。此操作不可撤销。",
     "refundAvailable": "交付截止日期已过。您可以申请退款。",
+    "lockedSuccess": "付款已锁定至托管 — 已在链上确认",
     "lockPaymentHint": "在确认交付前将资金锁定在托管中",
     "sellerWaiting": "等待买方确认收货。确认后，资金将自动释放给您。",
     "sellerReadonly": "资金已锁定在托管中，等待买方确认收货。",
@@ -911,5 +912,23 @@
     "totalInclTax": "合计（含税）",
     "billTo": "收件方",
     "disclaimer": "本发票符合 JCT 制度下的合格发票要求。※ 表示适用轻减税率的项目。如对交易有任何疑问，请联系开票方。"
+  },
+  "walletProgress": {
+    "zkProving": "ZK 证明生成中",
+    "zkProvingDesc": "钱包正在生成零知识证明，请稍候，不要关闭页面。",
+    "confirmingOnChain": "链上确认中",
+    "confirmingOnChainDesc": "交易已提交至网络，每 ~12 秒轮询一次确认状态。",
+    "creatingInvoice": "正在创建发票…",
+    "processingPayment": "正在处理支付…",
+    "cancellingInvoice": "正在取消发票…",
+    "lockingEscrow": "正在锁定托管付款…",
+    "raisingDispute": "正在发起争议…",
+    "resolvingDispute": "正在解决争议…",
+    "refundingBuyer": "正在退款给买方…",
+    "confirmingDelivery": "正在确认交付…",
+    "claimingRefund": "正在申请退款…",
+    "arbiterResolving": "仲裁员裁决中…",
+    "timeoutTitle": "交易确认超时",
+    "timeoutDesc": "交易可能已在链上被拒绝，请在浏览器中查看或重试。"
   }
 }
