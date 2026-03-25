@@ -230,10 +230,10 @@ export default function InvoiceForm() {
           {t('invoice.create.subtotalLabel')} <span className="text-xs text-slate-400">{t('invoice.create.fromLineItems')}</span>
         </label>
         <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800">
-          {form.parsedAmount.toFixed(2)} {t('invoice.create.credits')}
+          {form.parsedAmount.toFixed(2)} {form.currency}
         </div>
         <p className="text-xs text-slate-400">
-          {t('invoice.create.taxPerLine')}: {form.taxAmount.toFixed(2)} · {t('invoice.create.total')}: {form.total.toFixed(2)} {t('invoice.create.credits')}
+          {t('invoice.create.taxPerLine')}: {form.taxAmount.toFixed(2)} {form.currency} · {t('invoice.create.total')}: {form.total.toFixed(2)} {form.currency}
         </p>
       </div>
 
@@ -394,6 +394,7 @@ export default function InvoiceForm() {
           issueDate={form.dueDate ? new Date(form.dueDate) : new Date()}
           lineItems={form.jctPreviewData.lineItemsV3}
           summary={form.jctPreviewData.summary}
+          currency={form.currency}
         />
       </div>
     </div>

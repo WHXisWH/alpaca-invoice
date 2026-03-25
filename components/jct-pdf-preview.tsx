@@ -19,6 +19,7 @@ export interface JctPdfPreviewProps {
   issueDate: Date;
   lineItems: LineItemV3[];
   summary: JctPdfPreviewSummary;
+  currency: string;
 }
 
 /**
@@ -33,13 +34,15 @@ export default function JctPdfPreview({
   buyerName,
   issueDate,
   lineItems,
-  summary
+  summary,
+  currency
 }: JctPdfPreviewProps) {
   const t = useTranslations();
   const displaySeller = sellerName.trim() || '—';
   const displayT = sellerTNumber.replace(/\D/g, '').slice(0, 13);
   const displayBuyer = buyerName.trim() || '—';
   const dateStr = format(issueDate, 'MMM dd, yyyy');
+  const displayCurrency = currency.trim() || 'CREDITS';
 
   return (
     <div
@@ -114,17 +117,17 @@ export default function JctPdfPreview({
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <div className="font-medium text-slate-700">{t('jctPreview.base10ExclTax')}</div>
-            <div className="text-right">{summary.net10.toLocaleString()} JPY</div>
+            <div className="text-right">{summary.net10.toLocaleString()} {displayCurrency}</div>
             <div className="font-medium text-slate-700">{t('jctPreview.consumptionTax10')}</div>
-            <div className="text-right">{summary.tax10.toLocaleString()} JPY</div>
+            <div className="text-right">{summary.tax10.toLocaleString()} {displayCurrency}</div>
             <div className="font-medium text-slate-700">{t('jctPreview.base8ExclTax')}</div>
-            <div className="text-right">{summary.net8.toLocaleString()} JPY</div>
+            <div className="text-right">{summary.net8.toLocaleString()} {displayCurrency}</div>
             <div className="font-medium text-slate-700">{t('jctPreview.consumptionTax8')}</div>
-            <div className="text-right">{summary.tax8.toLocaleString()} JPY</div>
+            <div className="text-right">{summary.tax8.toLocaleString()} {displayCurrency}</div>
           </div>
           <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900">
             <span>{t('jctPreview.totalInclTax')}</span>
-            <span>{summary.total.toLocaleString()} JPY</span>
+            <span>{summary.total.toLocaleString()} {displayCurrency}</span>
           </div>
         </div>
 
