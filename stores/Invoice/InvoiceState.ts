@@ -3,7 +3,7 @@ import { Invoice, AleoField, InvoiceStatus } from '@/lib/types';
 /**
  * 链上确认状态
  */
-export type ChainConfirmationStatus = 'SENDING' | 'CONFIRMED';
+export type ChainConfirmationStatus = 'SENDING' | 'CONFIRMED' | 'TIMEOUT';
 
 /**
  * 初始化状态

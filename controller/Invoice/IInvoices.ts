@@ -22,6 +22,14 @@ export type InvoiceWithRole = {
   statusConfig: StatusConfig;
 };
 
+export type InvoiceListFilter =
+  | 'all'
+  | 'pending'
+  | 'paid'
+  | 'cancelled'
+  | 'escrowed'
+  | 'resolved';
+
 /**
  * IInvoices Controller 接口
  * 发票列表页的业务逻辑控制器
@@ -45,7 +53,7 @@ export interface IInvoices {
   
   // --- 状态 ---
   /** 当前过滤状态 */
-  filter: 'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed';
+  filter: InvoiceListFilter;
   
   /** 搜索关键词 */
   search: string;
@@ -68,7 +76,7 @@ export interface IInvoices {
 
   // --- 业务方法 ---
   /** 设置过滤状态 */
-  setFilter: (filter: 'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed') => void;
+  setFilter: (filter: InvoiceListFilter) => void;
   
   /** 设置搜索关键词 */
   setSearch: (search: string) => void;

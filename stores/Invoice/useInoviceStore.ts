@@ -351,7 +351,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
       if (newStatus === 'SENDING') {
         newSending[updatedInvoice.invoiceHash] = true;
-      } else if (newStatus === 'CONFIRMED') {
+      } else {
         delete newSending[updatedInvoice.invoiceHash];
       }
 
@@ -492,10 +492,10 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
         // Update sending index (typically status changes to CONFIRMED after migration)
         const newSending = { ...state.sendingInvoiceHashes };
-        if (finalMetadata.confirmationStatus === 'CONFIRMED') {
-          delete newSending[updatedInvoiceFull.invoiceHash];
-        } else if (finalMetadata.confirmationStatus === 'SENDING') {
+        if (finalMetadata.confirmationStatus === 'SENDING') {
           newSending[updatedInvoiceFull.invoiceHash] = true;
+        } else {
+          delete newSending[updatedInvoiceFull.invoiceHash];
         }
 
         return {

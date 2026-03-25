@@ -91,7 +91,7 @@ export interface Invoice {
   nonce?: AleoField;      // create_invoice nonce, required for audit package
   auditKey?: string;      // 64 hex chars, generated at invoice creation
   metadata?: {
-    confirmationStatus: 'SENDING' | 'CONFIRMED';
+    confirmationStatus: 'SENDING' | 'CONFIRMED' | 'TIMEOUT';
     lastUpdated: Date;
     dataSource: 'local' | 'chain';
     action?: 'create' | 'cancel' | 'pay';

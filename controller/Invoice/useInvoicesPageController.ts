@@ -5,6 +5,7 @@ import { InvoiceStatus } from '@/lib/types';
 import { useInvoices } from './useInvoices';
 import type { Invoice, AleoTransactionId } from '@/lib/types';
 import type { InvoiceWithRole } from './IInvoices';
+import type { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 
 export type InvoiceListRoleFilter = 'all' | 'sent' | 'received';
 
@@ -85,7 +86,7 @@ export function useInvoicesPageController() {
   }, [displayInvoices]);
 
   const guardActionByChainStatus = useCallback((
-    chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined,
+    chainStatus: ChainConfirmationStatus | null | undefined,
     actionName: 'pay' | 'cancel'
   ) => {
     if (chainStatus !== 'CONFIRMED') {
@@ -100,12 +101,12 @@ export function useInvoicesPageController() {
     return true;
   }, []);
 
-  const handlePayWithGuard = useCallback((invoice: Invoice, chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined) => {
+  const handlePayWithGuard = useCallback((invoice: Invoice, chainStatus: ChainConfirmationStatus | null | undefined) => {
     if (!guardActionByChainStatus(chainStatus, 'pay')) return;
     void invoicesController.handlePay(invoice);
   }, [guardActionByChainStatus, invoicesController]);
 
-  const handleCancelWithGuard = useCallback((invoice: Invoice, chainStatus: 'SENDING' | 'CONFIRMED' | null | undefined) => {
+  const handleCancelWithGuard = useCallback((invoice: Invoice, chainStatus: ChainConfirmationStatus | null | undefined) => {
     if (!guardActionByChainStatus(chainStatus, 'cancel')) return;
     void invoicesController.handleCancel(invoice);
   }, [guardActionByChainStatus, invoicesController]);

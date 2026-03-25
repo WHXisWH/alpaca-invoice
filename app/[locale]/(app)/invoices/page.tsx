@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
+import type { InvoiceListFilter } from '@/controller/Invoice/IInvoices';
 
 export default function InvoicesPage() {
   const t = useTranslations();
@@ -32,7 +33,7 @@ export default function InvoicesPage() {
 
 function InvoicesPageInner() {
   const t = useTranslations();
-  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'escrowed' | 'cancelled' | 'resolved'; label: string }> = [
+  const tabs: Array<{ key: InvoiceListFilter; label: string }> = [
     { key: 'all', label: t('invoice.list.filterAll') },
     { key: 'pending', label: t('invoice.list.filterPending') },
     { key: 'paid', label: t('invoice.list.filterPaid') },

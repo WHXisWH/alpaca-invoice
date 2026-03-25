@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { InvoiceStatus } from '@/lib/types';
 import { ChainConfirmationStatus } from '@/stores/Invoice/InvoiceState';
 import { Invoice } from '@/lib/types';
-import { StatusConfig } from './IInvoices';
+import { InvoiceListFilter, StatusConfig } from './IInvoices';
 
 type InvoiceWithRole = {
   invoice: Invoice;
@@ -22,7 +22,7 @@ type InvoiceWithRole = {
 export function useInvoiceListFilter(
   invoicesWithRole: InvoiceWithRole[]
 ) {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed' | 'resolved'>('all');
+  const [filter, setFilter] = useState<InvoiceListFilter>('all');
   const [search, setSearch] = useState('');
 
   const filteredInvoices = useMemo(() => {
@@ -61,4 +61,3 @@ export function useInvoiceListFilter(
     setSearch
   };
 }
-
