@@ -13,7 +13,9 @@ import { useTranslations } from 'next-intl';
 function buildExplorerTxUrl(transactionId?: AleoTransactionId): string | null {
   if (!transactionId) return null;
   const cleanTx = String(transactionId).trim();
-  if (!cleanTx) return null;
+  // Only build URL for valid on-chain Aleo transaction IDs (at1... prefix, 61+ chars)
+  // Shield wallet may return short internal tracking IDs (e.g. "shield_xxx") before confirmation
+  if (!cleanTx.startsWith('at1') || cleanTx.length < 61) return null;
   return `https://testnet.explorer.provable.com/transaction/${encodeURIComponent(cleanTx)}`;
 }
 
