@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Search, CheckCircle, XCircle, Loader2, ShieldCheck, Clock, Info } from 'lucide-react';
 import type { CreditVerifyResult } from '@/lib/types';
 import { decodeProofCode, claimTypeLabel, thresholdDisplay, type ShareableProof } from '@/lib/credit-proof-code';
+import { Input } from '@/components/ui/input';
 
 interface CreditProofVerifierProps {
   onVerify: (proofId: string) => Promise<CreditVerifyResult>;
@@ -42,12 +43,12 @@ export default function CreditProofVerifier({
       </p>
 
       <div className="flex gap-2">
-        <input
+        <Input
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
           placeholder={t('credit.verifyInput')}
-          className="flex-1 rounded-lg border border-primary-200 bg-white px-3 py-2 text-sm text-primary-900 placeholder:text-primary-400 focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400"
+          className="flex-1"
         />
         <button
           onClick={handleVerify}

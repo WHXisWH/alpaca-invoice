@@ -8,6 +8,8 @@ import type {
 import { useTranslations } from 'next-intl';
 import { Check, X, ChevronDown, ChevronRight, FileJson, Key, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 function PhaseCard({
   title,
@@ -208,12 +210,12 @@ export default function AuditVerifyFlow({
                 className="hidden"
               />
             </div>
-            <textarea
+            <Textarea
               value={envelopeText}
               onChange={(e) => setEnvelopeText(e.target.value)}
               placeholder={t('audit.verify.pastePlaceholder')}
               rows={8}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs focus:border-slate-400 focus:outline-none"
+              className="font-mono text-xs"
             />
           </div>
           <div className="space-y-3">
@@ -224,12 +226,12 @@ export default function AuditVerifyFlow({
             <p className="text-xs text-slate-500">
               {t('audit.verify.auditKeyDesc')}
             </p>
-            <input
+            <Input
               type="text"
               value={auditKey}
               onChange={(e) => setAuditKey(e.target.value)}
               placeholder={t('audit.verify.auditKeyPlaceholder')}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm focus:border-slate-400 focus:outline-none"
+              className="font-mono"
             />
           </div>
         </div>

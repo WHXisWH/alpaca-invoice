@@ -6,6 +6,7 @@ import { Shield, TrendingUp, Clock, AlertTriangle, Award, BarChart3, Loader2, Co
 import { CreditClaimType } from '@/lib/types';
 import type { CreditClaim, CreditProofToken } from '@/lib/types';
 import { encodeProofCode, thresholdDisplay, claimTypeLabel } from '@/lib/credit-proof-code';
+import { Input } from '@/components/ui/input';
 
 interface CreditProofGeneratorProps {
   onGenerateProof: (claim: CreditClaim) => Promise<CreditProofToken>;
@@ -98,11 +99,10 @@ export default function CreditProofGenerator({
           <label className="block text-xs font-medium text-primary-600 mb-1">
             {t('credit.threshold')}
           </label>
-          <input
+          <Input
             type="number"
             value={threshold}
             onChange={e => setThreshold(Number(e.target.value))}
-            className="w-full rounded-lg border border-primary-200 bg-white px-3 py-2 text-sm text-primary-900 focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400"
           />
         </div>
         <button

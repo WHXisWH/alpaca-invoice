@@ -4,6 +4,10 @@ import { Plus, Trash2, Lock, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import JctPdfPreview from '@/components/jct-pdf-preview';
 import WalletOperationProgress from '@/components/wallet-operation-progress';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { useInvoiceForm, type LineItemRow } from '@/controller/Invoice/useInvoiceForm';
 
 export default function InvoiceForm() {
@@ -32,14 +36,14 @@ export default function InvoiceForm() {
           {t('invoice.create.tNumberRegistration')} <span className="text-red-500">*</span>
         </label>
         <div className="relative">
-          <input
+          <Input
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
             maxLength={13}
             value={form.tNumber}
             onChange={(e) => form.setTNumber(e.target.value)}
-            className="input-field font-mono"
+            className="font-mono"
             placeholder={t('invoice.create.tNumberPlaceholder')}
           />
           {form.tNumber.length === 13 && (
@@ -83,12 +87,11 @@ export default function InvoiceForm() {
         <label className="text-sm font-medium text-slate-800">
           {t('invoice.create.buyerAddress')} <span className="text-red-500">*</span>
         </label>
-        <input
+        <Input
           type="text"
           required
           value={form.buyer}
           onChange={(e) => form.setBuyer(e.target.value)}
-          className="input-field"
           placeholder={t('invoice.create.buyerPlaceholder')}
         />
         {form.errors.buyer && <p className="text-xs text-red-500">{form.errors.buyer}</p>}
@@ -99,11 +102,10 @@ export default function InvoiceForm() {
         <label className="text-sm font-medium text-slate-800">
           {t('invoice.create.arbiterAddress')} <span className="text-xs text-slate-400">({t('common.optional')})</span>
         </label>
-        <input
+        <Input
           type="text"
           value={form.arbiter}
           onChange={(e) => form.setArbiter(e.target.value)}
-          className="input-field"
           placeholder={t('invoice.create.arbiterPlaceholder')}
         />
         {form.errors.arbiter && <p className="text-xs text-red-500">{form.errors.arbiter}</p>}
@@ -147,16 +149,16 @@ export default function InvoiceForm() {
                 return (
                   <tr key={row.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-3 py-2">
-                      <input
+                      <Input
                         type="text"
                         value={row.description}
                         onChange={(e) => form.updateLineItem(row.id, 'description', e.target.value)}
-                        className="input-field min-w-0 py-1.5"
+                        className="min-w-0 py-1.5"
                         placeholder={t('invoice.create.descriptionPlaceholder')}
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
+                      <Input
                         type="text"
                         inputMode="decimal"
                         value={row.quantity}
@@ -164,11 +166,11 @@ export default function InvoiceForm() {
                           const v = e.target.value;
                           if (v === '' || /^\d*\.?\d*$/.test(v)) form.updateLineItem(row.id, 'quantity', v);
                         }}
-                        className="input-field py-1.5"
+                        className="py-1.5"
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
+                      <Input
                         type="text"
                         inputMode="decimal"
                         value={row.unitPrice}
@@ -176,22 +178,26 @@ export default function InvoiceForm() {
                           const v = e.target.value;
                           if (v === '' || /^\d*\.?\d*$/.test(v)) form.updateLineItem(row.id, 'unitPrice', v);
                         }}
-                        className="input-field py-1.5"
+                        className="py-1.5"
                       />
                     </td>
                     <td className="px-3 py-2 text-slate-600">{amount.toFixed(2)}</td>
                     <td className="px-1 py-2">
-                      <select
+                      <Select
                         value={row.jctTaxRate}
-                        onChange={(e) =>
-                          form.updateLineItem(row.id, 'jctTaxRate', e.target.value as LineItemRow['jctTaxRate'])
+                        onValueChange={(v) =>
+                          form.updateLineItem(row.id, 'jctTaxRate', v as LineItemRow['jctTaxRate'])
                         }
-                        className="input-field py-1.5 text-sm"
                       >
-                        <option value="10">10%</option>
-                        <option value="8">8%</option>
-                        <option value="0">0%</option>
-                      </select>
+                        <SelectTrigger className="py-1.5 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10%</SelectItem>
+                          <SelectItem value="8">8%</SelectItem>
+                          <SelectItem value="0">0%</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <span className="ml-1 inline-flex items-center text-xs text-slate-500" title="Locked">
                         <Lock className="h-3 w-3" />
                         {lineTax.toFixed(2)}
@@ -237,13 +243,11 @@ export default function InvoiceForm() {
           <label className="text-sm font-medium text-slate-800">
             {t('invoice.create.dueDate')} <span className="text-red-500">*</span>
           </label>
-          <input
-            type="date"
+          <DatePicker
             required
             value={form.dueDate}
             min={new Date().toISOString().split('T')[0]}
-            onChange={(e) => form.setDueDate(e.target.value)}
-            className="input-field"
+            onChange={(v) => form.setDueDate(v)}
           />
           {form.errors.dueDate && <p className="text-xs text-red-500">{form.errors.dueDate}</p>}
         </div>
@@ -251,14 +255,15 @@ export default function InvoiceForm() {
           <label className="text-sm font-medium text-slate-800">
             {t('invoice.create.paymentCurrency')} <span className="text-red-500">*</span>
           </label>
-          <select
-            value={form.currency}
-            onChange={(e) => form.setCurrency(e.target.value)}
-            className="input-field"
-          >
-            <option value="CREDITS">CREDITS</option>
-            <option value="USDCx">USDCx</option>
-          </select>
+          <Select value={form.currency} onValueChange={(v) => form.setCurrency(v)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="CREDITS">CREDITS</SelectItem>
+              <SelectItem value="USDCx">USDCx</SelectItem>
+            </SelectContent>
+          </Select>
           <p className="text-xs text-slate-400">{t('invoice.create.currencyNote')}</p>
           {form.errors.currency && <p className="text-xs text-red-500">{form.errors.currency}</p>}
         </div>
@@ -270,11 +275,10 @@ export default function InvoiceForm() {
           <label className="text-sm font-medium text-slate-800">
             {t('invoice.create.orderId')}
           </label>
-          <input
+          <Input
             type="text"
             value={form.orderId}
             onChange={(e) => form.setOrderId(e.target.value)}
-            className="input-field"
             placeholder={t('invoice.create.orderIdPlaceholder')}
           />
           <p className="text-xs text-slate-400">{t('invoice.create.orderIdAutoGenerate')}</p>
@@ -283,11 +287,10 @@ export default function InvoiceForm() {
           <label className="text-sm font-medium text-slate-800">
             {t('invoice.create.memo')}
           </label>
-          <input
+          <Input
             type="text"
             value={form.notes}
             onChange={(e) => form.setNotes(e.target.value)}
-            className="input-field"
             placeholder={t('invoice.create.memoPlaceholder')}
           />
         </div>
@@ -298,11 +301,9 @@ export default function InvoiceForm() {
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-900">{t('invoice.create.auditAuthorization')}</div>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={audit.enableAuditAuth}
-              onChange={(e) => audit.setEnableAuditAuth(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+              onCheckedChange={(v) => audit.setEnableAuditAuth(v === true)}
             />
             {t('invoice.create.enable')}
           </label>
@@ -331,12 +332,10 @@ export default function InvoiceForm() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700">{t('invoice.create.expiry')}</label>
-              <input
-                type="date"
+              <DatePicker
                 value={audit.expiresAt}
                 min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => audit.setExpiresAt(e.target.value)}
-                className="input-field"
+                onChange={(v) => audit.setExpiresAt(v)}
               />
             </div>
             <div className="space-y-1">
@@ -348,11 +347,9 @@ export default function InvoiceForm() {
                   'items_hash', 'memo_hash', 'order_id'
                 ].map((s) => (
                   <label key={s} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={audit.scopes.includes(s)}
-                      onChange={() => audit.toggleScope(s)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                      onCheckedChange={() => audit.toggleScope(s)}
                     />
                     {s}
                   </label>
