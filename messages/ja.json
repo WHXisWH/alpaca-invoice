@@ -510,6 +510,7 @@
     "timeRemaining": "残り時間",
     "confirmDeliveryMsg": "確認すると、売主に直ちに資金が解放されます。この操作は取り消せません。",
     "refundAvailable": "納品期限が過ぎました。返金を申請できます。",
+    "lockedSuccess": "支払いがエスクローにロックされました — チェーン上で確認済み",
     "lockPaymentHint": "納品確認まで資金をエスクローにロックします",
     "sellerWaiting": "買主の納品確認を待っています。確認後、資金は自動的にあなたに解放されます。",
     "sellerReadonly": "資金はエスクローにロックされており、買主の確認を待っています。",
@@ -911,5 +912,23 @@
     "totalInclTax": "合計（税込）",
     "billTo": "請求先",
     "disclaimer": "本請求書はJCT制度における適格請求書に該当します。※は軽減税率対象の項目を示します。取引に関するご質問は発行者までお問い合わせください。"
+  },
+  "walletProgress": {
+    "zkProving": "ZK 証明生成中",
+    "zkProvingDesc": "ウォレットがゼロ知識証明を生成しています。しばらくお待ちください — ページを閉じないでください。",
+    "confirmingOnChain": "チェーン上で確認中",
+    "confirmingOnChainDesc": "トランザクションがネットワークに送信されました。約12秒ごとに確認をポーリングしています。",
+    "creatingInvoice": "請求書を作成中…",
+    "processingPayment": "支払い処理中…",
+    "cancellingInvoice": "請求書をキャンセル中…",
+    "lockingEscrow": "エスクローに支払いをロック中…",
+    "raisingDispute": "紛争を提起中…",
+    "resolvingDispute": "紛争を解決中…",
+    "refundingBuyer": "買い手に返金中…",
+    "confirmingDelivery": "配送を確認中…",
+    "claimingRefund": "返金を申請中…",
+    "arbiterResolving": "仲裁人が裁定中…",
+    "timeoutTitle": "トランザクション確認タイムアウト",
+    "timeoutDesc": "トランザクションがチェーン上で拒否された可能性があります。エクスプローラーで確認するか、再試行してください。"
   }
 }

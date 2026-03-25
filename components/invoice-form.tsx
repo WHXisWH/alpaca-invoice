@@ -3,6 +3,7 @@
 import { Plus, Trash2, Lock, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import JctPdfPreview from '@/components/jct-pdf-preview';
+import WalletOperationProgress from '@/components/wallet-operation-progress';
 import { useInvoiceForm, type LineItemRow } from '@/controller/Invoice/useInvoiceForm';
 
 export default function InvoiceForm() {
@@ -364,19 +365,14 @@ export default function InvoiceForm() {
 
       {/* ── Progress indicator ── */}
       {form.isProcessing && (
-        <div className="space-y-2 rounded-lg border border-blue-200/60 bg-blue-50/70 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-900">{t('invoice.create.processing')}</span>
-            <span className="text-sm text-blue-700">{form.currentProgress}%</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
-            <div
-              className="h-full bg-blue-600 transition-all duration-300"
-              style={{ width: `${form.currentProgress}%` }}
-            />
-          </div>
-          {form.currentLog && <p className="text-xs text-blue-800">{form.currentLog}</p>}
-        </div>
+        <WalletOperationProgress
+          isProving
+          txProgress={form.currentProgress}
+          txLog={form.currentLog}
+          isConfirming={false}
+          pollLog=""
+          operationLabel={t('walletProgress.creatingInvoice')}
+        />
       )}
 
       {/* ── Submit ── */}

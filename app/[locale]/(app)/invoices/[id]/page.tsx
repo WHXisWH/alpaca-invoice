@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshCw, ArrowLeft, AlertTriangle, Lock, Shield } from 'lucide-react';
 import { useInvoiceDetailPage } from '@/controller/Invoice/useInvoiceDetailPage';
-import PaymentProgress from '@/components/payment-progress';
+import WalletOperationProgress from '@/components/wallet-operation-progress';
 import DisputeForm from '@/components/dispute-form';
 import EscrowStatusCard from '@/components/escrow-status-card';
 import { CurrencyFlag } from '@/lib/types';
@@ -15,6 +15,7 @@ import { getTaxRateLabelFromTaxGroups } from '@/lib/invoice';
 import { useDisputeController } from '@/controller/Dispute/useDisputeController';
 import { useEscrowController } from '@/controller/Escrow/useEscrowController';
 import { useEscrowStatusPoller } from '@/controller/Escrow/useEscrowStatusPoller';
+import { useInvoiceStatusPoller } from '@/controller/Invoice/useInvoiceStatusPoller';
 import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrowChainSync';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { toast } from 'sonner';
@@ -36,9 +37,11 @@ export default function InvoiceDetailPage() {
   );
   const [showDisputeForm, setShowDisputeForm] = useState(false);
   const [escrowProcessing, setEscrowProcessing] = useState(false);
+  const [walletOp, setWalletOp] = useState<'idle' | 'paying' | 'cancelling'>('idle');
   const disputeController = useDisputeController();
   const escrowController = useEscrowController();
   const escrowPoller = useEscrowStatusPoller();
+  const invoicePoller = useInvoiceStatusPoller();
   const { syncFromChain: syncDisputeEscrow } = useDisputeEscrowChainSync();
   const { escrows } = useEscrowStore();
   const { disputes } = useDisputeStore();
@@ -538,49 +541,25 @@ export default function InvoiceDetailPage() {
           );
         })()}
 
-        {/* Payment progress (Phase 1/2/3) when paying */}
-        {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && isProcessing && (
+        {/* Wallet operation progress — Pay / Cancel / Escrow Pay / AutoPoller confirmation */}
+        {(isProcessing || escrowProcessing || invoicePoller.isPolling || (isSyncing && invoice.status === InvoiceStatus.PENDING)) && (
           <div className="mt-4">
-            <PaymentProgress
-              currencyFlag={invoice.currencyFlag ?? CurrencyFlag.CREDITS}
-              approvalStatus="idle"
-              phase={2}
-              confirmationDepth={0}
-              isComplete={false}
+            <WalletOperationProgress
+              isProving={(isProcessing || escrowProcessing) && !invoicePoller.isPolling && !isSyncing}
+              txProgress={txProgress}
+              txLog={txCurrentLog}
+              isConfirming={invoicePoller.isPolling || isSyncing}
+              pollLog={invoicePoller.isPolling ? invoicePoller.pollLog : t('walletProgress.confirmingOnChainDesc')}
+              operationLabel={
+                isSyncing && !isProcessing && !escrowProcessing
+                  ? t('walletProgress.confirmingOnChain')
+                  : escrowProcessing
+                  ? t('walletProgress.lockingEscrow')
+                  : walletOp === 'cancelling'
+                  ? t('walletProgress.cancellingInvoice')
+                  : t('walletProgress.processingPayment')
+              }
             />
-          </div>
-        )}
-
-        {/* Escrow Pay progress — shown while wallet is processing escrow_payment_credits */}
-        {invoice.status === InvoiceStatus.PENDING && userRole === 'buyer' && escrowProcessing && (
-          <div className="mt-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 space-y-3">
-            {/* Progress bar */}
-            <div className="flex items-center gap-2.5">
-              <div className="flex-1 h-1.5 rounded-full bg-blue-100 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                  style={{ width: `${Math.max(txProgress, 8)}%` }}
-                />
-              </div>
-              <span className="text-xs font-medium text-blue-700 tabular-nums min-w-[2.5rem] text-right">
-                {txProgress}%
-              </span>
-            </div>
-            {/* Shield animation + log */}
-            <div className="flex items-center gap-3">
-              <div className="animate-spin shrink-0">
-                <Shield className="h-8 w-8 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-blue-800">Locking payment in escrow…</p>
-                {txCurrentLog && (
-                  <p className="text-xs text-blue-600 mt-0.5">{txCurrentLog}</p>
-                )}
-              </div>
-            </div>
-            <p className="text-xs text-blue-500 leading-relaxed">
-              The wallet is generating a zero-knowledge proof for <strong>escrow_payment_credits</strong>. This may take a moment — do not close the page.
-            </p>
           </div>
         )}
 
@@ -596,6 +575,8 @@ export default function InvoiceDetailPage() {
                 router.push('/disputes');
               }}
               onCancel={() => setShowDisputeForm(false)}
+              txProgress={txProgress}
+              txLog={txCurrentLog}
             />
           </div>
         )}
@@ -623,8 +604,22 @@ export default function InvoiceDetailPage() {
                   return (
                     <>
                       <button
-                        onClick={handlePay}
-                        disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
+                        onClick={async () => {
+                          setWalletOp('paying');
+                          const ok = await handlePay();
+                          if (ok && invoice) {
+                            invoicePoller.startPolling({
+                              invoiceId: invoice.id,
+                              invoiceHash: invoice.invoiceHash,
+                              expectedStatus: InvoiceStatus.PAID,
+                              onConfirmed: () => { setWalletOp('idle'); toast.success(t('invoice.detail.statusPaidMessage')); },
+                              onTimeout: () => { setWalletOp('idle'); toast.warning(t('walletProgress.timeoutTitle'), { description: t('walletProgress.timeoutDesc') }); },
+                            });
+                          } else {
+                            setWalletOp('idle');
+                          }
+                        }}
+                        disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow || invoicePoller.isPolling}
                         className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         {isProcessing
@@ -647,9 +642,17 @@ export default function InvoiceDetailPage() {
                                   releaseConditionHash: '0field' as AleoField,
                                 },
                               });
+                              invoicePoller.startPolling({
+                                invoiceId: invoice.id,
+                                invoiceHash: invoice.invoiceHash,
+                                expectedStatus: InvoiceStatus.ESCROWED,
+                                onConfirmed: () => { setEscrowProcessing(false); toast.success(t('escrow.lockedSuccess')); },
+                                onTimeout: () => { setEscrowProcessing(false); toast.warning(t('walletProgress.timeoutTitle'), { description: t('walletProgress.timeoutDesc') }); },
+                              });
                             } catch (err) {
                               handleError(err);
-                            } finally { setEscrowProcessing(false); }
+                              setEscrowProcessing(false);
+                            }
                           }}
                           disabled={isProcessing || !isConfirmed || escrowProcessing || hasActiveEscrow}
                           className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -675,8 +678,22 @@ export default function InvoiceDetailPage() {
             )}
             {userRole === 'seller' && (
               <button
-                onClick={handleCancel}
-                disabled={isProcessing || !isConfirmed}
+                onClick={async () => {
+                  setWalletOp('cancelling');
+                  const ok = await handleCancel();
+                  if (ok && invoice) {
+                    invoicePoller.startPolling({
+                      invoiceId: invoice.id,
+                      invoiceHash: invoice.invoiceHash,
+                      expectedStatus: InvoiceStatus.CANCELLED,
+                      onConfirmed: () => { setWalletOp('idle'); toast.success(t('invoice.detail.statusCancelledMessage')); },
+                      onTimeout: () => { setWalletOp('idle'); toast.warning(t('walletProgress.timeoutTitle'), { description: t('walletProgress.timeoutDesc') }); },
+                    });
+                  } else {
+                    setWalletOp('idle');
+                  }
+                }}
+                disabled={isProcessing || !isConfirmed || invoicePoller.isPolling}
                 className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isProcessing ? t('common.loading') : `❌ ${t('invoice.detail.cancelButton')}`}

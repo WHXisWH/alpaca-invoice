@@ -8,7 +8,7 @@ import { useUserStore } from '@/stores/User/useUserStore';
 import { Invoice, InvoiceStatus, EscrowStatus, AleoField } from '@/lib/types';
 
 const POLL_INTERVAL_MS = 12_000; // 12 seconds
-const POLL_TIMEOUT_MS  = 600_000; // 10 minutes
+const POLL_TIMEOUT_MS  = 180_000; // 3 minutes
 
 export type EscrowOperation = 'confirm_delivery' | 'timeout_refund' | 'arbiter_resolve' | 'dispute_dismiss' | 'dispute_uphold';
 

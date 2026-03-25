@@ -141,7 +141,9 @@ export interface UseInvoiceFormReturn {
   // Validation
   errors: Record<string, string>;
 
-  // Transaction state (read-only, from useTransactionController)
+  /** True from the moment submit starts until router.push or error */
+  isSubmitting: boolean;
+  /** True while the wallet / ZK proof is running (from useTransactionStore) */
   isProcessing: boolean;
   currentProgress: number;
   currentLog: string;
@@ -180,6 +182,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
   const [orderId, setOrderId] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const setTNumber = useCallback((v: string) => {
     setTNumberRaw(v.replace(/\D/g, '').slice(0, 13));
@@ -343,6 +346,8 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
       e.preventDefault();
       if (!validate()) return;
 
+      setIsSubmitting(true);
+
       const buyerAddress = buyer.trim();
       if (buyerAddress !== buyer) setBuyer(buyerAddress);
       const arbiterAddress = arbiter.trim() || undefined;
@@ -428,8 +433,10 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
           invoiceHash,
           invoiceHashLength: invoiceHash?.length
         });
+        // Keep isSubmitting = true so the loading indicator stays visible until navigation
         router.push(`/invoices/${invoiceHash}`);
       } catch (err) {
+        setIsSubmitting(false);
         handleError(err);
       }
     },
@@ -470,7 +477,8 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
     verifyTNumberWithNta,
     audit,
     errors,
-    isProcessing,
+    isSubmitting,
+    isProcessing: isProcessing || isSubmitting,
     currentProgress,
     currentLog,
     handleSubmit

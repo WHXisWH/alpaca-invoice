@@ -85,10 +85,10 @@ export function InvoiceAutoPoller() {
       return;
     }
     
-    // Only remove from sending index after real chain confirmation.
-    if (isChainConfirmed) {
-      markInvoiceConfirmed(invoiceHash);
-    }
+    // Always remove from sending index: on confirmation OR timeout.
+    // For timeout (chain-rejected txs), the invoice reverts to its previous
+    // status and the user gets a toast warning.
+    markInvoiceConfirmed(invoiceHash);
 
     // §3.9: After chain confirmation for a create action, save encrypted invoice details to online KV.
     if (

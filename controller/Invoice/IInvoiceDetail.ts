@@ -48,11 +48,11 @@ export interface IInvoiceDetail {
   /** 是否正在手动同步状态 */
   isSyncingStatus: boolean;
   
-  /** 处理支付（直接使用 hook 的 invoice） */
-  handlePay: () => Promise<void>;
-  
-  /** 处理取消（直接使用 hook 的 invoice） */
-  handleCancel: () => Promise<void>;
+  /** 处理支付（直接使用 hook 的 invoice），返回 true 表示成功 */
+  handlePay: () => Promise<boolean>;
+
+  /** 处理取消（直接使用 hook 的 invoice），返回 true 表示成功 */
+  handleCancel: () => Promise<boolean>;
   
   /** 手动同步发票状态（从链上获取最新 record） */
   handleSyncStatus: () => Promise<void>;

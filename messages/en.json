@@ -510,6 +510,7 @@
     "timeRemaining": "Time Remaining",
     "confirmDeliveryMsg": "Once confirmed, funds will be released to the seller immediately. This action cannot be undone.",
     "refundAvailable": "Delivery deadline has passed. You can claim a refund.",
+    "lockedSuccess": "Payment locked in escrow — confirmed on chain",
     "lockPaymentHint": "Lock funds in escrow until delivery is confirmed",
     "sellerWaiting": "Waiting for the buyer to confirm delivery. Once confirmed, funds will be released to you automatically.",
     "sellerReadonly": "Funds are locked in escrow, awaiting buyer confirmation.",
@@ -911,5 +912,23 @@
     "totalInclTax": "Total (incl. tax)",
     "billTo": "Bill To",
     "disclaimer": "This invoice qualifies as a qualified invoice under the JCT system. ※ indicates items subject to the reduced tax rate. Please contact the issuer if you have any questions regarding the transaction."
+  },
+  "walletProgress": {
+    "zkProving": "ZK Proving",
+    "zkProvingDesc": "Wallet is generating a zero-knowledge proof. This may take a moment — do not close the page.",
+    "confirmingOnChain": "Confirming on chain",
+    "confirmingOnChainDesc": "Transaction submitted to network. Polling for confirmation every ~12 s.",
+    "creatingInvoice": "Creating invoice…",
+    "processingPayment": "Processing payment…",
+    "cancellingInvoice": "Cancelling invoice…",
+    "lockingEscrow": "Locking payment in escrow…",
+    "raisingDispute": "Raising dispute…",
+    "resolvingDispute": "Resolving dispute…",
+    "refundingBuyer": "Refunding buyer…",
+    "confirmingDelivery": "Confirming delivery…",
+    "claimingRefund": "Claiming refund…",
+    "arbiterResolving": "Arbiter resolving…",
+    "timeoutTitle": "Transaction confirmation timed out",
+    "timeoutDesc": "The transaction may have been rejected on-chain. Please check the explorer or try again."
   }
 }

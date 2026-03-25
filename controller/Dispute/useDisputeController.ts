@@ -71,16 +71,13 @@ export function useDisputeController(): IDisputeController {
     setLog('Resolving dispute...');
     try {
       const txId = await txController.executeResolveDispute(params);
-      disputeStore.updateDispute(params.dispute.disputeId, {
-        status: params.resolution,
-      });
-      setLog('Dispute resolved');
+      setLog('Dispute transaction submitted — awaiting on-chain confirmation');
       return txId;
     } catch (error) {
       setLog('');
       throw error;
     }
-  }, [txController, disputeStore]);
+  }, [txController]);
 
   const executeSubmitEvidence = useCallback(async (params: SubmitEvidenceParams): Promise<AleoTransactionId> => {
     setLog('Submitting evidence...');

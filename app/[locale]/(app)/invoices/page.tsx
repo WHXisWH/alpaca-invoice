@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 
 export default function InvoicesPage() {
   const t = useTranslations();
@@ -65,6 +66,8 @@ function InvoicesPageInner() {
     handleCancelWithGuard,
     getExplorerUrl
   } = useInvoicesPageController();
+  const { progress: txProgress, logs: txLogs } = useTransactionStore();
+  const txCurrentLog = txLogs[txLogs.length - 1] ?? '';
 
   // Authorization modal
   if (isAuthRequired) {
@@ -280,6 +283,8 @@ function InvoicesPageInner() {
                   isProcessing={isProcessing}
                   isSyncing={isSyncingInvoice}
                   explorerTxUrl={getExplorerUrl(invoice)}
+                  txProgress={isProcessing ? txProgress : 0}
+                  txLog={isProcessing ? txCurrentLog : ''}
                   onPay={(inv) => handlePayWithGuard(inv, chainStatus)}
                   onCancel={(inv) => handleCancelWithGuard(inv, chainStatus)}
                 />

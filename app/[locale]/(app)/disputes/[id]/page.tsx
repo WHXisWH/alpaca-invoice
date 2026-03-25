@@ -9,8 +9,9 @@ import { useDisputeController } from '@/controller/Dispute/useDisputeController'
 import { useEscrowController } from '@/controller/Escrow/useEscrowController';
 import { useEscrowStatusPoller } from '@/controller/Escrow/useEscrowStatusPoller';
 import { useDisputeEscrowChainSync } from '@/controller/Dispute/useDisputeEscrowChainSync';
+import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Scale, Gavel, AlertTriangle, CheckCircle, XCircle, MessageSquareText, Clock, Users, Store, Loader2 } from 'lucide-react';
+import { ArrowLeft, Scale, Gavel, AlertTriangle, CheckCircle, XCircle, MessageSquareText, Clock, Users, Store } from 'lucide-react';
 import { DisputeStatus, InvoiceStatus } from '@/lib/types';
 import type { AleoField } from '@/lib/types';
 import { useEffect, useMemo, useState } from 'react';
@@ -19,6 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { PROGRAM_ID_V4 } from '@/lib/contract';
+import WalletOperationProgress from '@/components/wallet-operation-progress';
 
 function truncateAddr(addr: string) {
   if (addr.length <= 16) return addr;
@@ -38,6 +40,8 @@ export default function DisputeDetailPage() {
   const escrowController = useEscrowController();
   const escrowPoller = useEscrowStatusPoller();
   const { syncFromChain } = useDisputeEscrowChainSync();
+  const { progress: txProgress, logs: txLogs } = useTransactionStore();
+  const txCurrentLog = txLogs[txLogs.length - 1] ?? '';
   const protocolService = useMemo(() => new AleoProtocolService(), []);
   const [resolving, setResolving] = useState(false);
   const [resolveStep, setResolveStep] = useState<'' | 'dismiss' | 'step1' | 'step2' | 'polling' | 'done'>('');
@@ -169,6 +173,7 @@ export default function DisputeDetailPage() {
           operation: 'dispute_uphold',
           decision: 'refund',
           onConfirmed: () => {
+            useDisputeStore.getState().updateDispute(dispute.disputeId, { status: DisputeStatus.RESOLVED_PAY });
             setResolveStep('done');
             setResolving(false);
             toast.success(t('dispute.resolveUpheldSuccess'));
@@ -176,7 +181,7 @@ export default function DisputeDetailPage() {
           onTimeout: () => {
             setResolveStep('done');
             setResolving(false);
-            toast.warning(t('dispute.pollingChainConfirmation'));
+            toast.warning(t('walletProgress.timeoutTitle'), { description: t('walletProgress.timeoutDesc') });
           },
         });
       } else {
@@ -188,6 +193,7 @@ export default function DisputeDetailPage() {
             escrowId: relatedEscrow.escrowId,
             operation: 'dispute_dismiss',
             onConfirmed: () => {
+              useDisputeStore.getState().updateDispute(dispute.disputeId, { status: DisputeStatus.RESOLVED_CANCEL });
               setResolveStep('done');
               setResolving(false);
               toast.success(t('dispute.resolveDismissedSuccess'));
@@ -195,7 +201,7 @@ export default function DisputeDetailPage() {
             onTimeout: () => {
               setResolveStep('done');
               setResolving(false);
-              toast.warning(t('dispute.pollingChainConfirmation'));
+              toast.warning(t('walletProgress.timeoutTitle'), { description: t('walletProgress.timeoutDesc') });
             },
           });
         } else {
@@ -338,14 +344,26 @@ export default function DisputeDetailPage() {
           )}
 
           {resolving && resolveStep && (
-            <div className="mb-4 flex items-center gap-2 rounded-lg bg-purple-100/60 px-4 py-3 text-sm text-purple-800">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>
-                {resolveStep === 'dismiss' && t('dispute.resolvingDismiss')}
-                {resolveStep === 'step1' && t('dispute.resolvingStep1')}
-                {resolveStep === 'step2' && t('dispute.resolvingStep2')}
-                {resolveStep === 'polling' && t('dispute.pollingChainConfirmation')}
-              </span>
+            <div className="mb-4">
+              <WalletOperationProgress
+                isProving={resolveStep !== 'polling' && resolveStep !== 'done'}
+                txProgress={txProgress}
+                txLog={txCurrentLog}
+                isConfirming={resolveStep === 'polling'}
+                pollLog={escrowPoller.pollLog}
+                operationLabel={
+                  resolveStep === 'dismiss'
+                    ? t('dispute.resolvingDismiss')
+                    : resolveStep === 'step2'
+                    ? t('walletProgress.refundingBuyer')
+                    : t('walletProgress.resolvingDispute')
+                }
+                stepLabel={
+                  resolveStep === 'step1' ? 'Step 1 / 2'
+                  : resolveStep === 'step2' ? 'Step 2 / 2'
+                  : undefined
+                }
+              />
             </div>
           )}
 

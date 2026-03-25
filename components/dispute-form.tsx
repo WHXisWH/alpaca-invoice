@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { Invoice, AleoField, AleoAddress } from '@/lib/types';
+import WalletOperationProgress from '@/components/wallet-operation-progress';
 
 interface DisputeFormProps {
   invoice: Invoice;
@@ -15,9 +16,11 @@ interface DisputeFormProps {
     reasonText?: string;
   }) => Promise<void>;
   onCancel: () => void;
+  txProgress?: number;
+  txLog?: string;
 }
 
-export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel }: DisputeFormProps) {
+export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel, txProgress = 0, txLog = '' }: DisputeFormProps) {
   const t = useTranslations();
   const [reason, setReason] = useState('');
   const [deadlineDays, setDeadlineDays] = useState(14);
@@ -95,11 +98,23 @@ export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel }: Di
         </select>
       </div>
 
+      {isSubmitting && (
+        <WalletOperationProgress
+          isProving={isSubmitting}
+          txProgress={txProgress}
+          txLog={txLog}
+          isConfirming={false}
+          pollLog=""
+          operationLabel={t('walletProgress.raisingDispute')}
+        />
+      )}
+
       <div className="flex justify-end gap-3 pt-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          disabled={isSubmitting}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           {t('common.cancel')}
         </button>
