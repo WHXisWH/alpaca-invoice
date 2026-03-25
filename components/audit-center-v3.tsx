@@ -4,6 +4,9 @@ import { useTranslations } from 'next-intl';
 import { useAuditPackageGenerate } from '@/controller/Audit/useAuditPackageGenerate';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import { RefreshCw, Download, Key, Calendar, User } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 
 function formatMicrocredits(n: bigint): string {
   return (Number(n) / 1_000_000).toFixed(2);
@@ -118,11 +121,9 @@ export default function AuditCenterV3() {
                     key={r.id}
                     className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0 hover:bg-slate-50"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={r.selected}
-                      onChange={() => toggleRecord(r.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-primary-600"
+                      onCheckedChange={() => toggleRecord(r.id)}
                     />
                     <code className="flex-1 truncate text-xs text-slate-700">{String(r.id).slice(0, 24)}…</code>
                     <span className="text-xs font-medium text-slate-600">{formatMicrocredits(r.amount)}</span>
@@ -136,13 +137,12 @@ export default function AuditCenterV3() {
           {role === 'seller' && (
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-700">{t('audit.center.tNumber')}</label>
-              <input
+              <Input
                 type="text"
                 inputMode="numeric"
                 maxLength={13}
                 placeholder={t('audit.center.tNumberPlaceholder')}
                 onChange={(e) => setTNumberHint(e.target.value.replace(/\D/g, ''))}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               />
             </div>
           )}
@@ -153,11 +153,9 @@ export default function AuditCenterV3() {
               <Calendar className="h-4 w-4" />
               {t('audit.center.expiryDate')}
             </label>
-            <input
-              type="date"
+            <DatePicker
               value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              onChange={(v) => setExpiresAt(v)}
             />
           </div>
 

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { Invoice, AleoField, AleoAddress } from '@/lib/types';
 import WalletOperationProgress from '@/components/wallet-operation-progress';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 interface DisputeFormProps {
   invoice: Invoice;
@@ -60,13 +62,13 @@ export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel, txPr
 
       <div>
         <label className="block text-sm font-medium text-slate-700">{t('dispute.reason')}</label>
-        <textarea
+        <Textarea
           value={reason}
           onChange={e => setReason(e.target.value)}
           placeholder={t('dispute.reasonPlaceholder')}
           rows={3}
           required
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1"
         />
       </div>
 
@@ -86,16 +88,17 @@ export default function DisputeForm({ invoice, arbiter, onSubmit, onCancel, txPr
         <label className="block text-sm font-medium text-slate-700">
           {t('dispute.deadline')}
         </label>
-        <select
-          value={deadlineDays}
-          onChange={e => setDeadlineDays(Number(e.target.value))}
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value={7}>{t('dispute.deadlineDays', { days: 7 })}</option>
-          <option value={14}>{t('dispute.deadlineDays', { days: 14 })}</option>
-          <option value={30}>{t('dispute.deadlineDays', { days: 30 })}</option>
-          <option value={60}>{t('dispute.deadlineDays', { days: 60 })}</option>
-        </select>
+        <Select value={String(deadlineDays)} onValueChange={(v) => setDeadlineDays(Number(v))}>
+          <SelectTrigger className="mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7">{t('dispute.deadlineDays', { days: 7 })}</SelectItem>
+            <SelectItem value="14">{t('dispute.deadlineDays', { days: 14 })}</SelectItem>
+            <SelectItem value="30">{t('dispute.deadlineDays', { days: 30 })}</SelectItem>
+            <SelectItem value="60">{t('dispute.deadlineDays', { days: 60 })}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isSubmitting && (

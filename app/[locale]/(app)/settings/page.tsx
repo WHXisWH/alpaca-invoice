@@ -8,6 +8,9 @@ import { CryptoService } from '@/services/CryptoService/CryptoServiceImpl';
 import { AleoField } from '@/lib/types';
 import { useErrorHandler } from '@/controller/Error/useErrorHandler';
 import { useTranslations } from 'next-intl';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const SCOPE_KEYS = [
   'amount',
@@ -136,8 +139,7 @@ export default function SettingsPage() {
       <form onSubmit={submit} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="space-y-1">
           <label className="text-sm font-medium text-slate-800">{t('invoice.detail.invoiceId')}</label>
-          <input
-            className="input-field"
+          <Input
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
             placeholder={t('settings.invoiceIdPlaceholder')}
@@ -147,8 +149,7 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-800">{t('settings.auditKey')}</label>
-            <input
-              className="input-field"
+            <Input
               value={auditKey}
               onChange={(e) => setAuditKey(e.target.value)}
               placeholder={t('settings.auditKeyPlaceholder')}
@@ -156,11 +157,9 @@ export default function SettingsPage() {
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-800">{t('settings.expiry')}</label>
-            <input
-              type="date"
-              className="input-field"
+            <DatePicker
               value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
+              onChange={(v) => setExpiresAt(v)}
             />
           </div>
         </div>
@@ -168,12 +167,10 @@ export default function SettingsPage() {
           <div className="text-sm font-medium text-slate-800">{t('settings.scopes')}</div>
           <div className="grid grid-cols-2 gap-2 text-xs">
             {SCOPE_KEYS.map((s) => (
-              <label key={s} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+              <label key={s} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
                   checked={scopes.includes(s)}
-                  onChange={() => toggleScope(s)}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                  onCheckedChange={() => toggleScope(s)}
                 />
                 {s}
               </label>

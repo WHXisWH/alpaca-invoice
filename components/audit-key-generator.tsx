@@ -3,6 +3,10 @@
 import { useTranslations } from 'next-intl';
 import { useAuditPackageGenerate } from '@/controller/Audit/useAuditPackageGenerate';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 
 export default function AuditKeyGenerator() {
   const t = useTranslations();
@@ -115,45 +119,40 @@ export default function AuditKeyGenerator() {
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-800">{t('audit.generator.invoiceId')}</label>
-            <select
-              value={invoiceId}
-              onChange={(e) => setInvoiceId(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-            >
-              <option value="">{t('audit.generator.chooseFromLocal')}</option>
-              {invoices.map((inv) => (
-                <option key={inv.id} value={inv.id}>
-                  {inv.id} ({inv.invoiceHash})
-                </option>
-              ))}
-            </select>
-            <input
+            <Select value={invoiceId || undefined} onValueChange={(v) => setInvoiceId(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder={t('audit.generator.chooseFromLocal')} />
+              </SelectTrigger>
+              <SelectContent>
+                {invoices.map((inv) => (
+                  <SelectItem key={inv.id} value={inv.id}>
+                    {inv.id} ({inv.invoiceHash})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
               type="text"
               value={invoiceId}
               onChange={(e) => setInvoiceId(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
               placeholder={t('audit.generator.pasteInvoiceId')}
             />
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-800">{t('audit.generator.expirationDate')}</label>
-            <input
-              type="date"
+            <DatePicker
               value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+              onChange={(v) => setExpiresAt(v)}
             />
           </div>
           <div className="space-y-2">
             <div className="text-sm font-medium text-slate-800">{t('audit.generator.fieldsToDisclose')}</div>
             <div className="grid grid-cols-2 gap-2">
               {fieldsList.map((p) => (
-                <label key={p.key} className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
+                <label key={p.key} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <Checkbox
                     checked={fields.includes(p.key)}
-                    onChange={() => toggleField(p.key)}
-                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                    onCheckedChange={() => toggleField(p.key)}
                   />
                   {p.label}
                 </label>

@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { useChatStore } from '@/stores/Chat/useChatStore';
+import { Textarea } from '@/components/ui/textarea';
 
 function TypingIndicator() {
   return (
@@ -294,14 +295,14 @@ export default function ChatBot() {
               className="border-t border-primary-100 bg-white/80 px-3 py-2.5"
             >
               <div className="flex items-end gap-2">
-                <textarea
+                <Textarea
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={t('chatbot.placeholder')}
                   rows={1}
-                  className="max-h-24 min-h-[36px] flex-1 resize-none rounded-xl border border-primary-200 bg-primary-50/50 px-3 py-2 text-sm text-primary-800 placeholder:text-primary-400 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/50"
+                  className="max-h-24 min-h-[36px] flex-1 resize-none"
                 />
                 <button
                   type="submit"

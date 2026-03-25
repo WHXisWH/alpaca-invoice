@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { Input } from '@/components/ui/input';
 import { useTransactionStore } from '@/stores/Transaction/useTransactionStore';
 
 export default function InvoicesPage() {
@@ -217,11 +218,11 @@ function InvoicesPageInner() {
 
       {/* Search */}
       <MotionItem>
-        <input
+        <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('invoice.list.searchPlaceholder')}
-          className="w-full max-w-md rounded-lg border border-primary-200/60 bg-white/80 px-4 py-2.5 text-sm text-primary-900 placeholder:text-primary-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
+          className="max-w-md"
         />
       </MotionItem>
 

@@ -6,6 +6,7 @@ import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/
 import { InvoiceStatus } from '@/lib/types';
 import { PROGRAM_ID } from '@/lib/contract';
 import { useTranslations } from 'next-intl';
+import { Input } from '@/components/ui/input';
 
 const protocolService = new AleoProtocolService();
 
@@ -74,10 +75,9 @@ export default function VerifyPage() {
 
         <div className="mt-4 space-y-3">
           <label className="text-sm font-medium text-slate-800">{t('verify.invoiceIdLabel')}</label>
-          <input
+          <Input
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
             placeholder={t('verify.placeholder')}
           />
           <button
