@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import NextLink from 'next/link';
 import Image from 'next/image';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { Link, usePathname } from '@/i18n/navigation';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import {
@@ -15,10 +16,14 @@ import {
   BookOpen,
   HelpCircle,
   AlertTriangle,
+  Award,
   X,
 } from 'lucide-react';
 import { useSidebar } from '@/components/sidebar-context';
 import { useOnboarding } from '@/components/onboarding/onboarding-provider';
+import { useDisputeStore } from '@/stores/Dispute/useDisputeStore';
+import { useUserStore } from '@/stores/User/useUserStore';
+import { DisputeStatus } from '@/lib/types';
 
 const navItems = [
   { titleKey: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
@@ -26,6 +31,7 @@ const navItems = [
   { titleKey: 'createInvoice' as const, href: '/invoices/create', icon: FilePlus },
   { titleKey: 'receipts' as const, href: '/receipts', icon: Receipt },
   { titleKey: 'disputes' as const, href: '/disputes', icon: AlertTriangle },
+  { titleKey: 'creditCenter' as const, href: '/credit', icon: Award },
   { titleKey: 'auditCenter' as const, href: '/audit', icon: ShieldCheck },
   { titleKey: 'documentation' as const, href: '/docs', icon: BookOpen },
 ];
@@ -37,6 +43,12 @@ export default function Sidebar() {
   const { restart: restartGuide } = useOnboarding();
   const [helpVisible, setHelpVisible] = useState(true);
   const t = useTranslations('nav');
+  const publicKey = useUserStore((s) => s.publicKey);
+  const pendingArbitrationCount = useDisputeStore((s) =>
+    s.disputes.filter(
+      (d) => d.arbiter === publicKey && d.status === DisputeStatus.OPEN
+    ).length
+  );
   const handleRestartGuide = () => {
     restartGuide();
     close();
@@ -65,7 +77,7 @@ export default function Sidebar() {
       >
         <div className="flex h-full flex-col">
           {/* Logo - Click to go to homepage */}
-          <Link
+          <NextLink
             href="/"
             className="flex h-16 items-center gap-3 border-b border-white/5 px-6 transition-colors hover:bg-white/5 cursor-pointer"
           >
@@ -92,7 +104,7 @@ export default function Sidebar() {
             <span className="text-lg font-bold text-white">Alpaca</span>
             <span className="text-lg font-light text-primary-400"> Invoice</span>
           </div>
-        </Link>
+        </NextLink>
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-6">
@@ -111,6 +123,7 @@ export default function Sidebar() {
                 return p === '/invoices/create' || p === '/invoice/create';
               }
               if (item.href === '/disputes') return p === '/disputes' || p.startsWith('/disputes/');
+              if (item.href === '/credit') return p === '/credit' || p.startsWith('/credit/');
               if (item.href === '/audit') return p === '/audit' || p.startsWith('/audit/');
               if (item.href === '/docs') return p.startsWith('/docs');
               return p === item.href;
@@ -129,7 +142,12 @@ export default function Sidebar() {
                 )}
               >
                 <Icon className="h-5 w-5" />
-                {t(item.titleKey)}
+                <span className="flex-1">{t(item.titleKey)}</span>
+                {item.href === '/disputes' && pendingArbitrationCount > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                    {pendingArbitrationCount}
+                  </span>
+                )}
               </Link>
             );
           })}

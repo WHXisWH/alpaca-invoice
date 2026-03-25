@@ -9,7 +9,7 @@ function resolveProgramId(value: string | undefined, fallback: string): string {
 
 export const PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_PROGRAM_ID,
-  'zk_invoice_v3_1.aleo'
+  'zk_invoice_v3_3.aleo'
 );
 export const LEGACY_PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_LEGACY_PROGRAM_ID,
@@ -20,16 +20,16 @@ export const CREDITS_PROGRAM_ID = 'credits.aleo';
 /** USDCx (Aleo Testnet); set via env when integrating. See https://aleo.org/usdcx */
 export const USDCX_PROGRAM_ID = resolveProgramId(process.env.NEXT_PUBLIC_USDCX_PROGRAM_ID, '');
 
-/** Wave 4 contract with Dispute + Escrow */
+/** Wave 4.2 contract with ESCROWED-only Dispute + Arbiter Resolution */
 export const PROGRAM_ID_V4 = resolveProgramId(
   process.env.NEXT_PUBLIC_PROGRAM_ID_V4,
-  'zk_invoice_v4.aleo'
+  'zk_invoice_v4_2.aleo'
 );
 
 /** ZK Credit Proof standalone contract */
 export const CREDIT_PROGRAM_ID = resolveProgramId(
   process.env.NEXT_PUBLIC_CREDIT_PROGRAM_ID,
-  'zk_credit_v1.aleo'
+  'zk_credit_v1_1.aleo'
 );
 
 /** Aleo field literal for zero (non-JCT / unused) */

@@ -93,7 +93,7 @@ export const ERROR_MESSAGES: Record<ErrorType, { title: string; description: str
   },
   [ErrorType.INSUFFICIENT_BALANCE]: {
     title: 'Insufficient Balance',
-    description: 'Your account balance is insufficient to complete this operation'
+    description: 'No private credits records available. Please use your wallet to convert public balance to private first.'
   },
   [ErrorType.TRANSACTION_FAILED]: {
     title: 'Transaction Failed',

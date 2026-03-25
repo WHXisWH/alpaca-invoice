@@ -194,6 +194,16 @@ export function useInvoices(): IInvoices {
       return;
     }
 
+    // Guard: wallet must be connected before scanning chain records.
+    // Without this check, requestRecords throws WalletNotConnectedError
+    // and the fallback loop repeats that error for every local invoice.
+    if (!wallet?.connected) {
+      toast.error('Wallet not connected', {
+        description: 'Please connect your wallet before syncing.'
+      });
+      return;
+    }
+
     setIsSyncing(true);
     try {
       toast.loading('Syncing all invoices...', { id: 'sync-all' });
@@ -205,13 +215,21 @@ export function useInvoices(): IInvoices {
       // Rebuild full invoice list from on-chain data
       const syncedInvoices: Invoice[] = [];
       
+      const isSynced = (inv: Invoice) =>
+        syncedInvoices.some(
+          (s) =>
+            cleanAleoField(s.id) === cleanAleoField(inv.id) ||
+            s.invoiceHash === inv.invoiceHash
+        );
+
       // 1) Process InvoiceRecord only (invoice list page should not depend on PaymentRecord scan)
       for (const [invoiceId, invoiceRecordData] of invoiceRecordsByInvoiceId.entries()) {
         try {
           const localInvoice = invoices.find((inv: Invoice) => {
             const cleanLocalId = cleanAleoField(inv.id);
             const cleanRecordId = cleanAleoField(invoiceId);
-            return cleanLocalId === cleanRecordId;
+            return cleanLocalId === cleanRecordId ||
+              inv.invoiceHash === invoiceRecordData.invoiceHash;
           });
           
           if (localInvoice) {
@@ -261,51 +279,54 @@ export function useInvoices(): IInvoices {
 
       // 2) Fallback: per-invoice scan to avoid missing confirmations
       // when bulk parsing/dedup does not return a local invoice.
-      for (const localInvoice of invoices) {
-        const cleanLocalId = cleanAleoField(localInvoice.id);
-        const alreadySynced = syncedInvoices.some(
-          (s) => cleanAleoField(s.id) === cleanLocalId
-        );
-        if (alreadySynced) continue;
+      // Skip entirely if wallet is no longer connected to avoid N repeated WalletNotConnectedErrors.
+      if (wallet?.connected) {
+        for (const localInvoice of invoices) {
+          if (isSynced(localInvoice)) continue;
 
-        try {
-          const { invoiceRecord } = await scanInvoiceRecord(
-            localInvoice.invoiceHash,
-            localInvoice.id
-          );
-          if (!invoiceRecord) continue;
+          // Re-check wallet connection before each per-invoice call
+          if (!wallet?.connected) {
+            console.warn('[SyncAll] Wallet disconnected mid-fallback, aborting per-invoice scan');
+            break;
+          }
 
-          const validation = statusValidator.validateRecord(
-            invoiceRecord,
-            localInvoice.metadata?.action,
-            localInvoice.status
-          );
-          if (!validation.shouldConfirm) continue;
+          try {
+            const { invoiceRecord } = await scanInvoiceRecord(
+              localInvoice.invoiceHash,
+              localInvoice.id
+            );
+            if (!invoiceRecord) continue;
 
-          const updatedInvoice = updateInvoiceFromInvoiceRecord(localInvoice, invoiceRecord);
+            const validation = statusValidator.validateRecord(
+              invoiceRecord,
+              localInvoice.metadata?.action,
+              localInvoice.status
+            );
+            if (!validation.shouldConfirm) continue;
 
-          syncedInvoices.push({
-            ...localInvoice,
-            ...updatedInvoice,
-            details: localInvoice.details,
-            metadata: {
-              confirmationStatus: 'CONFIRMED',
-              dataSource: 'chain',
-              action: localInvoice.metadata?.action
-            }
-          } as Invoice);
-        } catch (error) {
-          console.warn(`Fallback scan failed for ${localInvoice.invoiceHash}:`, error);
+            const updatedInvoice = updateInvoiceFromInvoiceRecord(localInvoice, invoiceRecord);
+
+            syncedInvoices.push({
+              ...localInvoice,
+              ...updatedInvoice,
+              details: localInvoice.details,
+              metadata: {
+                confirmationStatus: 'CONFIRMED',
+                dataSource: 'chain',
+                action: localInvoice.metadata?.action
+              }
+            } as Invoice);
+          } catch (error) {
+            console.warn(`Fallback scan failed for ${localInvoice.invoiceHash}:`, error);
+          }
         }
+      } else {
+        console.warn('[SyncAll] Wallet disconnected – skipping per-invoice fallback scan');
       }
       
       // Preserve SENDING invoices (not yet on chain) so they don't get deleted
       for (const inv of invoices) {
-        const cleanId = cleanAleoField(inv.id);
-        const alreadySynced = syncedInvoices.some(
-          (s) => cleanAleoField(s.id) === cleanId
-        );
-        if (!alreadySynced && inv.metadata?.confirmationStatus === 'SENDING') {
+        if (!isSynced(inv) && inv.metadata?.confirmationStatus === 'SENDING') {
           syncedInvoices.push(inv);
         }
       }
@@ -325,9 +346,22 @@ export function useInvoices(): IInvoices {
         console.log(`🔄 [SyncAll] Reconciled ${reconciledInvoices.length} PENDING invoice(s) via public mapping`);
       }
 
+      // Final dedup by invoiceHash to guarantee no duplicates
+      const seen = new Set<string>();
+      const deduped: Invoice[] = [];
+      for (const inv of syncedInvoices) {
+        const key = inv.invoiceHash || cleanAleoField(inv.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(inv);
+      }
+      if (deduped.length < syncedInvoices.length) {
+        console.log(`🔄 [SyncAll] Removed ${syncedInvoices.length - deduped.length} duplicate(s)`);
+      }
+
       // Reset store with synced invoices (rebuilds sending index automatically)
-      if (syncedInvoices.length > 0) {
-        await setInvoices(syncedInvoices, {
+      if (deduped.length > 0) {
+        await setInvoices(deduped, {
           masterKey,
           persistFull: true,
           metadata: {
@@ -338,12 +372,12 @@ export function useInvoices(): IInvoices {
         });
 
         // §3.9: fetch encrypted details from KV for invoices missing details (buyer side)
-        await fetchAndMergeKvDetails(syncedInvoices, updateInvoice, masterKey);
+        await fetchAndMergeKvDetails(deduped, updateInvoice, masterKey);
       }
       
       toast.success('Batch sync successful', {
         id: 'sync-all',
-        description: `Synced ${syncedInvoices.length} invoice(s) from chain`
+        description: `Synced ${deduped.length} invoice(s) from chain`
       });
     } catch (error) {
       console.error('Failed to sync all invoices:', error);

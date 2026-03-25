@@ -35,7 +35,7 @@ export function useInvoiceChainSync(
   const { scanInvoiceRecord } = useInvoiceChainScan();
   
   // Use shared polling core for record-to-invoice mapping + public mapping reconciliation
-  const { buildUpdatedInvoice, reconcilePendingWithMapping } = useInvoicePollingCore();
+  const { buildUpdatedInvoice, reconcilePendingWithMapping, getChainInvoiceStatus } = useInvoicePollingCore();
   
   const [isSyncingStatus, setIsSyncingStatus] = useState(false);
 
@@ -228,9 +228,11 @@ export function useInvoiceChainSync(
 
         toast.success('Status sync successful', { id: 'sync-status' });
       } else if (!invoiceRecord && !paymentRecord) {
-        // No private Record found at all — fall back to public mapping lookup.
-        // This can happen for the buyer after the seller cancelled (buyer's Record
-        // is still the old PENDING one which may fail to scan in some edge cases).
+        // No private Record found — fall back to public mapping lookup.
+        // This covers multiple scenarios:
+        //   - Buyer after seller cancelled (PENDING → CANCELLED)
+        //   - ESCROWED/DISPUTED invoices where the record lives under V4 program
+        //   - Any status change driven by the counterparty
         if (latestInvoice.status === InvoiceStatus.PENDING) {
           const reconciled = await reconcilePendingWithMapping([latestInvoice]);
           if (reconciled.length > 0) {
@@ -239,6 +241,34 @@ export function useInvoiceChainSync(
               persistFull: !!masterKey
             });
             toast.success('Status sync successful', { id: 'sync-status' });
+            return;
+          }
+        } else {
+          // For non-PENDING statuses (ESCROWED, DISPUTED, etc.), query public mapping
+          // to verify the on-chain status matches the local status.
+          const chainStatus = await getChainInvoiceStatus(latestInvoice.id);
+          if (chainStatus !== null) {
+            if (chainStatus !== latestInvoice.status) {
+              await updateInvoice(latestInvoice.id, {
+                ...latestInvoice,
+                status: chainStatus,
+                metadata: {
+                  confirmationStatus: 'CONFIRMED',
+                  dataSource: 'chain',
+                  lastUpdated: new Date(),
+                  action: latestInvoice.metadata?.action
+                }
+              } as any, {
+                masterKey: masterKey || undefined,
+                persistFull: !!masterKey
+              });
+              toast.success('Status sync successful', {
+                id: 'sync-status',
+                description: `Status updated: ${InvoiceStatus[chainStatus]}`
+              });
+            } else {
+              toast.success('Status is up to date', { id: 'sync-status' });
+            }
             return;
           }
         }
@@ -256,7 +286,7 @@ export function useInvoiceChainSync(
     } finally {
       setIsSyncingStatus(false);
     }
-  }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, reconcilePendingWithMapping, updateInvoice, handleError]);
+  }, [invoiceHash, masterKey, publicKey, scanInvoiceRecord, buildUpdatedInvoice, confirmInvoice, reconcilePendingWithMapping, getChainInvoiceStatus, updateInvoice, handleError]);
 
   return {
     isSyncingStatus,

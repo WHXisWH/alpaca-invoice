@@ -3,7 +3,6 @@ import type {
   RaiseDisputeParams,
   ResolveDisputeParams,
   SubmitEvidenceParams,
-  DisputeRecord,
 } from '@/lib/types';
 
 export interface IDisputeController {

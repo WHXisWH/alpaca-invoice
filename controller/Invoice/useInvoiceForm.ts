@@ -72,6 +72,7 @@ function buildDetails(opts: {
   currency: string;
   orderId: string;
   notes: string;
+  arbiter?: string;
 }): InvoiceDetails {
   const subtotal = opts.lineItems.reduce((s, i) => s + i.amount, 0);
   const taxAmount = opts.lineItems.reduce((sum, item, i) => {
@@ -93,7 +94,8 @@ function buildDetails(opts: {
     taxAmount,
     total: Math.round((subtotal + taxAmount) * 100) / 100,
     currency: opts.currency || 'CREDITS',
-    notes: opts.notes || undefined
+    notes: opts.notes || undefined,
+    arbiter: opts.arbiter || undefined
   };
 }
 
@@ -106,6 +108,8 @@ export interface UseInvoiceFormReturn {
   ntaCheck: 'idle' | 'checking' | 'ok' | 'unavailable';
   buyer: string;
   setBuyer: (v: string) => void;
+  arbiter: string;
+  setArbiter: (v: string) => void;
   lineItems: LineItemRow[];
   dueDate: string;
   setDueDate: (v: string) => void;
@@ -167,6 +171,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
   const [tNumber, setTNumberRaw] = useState('');
   const [ntaCheck, setNtaCheck] = useState<'idle' | 'checking' | 'ok' | 'unavailable'>('idle');
   const [buyer, setBuyer] = useState('');
+  const [arbiter, setArbiter] = useState('');
   const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [
     { id: crypto.randomUUID(), description: 'Service fee', quantity: '1', unitPrice: '1', jctTaxRate: '10' }
   ]);
@@ -293,6 +298,15 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
       errs.buyer = 'Buyer cannot be the same as seller.';
     }
 
+    const arbiterAddr = arbiter.trim();
+    if (arbiterAddr && !ALEO_ADDR_REGEX.test(arbiterAddr)) {
+      errs.arbiter = 'Invalid Aleo address (must be aleo1… 63 chars).';
+    } else if (arbiterAddr && publicKey && arbiterAddr === publicKey) {
+      errs.arbiter = 'Arbiter cannot be the seller.';
+    } else if (arbiterAddr && arbiterAddr === buyerAddr) {
+      errs.arbiter = 'Arbiter cannot be the buyer.';
+    }
+
     if (parsedAmount <= 0) {
       errs.amount = 'Add at least one line item with a positive amount.';
     }
@@ -331,6 +345,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
 
       const buyerAddress = buyer.trim();
       if (buyerAddress !== buyer) setBuyer(buyerAddress);
+      const arbiterAddress = arbiter.trim() || undefined;
 
       const invoiceNumber = `INV-${Date.now()}`;
       const jctRates = lineItems.map((r) => r.jctTaxRate);
@@ -340,7 +355,8 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
         lineItemsJctTax: jctRates,
         currency: currency.trim(),
         orderId: orderId.trim(),
-        notes: notes.trim()
+        notes: notes.trim(),
+        arbiter: arbiterAddress
       });
       const taxGroups = buildTaxGroupsFromLineItems(parsedLineItems, jctRates);
       const amountMicro = BigInt(Math.floor(parsedAmount * 1_000_000));
@@ -406,7 +422,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
           }
         }
 
-        // Invoice details are saved to the online store only after chain confirmation (see InvoiceAutoPoller §3.9).
+        // Invoice details (including arbiter) are saved to the online store only after chain confirmation (see InvoiceAutoPoller §3.9).
 
         console.log('[DEBUG useInvoiceForm] Redirecting to detail page', {
           invoiceHash,
@@ -419,7 +435,7 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      buyer, lineItems, parsedLineItems, parsedAmount, dueDate, currency,
+      buyer, arbiter, lineItems, parsedLineItems, parsedAmount, dueDate, currency,
       orderId, notes, tNumber, audit, publicKey,
       executeCreateInvoice, executeSetAuditAuthorization, handleError, router
     ]
@@ -432,6 +448,8 @@ export function useInvoiceForm(): UseInvoiceFormReturn {
     ntaCheck,
     buyer,
     setBuyer,
+    arbiter,
+    setArbiter,
     lineItems,
     dueDate,
     setDueDate,

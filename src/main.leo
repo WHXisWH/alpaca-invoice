@@ -1,4 +1,4 @@
-// zk_invoice_v3_1.aleo — Wave 3.1: JCT compliance, tax_tag, atomic settlement (Credits private + USDCx public)
+// zk_invoice_v3_3.aleo — Wave 3.3: on-chain arbiter mapping + USDCx public-as-signer compatibility
 //
 // 依赖：program.json 声明 credits.aleo、test_usdcx_stablecoin.aleo (location: network).
 // - pay_invoice_credits_private: credits.aleo/transfer_private（私有 Record 转账，无 Future），
@@ -10,10 +10,10 @@
 import credits.aleo;
 import test_usdcx_stablecoin.aleo;
 
-program zk_invoice_v3_1.aleo {
+program zk_invoice_v3_3.aleo {
 
     // ========= Program lifecycle =========
-    // @noupgrade required by Leo compiler; new contract version can be deployed as zk_invoice_v3_2.aleo if needed.
+    // @noupgrade required by Leo compiler; new contract version can be deployed as zk_invoice_v3_3.aleo if needed.
     @noupgrade
     async constructor() {}
 
@@ -176,6 +176,9 @@ program zk_invoice_v3_1.aleo {
     mapping getter_jct_reg_cache: field => field;
     mapping getter_payment_commitment_cache: field => field;
 
+    // Wave 3.2: on-chain arbiter designation (set at invoice creation)
+    mapping invoice_arbiter: field => address;
+
     // ========= Helpers =========
     function compute_invoice_id_internal(
         seller: address,
@@ -284,7 +287,8 @@ program zk_invoice_v3_1.aleo {
         line_items_sum: u64,
         expected_total: u64,
         tax_rate_bps: u64,
-        jct: CreateInvoiceJct
+        jct: CreateInvoiceJct,
+        arbiter: address
     ) -> (InvoiceRecord, InvoiceRecord, Future) {
         let seller: address = self.caller;
         let tax_groups: TaxGroups = jct.tax_groups;
@@ -402,7 +406,8 @@ program zk_invoice_v3_1.aleo {
                 commitments,
                 rules_result,
                 tax_tag,
-                jct_registration
+                jct_registration,
+                arbiter
             )
         );
     }
@@ -415,7 +420,8 @@ program zk_invoice_v3_1.aleo {
         public commitments: FieldCommitments,
         public rules_result: field,
         public tax_tag: field,
-        public jct_registration: field
+        public jct_registration: field,
+        public arbiter: address
     ) {
         let existing_hash: field = Mapping::get_or_use(invoice_registry, invoice_id, 0field);
         assert_eq(existing_hash, 0field);
@@ -427,6 +433,7 @@ program zk_invoice_v3_1.aleo {
         Mapping::set(invoice_rules_result, invoice_id, rules_result);
         Mapping::set(invoice_tax_tag, invoice_id, tax_tag);
         Mapping::set(invoice_jct_reg, invoice_id, jct_registration);
+        Mapping::set(invoice_arbiter, invoice_id, arbiter);
 
         let current_count: u64 = Mapping::get_or_use(invoice_count, seller, 0u64);
         Mapping::set(invoice_count, seller, current_count + 1u64);
@@ -526,17 +533,13 @@ program zk_invoice_v3_1.aleo {
         );
     }
 
-    // Wave 3.1: USDCx private payment via test_usdcx_stablecoin.aleo/transfer_private.
-    // Signature: transfer_private(recipient, amount, token_record, proofs) -> (ComplianceRecord, Token, Token, Future)
-    // Requires [MerkleProof; 2] for freeze list compliance; returns a Future that must be awaited.
+    // Wave 3.3: USDCx payment via transfer_public_as_signer (no MerkleProof input).
     // settlement_anchor = BHP256(PaymentCommitData{invoice_id, amount, nonce})（ZK audit commitment）
     async transition pay_invoice_usdcx(
-        token_record: test_usdcx_stablecoin.aleo/Token,
         invoice: InvoiceRecord,
         payment_nonce: field,
-        paid_at: u32,
-        private proofs: [MerkleProof; 2]
-    ) -> (test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/ComplianceRecord, PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
+        paid_at: u32
+    ) -> (PaymentRecord, InvoiceRecord, InvoiceRecord, Future) {
         let payer: address = self.caller;
 
         assert_eq(payer, invoice.buyer);
@@ -545,10 +548,10 @@ program zk_invoice_v3_1.aleo {
         assert(paid_at <= invoice.due_date);
         assert(invoice.total_amount > 0u64);
 
-        // transfer_private(recipient, amount, token_record, proofs) -> (ComplianceRecord, Token, Token, Future)
-        let (compliance_record, seller_token, change_token, transfer_future):
-            (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, test_usdcx_stablecoin.aleo/Token, Future) =
-            test_usdcx_stablecoin.aleo/transfer_private(invoice.seller, invoice.total_amount as u128, token_record, proofs);
+        // transfer_public_as_signer(recipient, amount_u128) -> Future
+        // Uses caller's public USDCx balance directly.
+        let transfer_future: Future =
+            test_usdcx_stablecoin.aleo/transfer_public_as_signer(invoice.seller, invoice.total_amount as u128);
 
         let commit_data: PaymentCommitData = PaymentCommitData {
             invoice_id: invoice.invoice_id,
@@ -612,9 +615,6 @@ program zk_invoice_v3_1.aleo {
         };
 
         return (
-            seller_token,
-            change_token,
-            compliance_record,
             receipt,
             buyer_paid,
             seller_paid,
@@ -631,7 +631,7 @@ program zk_invoice_v3_1.aleo {
         Mapping::set(payment_commitments, commitment, invoice_id);
     }
 
-    // USDCx path: must await transfer_private Future (MerkleProof compliance check), then write status + commitment.
+    // USDCx path: await transfer_public_as_signer Future, then write status + commitment.
     async function finalize_usdcx_pay(
         public invoice_id: field,
         public commitment: field,

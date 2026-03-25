@@ -57,6 +57,46 @@ export function getStatusConfig(status: InvoiceStatus): StatusConfig {
         text: 'text-red-700',
         border: 'border-red-300'
       };
+    case InvoiceStatus.DISPUTED:
+      return {
+        label: 'Disputed',
+        icon: '⚠️',
+        bg: 'bg-orange-100',
+        text: 'text-orange-700',
+        border: 'border-orange-300'
+      };
+    case InvoiceStatus.ESCROWED:
+      return {
+        label: 'Escrowed',
+        icon: '🔒',
+        bg: 'bg-blue-100',
+        text: 'text-blue-700',
+        border: 'border-blue-300'
+      };
+    case InvoiceStatus.REFUNDED:
+      return {
+        label: 'Refunded',
+        icon: '↩️',
+        bg: 'bg-purple-100',
+        text: 'text-purple-700',
+        border: 'border-purple-300'
+      };
+    case InvoiceStatus.RESOLVED_PAID:
+      return {
+        label: 'Resolved (Paid)',
+        icon: '✅',
+        bg: 'bg-green-100',
+        text: 'text-green-700',
+        border: 'border-green-300'
+      };
+    case InvoiceStatus.RESOLVED_CANCELLED:
+      return {
+        label: 'Resolved (Cancelled)',
+        icon: '❌',
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-300'
+      };
     default:
       return {
         label: 'Unknown',
@@ -243,7 +283,8 @@ export function updateInvoiceFromInvoiceRecord(
     transactionId: invoiceRecord.transactionId ?? invoice.transactionId,
     blockHeight: invoiceRecord.blockHeight != null ? Number(invoiceRecord.blockHeight) : invoice.blockHeight,
     nonce: invoice.nonce,
-    auditKey: invoice.auditKey
+    auditKey: invoice.auditKey,
+    details: invoice.details,
   };
   if (invoiceRecord.tax_tag != null && invoiceRecord.tax_tag !== '0field') {
     partial.taxTag = cleanAleoField(invoiceRecord.tax_tag) as AleoField;

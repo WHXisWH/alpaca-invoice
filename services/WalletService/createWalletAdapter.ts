@@ -249,15 +249,29 @@ export function createWalletAdapter(walletContext: WalletContextState): IWalletS
             privateFee: params.feePrivate,
             feePrivate: params.feePrivate
           } as any);
-          return (res as any)?.transactionId;
+
+          // Shield wallet returns an internal tracking ID in transactionId (e.g. "shield_xxx").
+          // The actual Aleo tx ID (at1...) may appear in other fields.
+          // Return the best available ID, preferring any at1-prefixed value.
+          const r = res as any;
+          const candidates = [
+            r?.transactionId, r?.txId, r?.tx_id, r?.hash, r?.txHash, r?.id,
+          ].filter(Boolean).map(String);
+          const aleoTxId = candidates.find((c: string) => c.startsWith('at1'));
+          return aleoTxId || candidates[0] || '';
         }
       : undefined,
 
-    // Forward transactionStatus
+    // Forward transactionStatus — prefer returning the actual Aleo tx ID if present
     transactionStatus: walletContext.transactionStatus
       ? async (transactionId: string) => {
           const res: any = await walletContext.transactionStatus!(transactionId);
-          return res?.status || res?.transactionId || '';
+          const candidates = [
+            res?.transactionId, res?.txId, res?.tx_id, res?.hash, res?.id,
+          ].filter(Boolean).map(String);
+          const aleoTxId = candidates.find((c: string) => c.startsWith('at1'));
+          if (aleoTxId) return aleoTxId;
+          return res?.status || candidates[0] || '';
         }
       : undefined,
   };

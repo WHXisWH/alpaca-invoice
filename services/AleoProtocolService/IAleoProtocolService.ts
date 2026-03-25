@@ -157,7 +157,7 @@ export interface IAleoProtocolService {
 
   /**
    * Return the expected number of outputs for a transition (Wave 3.1).
-   * pay_invoice_credits_private returns 6 outputs; pay_invoice_usdcx returns 7 outputs.
+   * pay_invoice_credits_private returns 6 outputs; pay_invoice_usdcx returns 4 outputs.
    */
   getExpectedOutputCountForFunction(functionName: string): number | undefined;
 

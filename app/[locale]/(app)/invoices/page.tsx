@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import { useInvoicesPageController } from '@/controller/Invoice/useInvoicesPageController';
 import { useAuthCheck } from '@/controller/Auth/useAuthCheck';
 import InvoiceCard from '@/components/invoice-card';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MotionContainer, MotionItem } from '@/components/ui/motion';
 import {
@@ -13,7 +14,6 @@ import {
   RefreshCw,
   Loader2,
   Shield,
-  Wallet,
   FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,11 +30,13 @@ export default function InvoicesPage() {
 
 function InvoicesPageInner() {
   const t = useTranslations();
-  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'cancelled'; label: string }> = [
+  const tabs: Array<{ key: 'all' | 'pending' | 'paid' | 'escrowed' | 'cancelled' | 'resolved'; label: string }> = [
     { key: 'all', label: t('invoice.list.filterAll') },
     { key: 'pending', label: t('invoice.list.filterPending') },
     { key: 'paid', label: t('invoice.list.filterPaid') },
+    { key: 'escrowed', label: t('invoice.list.filterEscrowed') },
     { key: 'cancelled', label: t('invoice.list.filterCancelled') },
+    { key: 'resolved', label: t('invoice.list.filterResolved') },
   ];
   const roleTabs: Array<{ key: 'all' | 'sent' | 'received'; label: string }> = [
     { key: 'all', label: t('invoice.list.roleAll') },
@@ -137,19 +139,7 @@ function InvoicesPageInner() {
 
   // Wallet connection prompt
   if (showWalletPrompt) {
-    return (
-      <div data-tour="invoice-list">
-        <MotionContainer>
-          <MotionItem className="surface-card p-8">
-            <EmptyState
-              icon={Wallet}
-              title={t('wallet.connect')}
-              description={t('wallet.connectPrompt')}
-            />
-          </MotionItem>
-        </MotionContainer>
-      </div>
-    );
+    return <ConnectWalletCard />;
   }
 
   if (!showMainContent) {
@@ -263,7 +253,13 @@ function InvoicesPageInner() {
               <MotionItem key={invoice.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium text-primary-500">
-                    {role === 'BOTH' ? t('invoice.detail.roleBoth') : role === 'SELLER' ? t('invoice.detail.roleAsSeller') : t('invoice.detail.roleAsBuyer')}
+                    {role === 'BOTH'
+                      ? t('invoice.detail.roleBoth')
+                      : role === 'SELLER'
+                        ? t('invoice.detail.roleAsSeller')
+                        : role === 'BUYER'
+                          ? t('invoice.detail.roleAsBuyer')
+                          : t('invoice.detail.roleUnrelated')}
                   </div>
                   <span
                     className={cn(

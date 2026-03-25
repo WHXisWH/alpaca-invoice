@@ -288,10 +288,12 @@ export class CryptoService implements ICryptoService {
    * Both seller and buyer can derive the same key from the public invoiceId.
    */
   private async deriveKeyFromInvoiceId(invoiceId: string): Promise<Uint8Array> {
+    // Normalize: strip .private/.public suffix so both parties derive the same key
+    const normalizedId = invoiceId.replace(/field\.(private|public)$/, 'field');
     const crypto = this.getWebCrypto();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(invoiceId),
+      new TextEncoder().encode(normalizedId),
       { name: 'PBKDF2' },
       false,
       ['deriveBits']

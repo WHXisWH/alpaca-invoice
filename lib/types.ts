@@ -69,6 +69,8 @@ export interface InvoiceDetails {
   total: number;
   currency: string;
   notes?: string;
+  /** Designated arbiter address for escrow disputes (set by seller at invoice creation) */
+  arbiter?: string;
 }
 
 export interface Invoice {
@@ -288,6 +290,8 @@ export interface DisputeRecord {
   status: DisputeStatus;
   createdAt: Date;
   resolutionDeadline: Date;
+  /** Plain-text reason kept locally (not on chain) */
+  reasonText?: string;
 }
 
 export interface RaiseDisputeParams {
@@ -296,6 +300,8 @@ export interface RaiseDisputeParams {
   evidenceHash: AleoField;
   arbiter?: AleoAddress;
   resolutionDeadlineDays: number;
+  /** Original reason text (stored locally, not sent to chain) */
+  reasonText?: string;
 }
 
 export interface ResolveDisputeParams {
@@ -353,6 +359,12 @@ export interface TimeoutRefundParams {
   invoice: Invoice;
 }
 
+export interface ArbiterResolveParams {
+  escrow: EscrowRecord;
+  invoice: Invoice;
+  decision: 'release' | 'refund';
+}
+
 // ──────────────────────────────────────────────
 // Wave 4: ZK Credit Proof types
 // ──────────────────────────────────────────────
@@ -374,6 +386,7 @@ export interface CreditClaim {
 
 export interface CreditProofToken {
   proofId: AleoField;
+  transactionId: string;
   claimHash: AleoField;
   dataCommitment: AleoField;
   isValid: boolean;
@@ -395,4 +408,20 @@ export interface CreditVerifyResult {
   claim: CreditClaim | null;
   proofId: AleoField | null;
   error?: string;
+}
+
+export type CreditGradeLetter = 'A+' | 'A' | 'B' | 'C' | 'D';
+
+export interface CreditDimensionScores {
+  onTimeRate: number;
+  volume: number;
+  amount: number;
+  accountAge: number;
+  disputeResistance: number;
+}
+
+export interface CreditGrade {
+  letter: CreditGradeLetter;
+  score: number;
+  dimensions: CreditDimensionScores;
 }

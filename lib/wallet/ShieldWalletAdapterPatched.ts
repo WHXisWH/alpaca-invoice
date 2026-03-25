@@ -65,6 +65,40 @@ export class ShieldWalletAdapterPatched extends ShieldWalletAdapter {
 
     throw lastError;
   }
+
+  /**
+   * Shield extension can throw several non-fatal errors during disconnect:
+   *   - "Receiving end does not exist"  → background channel already gone
+   *   - "No response"                   → extension didn't reply (port closed)
+   *   - "Could not establish connection" → tab/extension race on close
+   *
+   * All of these mean the extension is effectively already disconnected, so
+   * we treat them as success to avoid crashing the UI on the first click.
+   */
+  async disconnect() {
+    try {
+      await super.disconnect();
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : String(error ?? '');
+      const lower = msg.toLowerCase();
+
+      const isAlreadyGone =
+        lower.includes('receiving end does not exist') ||
+        lower.includes('no response') ||
+        lower.includes('could not establish connection');
+
+      if (isAlreadyGone) {
+        console.warn(
+          '[ShieldAdapterPatched] disconnect treated as success (extension already gone):',
+          msg
+        );
+        return; // treat as disconnected — do not rethrow
+      }
+
+      throw error;
+    }
+  }
 }
 
 export default ShieldWalletAdapterPatched;

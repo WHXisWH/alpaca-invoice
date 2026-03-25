@@ -31,10 +31,10 @@ export function useInvoiceListRole(
       const role = determineInvoiceRole(publicKey, invoice);
       
       // 转换为列表页格式
-      const listRole: 'SELLER' | 'BUYER' | 'BOTH' = 
+      const listRole: 'SELLER' | 'BUYER' | 'BOTH' | 'NONE' =
         role === 'both' ? 'BOTH' :
         role === 'seller' ? 'SELLER' :
-        role === 'buyer' ? 'BUYER' : 'SELLER';
+        role === 'buyer' ? 'BUYER' : 'NONE';
       
       // ✅ 直接计算 chainStatus（Single Source of Truth）
       const isInSendingIndex = sendingInvoiceHashes[invoice.invoiceHash] === true;

@@ -6,6 +6,7 @@ import {
   EscrowPaymentParams,
   ConfirmDeliveryParams,
   TimeoutRefundParams,
+  ArbiterResolveParams,
   RaiseDisputeParams,
   ResolveDisputeParams,
   SubmitEvidenceParams,
@@ -47,4 +48,5 @@ export interface ITxController {
   executeEscrowPayment(params: EscrowPaymentParams): Promise<AleoTransactionId>;
   executeConfirmDelivery(params: ConfirmDeliveryParams): Promise<AleoTransactionId>;
   executeTimeoutRefund(params: TimeoutRefundParams): Promise<AleoTransactionId>;
+  executeArbiterResolve(params: ArbiterResolveParams): Promise<AleoTransactionId>;
 }

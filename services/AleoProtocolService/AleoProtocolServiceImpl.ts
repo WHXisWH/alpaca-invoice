@@ -23,7 +23,7 @@ const WORKER_TIMEOUT_MS = 120_000;
 
 /** Wave 3.1 outputs */
 export const WAVE3_CREDITS_OUTPUT_COUNT = 6; // pay_invoice_credits_private returns 6 outputs
-export const WAVE3_USDCX_OUTPUT_COUNT = 7;   // pay_invoice_usdcx returns 7 outputs
+export const WAVE3_USDCX_OUTPUT_COUNT = 4;   // pay_invoice_usdcx returns 4 outputs (public-as-signer path)
 
 /**
  * AleoProtocolService implementation class
@@ -475,7 +475,20 @@ export class AleoProtocolService implements IAleoProtocolService {
         throw error;
       }
 
-      // Network error or other errors
+      // Aleo explorer returns 404 when a mapping key does not exist.
+      // Treat this as "not found" rather than a network failure.
+      const msg = String(error?.message ?? error ?? '');
+      const status = error?.status ?? error?.statusCode ?? error?.response?.status ?? 0;
+      const is404 =
+        status === 404 ||
+        msg.includes('404') ||
+        msg.toLowerCase().includes('not found') ||
+        msg.toLowerCase().includes('key not found');
+      if (is404) {
+        return null;
+      }
+
+      // Genuine network error
       throw new ProtocolServiceError(
         ProtocolError.NODE_CONNECTION_FAILED,
         'Failed to query program mapping value',

@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import InvoiceCard from '@/components/invoice-card';
+import CreditDashboardCard from '@/components/credit-dashboard-card';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useInvoices } from '@/controller/Invoice/useInvoices';
+import { useCreditProof } from '@/controller/Credit/useCreditProof';
 import { useInvoiceStore } from '@/stores/Invoice/useInoviceStore';
 import { InvoiceStatus } from '@/lib/types';
 import type { AuditKey } from '@/lib/types';
@@ -22,7 +24,6 @@ import {
   Receipt,
   Search,
   ArrowRight,
-  Wallet,
   Loader2,
   RefreshCw,
   PieChart as PieChartIcon,
@@ -56,6 +57,8 @@ export default function DashboardPage() {
   useEffect(() => {
     listAuditKeys().then(setAuditKeys).catch(() => setAuditKeys([]));
   }, []);
+
+  const creditProof = useCreditProof();
   
   // Subscribe to sendingInvoiceHashes in the store (real-time updates)
   const sendingInvoiceHashes = useInvoiceStore((state) => state.sendingInvoiceHashes);
@@ -97,32 +100,7 @@ export default function DashboardPage() {
 
   // Display wallet connection prompt
   if (showWalletPrompt) {
-    return (
-      <div className="space-y-6">
-        <MotionContainer className="flex min-h-[40vh] flex-col items-center justify-center">
-          <MotionItem className="surface-card p-10 text-center">
-            <div className="relative mx-auto mb-6 h-32 w-32">
-              <Image
-                src="/images/mascot/mascot-waiting.png"
-                alt="Connect wallet"
-                fill
-                className="object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
-            <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-accent-100/80 ring-1 ring-accent-200/40 mb-4">
-              <Wallet className="h-6 w-6 text-accent-600" />
-            </div>
-            <h2 className="text-xl font-bold text-primary-900">{t('wallet.connect')}</h2>
-            <p className="mt-2 text-sm text-primary-500 max-w-xs">
-              {t('wallet.connectPrompt')}
-            </p>
-          </MotionItem>
-        </MotionContainer>
-      </div>
-    );
+    return <ConnectWalletCard className="space-y-6" />;
   }
 
   return (
@@ -327,6 +305,15 @@ export default function DashboardPage() {
         {auditKeys.length > 10 && (
           <p className="mt-2 text-xs text-slate-500">Showing 10 of {auditKeys.length}</p>
         )}
+      </MotionItem>
+
+      {/* Credit Score Card */}
+      <MotionItem>
+        <CreditDashboardCard
+          metrics={creditProof.metrics}
+          onCollect={creditProof.collectLocalMetrics}
+          isLoading={creditProof.isProcessing}
+        />
       </MotionItem>
 
       {/* Quick Actions */}

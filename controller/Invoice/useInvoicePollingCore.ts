@@ -9,7 +9,8 @@ import { createInvoiceValidationAdapter, InvoiceScanResult } from '@/services/Po
 import { InvoiceStatusValidator } from '@/services/InvoiceStatusValidator/InvoiceStatusValidatorImpl';
 import { AleoProtocolService } from '@/services/AleoProtocolService/AleoProtocolServiceImpl';
 import { createInvoiceRegistryService } from '@/services/InvoiceRegistryService/createInvoiceRegistryService';
-import { PROGRAM_ID } from '@/lib/contract';
+import { PROGRAM_ID, PROGRAM_ID_V4 } from '@/lib/contract';
+import { cleanAleoNumber } from '@/lib/utils';
 
 const POLL_INTERVAL = 15000; // 15 seconds
 const POLL_TIMEOUT = 600000; // 10 minutes timeout
@@ -188,12 +189,31 @@ export function useInvoicePollingCore() {
   }, [registry]);
 
   /**
+   * Query invoice_status from both V3 and V4 programs, V4 takes precedence.
+   * Escrow/Dispute operations write to V4, while basic invoice ops use V3.
+   */
+  const getChainInvoiceStatus = useCallback(async (invoiceId: AleoField): Promise<InvoiceStatus | null> => {
+    const [v3Status, v4Raw] = await Promise.all([
+      registry.getInvoiceStatus(invoiceId).catch(() => null),
+      protocolService.getProgramMappingValue(
+        PROGRAM_ID_V4, 'invoice_status', invoiceId
+      ).catch(() => null),
+    ]);
+
+    let v4Status: InvoiceStatus | null = null;
+    if (v4Raw) {
+      const cleaned = cleanAleoNumber(v4Raw.replace(/"/g, '').trim());
+      v4Status = Number(cleaned) as InvoiceStatus;
+    }
+
+    return v4Status ?? v3Status;
+  }, [registry, protocolService]);
+
+  /**
    * Cross-reference PENDING invoices against the public `invoice_status` mapping.
    *
-   * The cancel_invoice contract only produces a new Record for the seller;
-   * the buyer's private Record stays PENDING.  By checking the public mapping
-   * we can detect status changes (CANCELLED / PAID / …) that the buyer's
-   * wallet Records alone cannot reveal.
+   * Queries both V3 and V4 programs. V4 takes precedence since escrow/dispute
+   * status updates are written there.
    *
    * @returns invoices whose on-chain mapping status differs from local PENDING
    */
@@ -207,7 +227,7 @@ export function useInvoicePollingCore() {
 
     const results = await Promise.allSettled(
       pending.map(inv =>
-        registry.getInvoiceStatus(inv.id).then(status => ({ inv, status }))
+        getChainInvoiceStatus(inv.id).then(status => ({ inv, status }))
       )
     );
 
@@ -216,7 +236,7 @@ export function useInvoicePollingCore() {
       const { inv, status } = result.value;
       if (status !== null && status !== InvoiceStatus.PENDING) {
         console.log(
-          `🔄 [PollingCore] Mapping reconciliation: ${inv.id} local=PENDING → chain=${InvoiceStatus[status]}`
+          `[PollingCore] Mapping reconciliation: ${inv.id} local=PENDING -> chain=${InvoiceStatus[status]}`
         );
         reconciled.push({
           ...inv,
@@ -232,11 +252,11 @@ export function useInvoicePollingCore() {
     }
 
     if (reconciled.length > 0) {
-      console.log(`✅ [PollingCore] Reconciled ${reconciled.length} invoice(s) via public mapping`);
+      console.log(`[PollingCore] Reconciled ${reconciled.length} invoice(s) via public mapping`);
     }
 
     return reconciled;
-  }, [registry]);
+  }, [getChainInvoiceStatus]);
 
   return {
     createPollingService,
@@ -244,6 +264,7 @@ export function useInvoicePollingCore() {
     buildUpdatedInvoice,
     buildRolledBackInvoice,
     fetchChainAnchors,
+    getChainInvoiceStatus,
     reconcilePendingWithMapping
   };
 }

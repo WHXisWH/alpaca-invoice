@@ -79,13 +79,15 @@ program zk_credit_v1.aleo {
     }
 
     function verify_claim(input: CreditProofInput, claim: CreditClaim) -> bool {
+        // safe_total: always >= 1 so ZK circuit never divides by zero.
+        // Leo evaluates ALL branches regardless of the condition,
+        // so early-return guards cannot prevent division; safe_total is the correct pattern.
+        let safe_total: u64 = input.total_invoices == 0u64 ? 1u64 : input.total_invoices;
+
         // claim_type 0: On-time rate (threshold in basis points, e.g. 9000 = 90%)
         if claim.claim_type == 0u8 {
-            if input.total_invoices == 0u64 {
-                return false;
-            }
-            let rate_bps: u64 = (input.paid_on_time * 10000u64) / input.total_invoices;
-            return rate_bps >= claim.threshold;
+            let rate_bps: u64 = (input.paid_on_time * 10000u64) / safe_total;
+            return input.total_invoices > 0u64 && rate_bps >= claim.threshold;
         }
 
         // claim_type 1: Transaction volume >= threshold
@@ -100,17 +102,15 @@ program zk_credit_v1.aleo {
 
         // claim_type 3: Account age >= threshold (in seconds)
         if claim.claim_type == 3u8 {
-            let age: u64 = (input.proof_generated_at - input.first_invoice_date) as u64;
-            return age >= claim.threshold;
+            let safe_start: u32 = input.first_invoice_date == 0u32 ? input.proof_generated_at : input.first_invoice_date;
+            let age: u64 = (input.proof_generated_at - safe_start) as u64;
+            return input.first_invoice_date > 0u32 && age >= claim.threshold;
         }
 
         // claim_type 4: Dispute rate <= threshold (basis points)
         if claim.claim_type == 4u8 {
-            if input.total_invoices == 0u64 {
-                return true;
-            }
-            let dispute_rate_bps: u64 = (input.dispute_count * 10000u64) / input.total_invoices;
-            return dispute_rate_bps <= claim.threshold;
+            let dispute_rate_bps: u64 = (input.dispute_count * 10000u64) / safe_total;
+            return input.total_invoices == 0u64 || dispute_rate_bps <= claim.threshold;
         }
 
         return false;

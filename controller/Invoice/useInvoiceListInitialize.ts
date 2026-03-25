@@ -128,6 +128,15 @@ export function useInvoiceListInitialize() {
       } else {
         // 情况2：IndexedDB 有数据 → 已加载到内存
         console.log(`📋 [initialize] Case 2: Loaded ${dbInvoices.length} invoices from IndexedDB`);
+        for (const inv of dbInvoices) {
+          console.log('🔍 [DEBUG-ARBITER] IndexedDB invoice loaded:', {
+            id: inv.id?.slice(0, 30),
+            hash: inv.invoiceHash?.slice(0, 30),
+            hasDetails: !!inv.details,
+            arbiter: (inv.details as any)?.arbiter ?? 'NO DETAILS',
+            confirmationStatus: inv.metadata?.confirmationStatus,
+          });
+        }
         // ✅ 确保 sending 索引已重建（getAllInvoices 应该已经处理了）
         rebuildSendingIndex();
       }

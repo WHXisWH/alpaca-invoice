@@ -2,11 +2,18 @@
 
 import Image from 'next/image';
 import InvoiceForm from '@/components/invoice-form';
+import ConnectWalletCard from '@/components/connect-wallet-card';
 import { FilePlus } from 'lucide-react';
 import { useCreateInvoicePage } from '@/controller/Invoice/useCreateInvoicePage';
+import { useUserStore } from '@/stores/User/useUserStore';
 
 export default function CreateInvoicePage() {
   const { title, description, mascotSrc, mascotAlt } = useCreateInvoicePage();
+  const publicKey = useUserStore((s) => s.publicKey);
+
+  if (!publicKey) {
+    return <ConnectWalletCard />;
+  }
 
   return (
     <div className="space-y-6">

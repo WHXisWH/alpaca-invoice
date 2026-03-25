@@ -17,7 +17,7 @@ export interface StatusConfig {
  */
 export type InvoiceWithRole = {
   invoice: Invoice;
-  role: 'SELLER' | 'BUYER' | 'BOTH';
+  role: 'SELLER' | 'BUYER' | 'BOTH' | 'NONE';
   chainStatus: ChainConfirmationStatus;
   statusConfig: StatusConfig;
 };
@@ -45,7 +45,7 @@ export interface IInvoices {
   
   // --- 状态 ---
   /** 当前过滤状态 */
-  filter: 'all' | 'pending' | 'paid' | 'cancelled';
+  filter: 'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed';
   
   /** 搜索关键词 */
   search: string;
@@ -68,7 +68,7 @@ export interface IInvoices {
 
   // --- 业务方法 ---
   /** 设置过滤状态 */
-  setFilter: (filter: 'all' | 'pending' | 'paid' | 'cancelled') => void;
+  setFilter: (filter: 'all' | 'pending' | 'paid' | 'cancelled' | 'escrowed') => void;
   
   /** 设置搜索关键词 */
   setSearch: (search: string) => void;
