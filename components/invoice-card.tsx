@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useUserStore } from '@/stores/User/useUserStore';
 import { determineInvoiceRole } from '@/lib/invoice';
 import type { Invoice } from '@/lib/types';
-import { InvoiceStatus } from '@/lib/types';
+import { InvoiceStatus, CurrencyFlag } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -71,6 +71,8 @@ export default function InvoiceCard({
     const wr = determineInvoiceRole(publicKey, invoice);
     return wr === 'seller' || wr === 'both';
   }, [publicKey, invoice, onCancel]);
+  const displayCurrency = invoice.details?.currency
+    ?? (invoice.currencyFlag === CurrencyFlag.USDCX ? 'USDCx' : 'credits');
   const details = invoice.details;
   const truncateAddress = (addr: string) =>
     showFullAddresses ? addr : `${addr.slice(0, 8)}...${addr.slice(-6)}`;
@@ -132,7 +134,7 @@ export default function InvoiceCard({
               <p className="text-2xl font-bold text-primary-900">
                 {(Number(invoice.amount) / 1_000_000).toFixed(2)}
                 <span className="ml-1.5 text-sm font-normal text-primary-500">
-                  {t('invoice.card.credits')}
+                  {displayCurrency}
                 </span>
               </p>
             </div>
